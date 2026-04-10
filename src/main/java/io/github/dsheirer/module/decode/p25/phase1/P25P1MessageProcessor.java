@@ -179,6 +179,9 @@ public class P25P1MessageProcessor implements Listener<IMessage>
             }
             else if(message instanceof TDULCMessage tdulc)
             {
+                // Flush any held LDU1/LDU2 messages — TDULC marks end of transmission
+                processSourceIDExtension(null);
+
                 boolean motorolaTalkerAliasComplete = false;
                 LinkControlWord lcw = tdulc.getLinkControlWord();
 
@@ -190,7 +193,6 @@ public class P25P1MessageProcessor implements Listener<IMessage>
                     }
                     else if(esm.isExtensionRequired())
                     {
-                        processSourceIDExtension(null);
                         mHeldTDULCMessage = tdulc;
                         return;
                     }
@@ -213,11 +215,20 @@ public class P25P1MessageProcessor implements Listener<IMessage>
                     dispatch(mMotorolaTalkerAliasAssembler.assemble());
                 }
             }
-            else if(message instanceof HDUMessage hdu && mHeldTDULCMessage != null)
+            else if(message instanceof HDUMessage hdu)
             {
-                //If the last TDULC message was held because it needs an extension that can arrive in the first LDU1,
-                //hold onto the intermediate HDU message and send everything (TDU, HDU, LDU) in correct sequence.
-                mHeldHDUMessage = hdu;
+                if(mHeldTDULCMessage != null)
+                {
+                    //If the last TDULC message was held because it needs an extension that can arrive in the first LDU1,
+                    //hold onto the intermediate HDU message and send everything (TDU, HDU, LDU) in correct sequence.
+                    mHeldHDUMessage = hdu;
+                }
+                else
+                {
+                    //HDU marks start of a new call — flush any stale held messages from a previous call
+                    processSourceIDExtension(null);
+                    dispatch(hdu);
+                }
             }
             else
             {
