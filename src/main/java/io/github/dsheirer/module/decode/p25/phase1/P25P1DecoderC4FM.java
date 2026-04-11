@@ -102,19 +102,16 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         // so blocked syncs are almost always genuine. Guard helps CQPSK (noisy symbol recovery)
         // but costs C4FM 0.8% LDUs and 12%+ words on busy channels like Salem Fire.
         mMessageFramer.mSyncGuardEnabled = false;
-        // Disable DUID correction for C4FM. C4FM's reliable 4-level FSK sync means mid-call
-        // TDU mis-decodes are rare, so correction provides minimal benefit. But the correction
-        // cycling (3 corrected LDUs → 1 TDU → reset → repeat) generates noise-derived LDUs
-        // that keep the state machine stuck in CALL indefinitely and inject garbage identifiers.
-        // System property p25.duid.limit.c4fm: -1 = disable, 0 = unlimited, default = -1
-        int duidLimit = Integer.parseInt(System.getProperty("p25.duid.limit.c4fm", "-1"));
-        if(duidLimit >= 0)
+        // Limit consecutive DUID corrections for C4FM. Corrections recover genuine voice frames
+        // where the NID BCH decoded TDU instead of LDU (~10% improvement on LFD). The limit
+        // breaks the correction cycling that generates noise LDUs after call ends. DUID-corrected
+        // messages are marked isDuidCorrected() and blocked from state/identifier processing in
+        // P25P1DecoderState.processLDU() to prevent stuck calls and garbage identifiers.
+        // System property p25.duid.limit.c4fm: 0 = disabled (unlimited), default = 3
+        int duidLimit = Integer.parseInt(System.getProperty("p25.duid.limit.c4fm", "3"));
+        if(duidLimit > 0)
         {
-            mMessageFramer.setMaxConsecutiveDuidCorrections(duidLimit == 0 ? Integer.MAX_VALUE : duidLimit);
-        }
-        else
-        {
-            mMessageFramer.setMaxConsecutiveDuidCorrections(0);
+            mMessageFramer.setMaxConsecutiveDuidCorrections(duidLimit);
         }
         mMessageProcessor.setMessageListener(getMessageListener());
         mSymbolProcessor = new P25P1DemodulatorC4FM(mMessageFramer, this);
