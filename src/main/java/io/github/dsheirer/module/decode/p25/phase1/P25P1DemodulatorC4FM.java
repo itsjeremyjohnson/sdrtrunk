@@ -115,6 +115,19 @@ public class P25P1DemodulatorC4FM
     }
 
     /**
+     * Cold-start reset when a transmission boundary is detected (silence → signal).
+     * Resets equalizer (PLL, gain), timing adjustments, and sync tracking so the
+     * demodulator starts fresh for the new transmission.
+     */
+    public void coldStartReset()
+    {
+        mEqualizer.reset();
+        mSamplePointAdjustment = 0;
+        mSymbolsSinceLastSync = 0;
+        mFineSync = false;
+    }
+
+    /**
      * Primary input method for receiving a stream of demodulated samples to process into symbols.
      * @param samples to process
      */

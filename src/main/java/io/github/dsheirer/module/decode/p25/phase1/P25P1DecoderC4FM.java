@@ -78,6 +78,9 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     private static final int SYMBOL_RATE = 4800;
     private static final Map<Double,float[]> BASEBAND_FILTERS = new HashMap<>();
 
+    private static final float ENERGY_EMA_FACTOR = 0.001f;
+    private static final float ENERGY_SILENCE_RATIO = 0.10f;
+
     private final P25P1DemodulatorC4FM mSymbolProcessor;
     private final P25P1MessageFramer mMessageFramer = new P25P1MessageFramer();
     private final P25P1MessageProcessor mMessageProcessor = new P25P1MessageProcessor();
@@ -89,6 +92,13 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     private IRealFilter mBasebandFilterQ;
     private IRealFilter mPulseShapingFilterI;
     private IRealFilter mPulseShapingFilterQ;
+
+    // Transmission boundary detection — mirrors LSMv2 pattern
+    private float mEnergyAverage = 0;
+    private float mPeakEnergy = 0;
+    private boolean mInSilence = true;
+    private int mSilenceSampleCount = 0;
+    private int mSilenceSamplesThreshold = 2500; // ~100ms at 25kHz decimated rate, updated in setSampleRate()
 
     @Override
     public DecoderType getDecoderType()
@@ -163,6 +173,9 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         mSymbolProcessor.setSamplesPerSymbol(mDemodulator.getSamplesPerSymbol());
         mMessageFramer.setListener(mMessageProcessor);
         mMessageProcessor.setMessageListener(getMessageListener());
+
+        // ~100ms of silence at the decimated sample rate triggers boundary detection
+        mSilenceSamplesThreshold = (int)(decimatedSampleRate * 0.1f);
     }
 
     /**
@@ -172,13 +185,14 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     @Override
     public void receive(ComplexSamples samples)
     {
-        //Update the message framer with the timestamp from the incoming sample buffer.
         mMessageFramer.setTimestamp(samples.timestamp());
 
         float[] i = mDecimationFilterI.decimateReal(samples.i());
         float[] q = mDecimationFilterQ.decimateReal(samples.q());
 
-        //Process buffer for channel power measurements
+        // Detect transmission boundaries on raw decimated samples (before filtering distorts energy)
+        detectTransmissionBoundary(i, q);
+
         mPowerMonitor.process(i, q);
 
         i = mBasebandFilterI.filter(i);
@@ -187,11 +201,55 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         i = mPulseShapingFilterI.filter(i);
         q = mPulseShapingFilterQ.filter(q);
 
-        // PI/4 DQPSK differential demodulation
         float[] demodulated = mDemodulator.demodulate(i, q);
-
-        //Process demodulated samples into symbols and apply message sync detection and framing.
         mSymbolProcessor.process(demodulated);
+    }
+
+    /**
+     * Monitors energy on raw decimated I/Q samples to detect transmission boundaries.
+     * When sustained silence is followed by signal return, triggers a cold-start reset
+     * of the demodulator and framer to clear accumulated noise state.
+     * Mirrors the proven pattern in P25P1DecoderLSMv2.detectTransmissionBoundary().
+     */
+    private void detectTransmissionBoundary(float[] i, float[] q)
+    {
+        for(int idx = 0; idx < i.length; idx++)
+        {
+            float energy = (i[idx] * i[idx]) + (q[idx] * q[idx]);
+            mEnergyAverage += (energy - mEnergyAverage) * ENERGY_EMA_FACTOR;
+
+            if(mEnergyAverage > mPeakEnergy)
+            {
+                mPeakEnergy = mEnergyAverage;
+            }
+            else
+            {
+                mPeakEnergy *= 0.99999f;
+            }
+
+            float silenceThreshold = mPeakEnergy * ENERGY_SILENCE_RATIO;
+
+            if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
+            {
+                mSilenceSampleCount++;
+                if(mSilenceSampleCount >= mSilenceSamplesThreshold)
+                {
+                    mInSilence = true;
+                }
+            }
+            else
+            {
+                if(mInSilence && mPeakEnergy > 0)
+                {
+                    mSymbolProcessor.coldStartReset();
+                    mMessageFramer.coldStartReset();
+                    mMessageFramer.setBoundaryRecoveryActive(true);
+                    mMessageFramer.setInitialAcquisitionActive(true);
+                    mInSilence = false;
+                }
+                mSilenceSampleCount = 0;
+            }
+        }
     }
 
     /**

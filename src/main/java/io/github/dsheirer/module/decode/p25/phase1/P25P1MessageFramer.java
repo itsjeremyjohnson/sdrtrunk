@@ -1055,8 +1055,18 @@ public class P25P1MessageFramer
      */
     public void coldStartReset()
     {
-        // NAC tracker intentionally NOT reset - same site/channel typically has same NAC
-        // mNACTracker.reset();
+        mDetectedNAC = 0;
+        mDetectedDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
+        mPreviousDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
+        mFlywheelActive = false;
+        mFlywheelConsecutiveMisses = 0;
+        mFlywheelAssembly = false;
+        mConsecutiveDuidCorrections = 0;
+        mMessageAssembler = null;
+        mMessageAssemblyRequired = false;
+        mSyncDetected = false;
+        mNIDPointer = 0;
+        // NAC tracker NOT reset — preserves learned NAC for known channels
     }
 
     /**
