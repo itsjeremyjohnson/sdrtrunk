@@ -21,54 +21,91 @@ package io.github.dsheirer.module.decode.p25.phase1;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
- * Lightweight P25 pipeline diagnostics. Writes structured events to a dedicated log file
- * when enabled via system property -Dp25.diag=true. Zero cost when disabled.
+ * P25 pipeline diagnostics with per-channel log files.
+ * Each enabled channel gets its own log file under {SDRTrunk logs}/p25_logs/.
+ * Zero cost for channels with diagnostics disabled.
  *
- * Each line: timestamp | channel | stage | event | detail
- *
- * Enable: add -Dp25.diag=true to JVM args (or set in SDRTrunk system properties)
- * Output: p25-pipeline-diag.log in the current working directory
+ * Enabled via the "Pipeline Diagnostics" toggle in the P25 Phase 1 channel editor.
+ * File location: {SDRTrunk logs dir}/p25_logs/p25-diag-{ChannelName}.log
  */
 public class P25PipelineDiagnostics
 {
-    private static final boolean ENABLED = Boolean.getBoolean("p25.diag");
-    private static final String DIAG_FILE = System.getProperty("p25.diag.file", "p25-pipeline-diag.log");
+    private static final Logger mLog = LoggerFactory.getLogger(P25PipelineDiagnostics.class);
+    private static final String SUBDIR = "p25_logs";
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
         .withZone(ZoneId.systemDefault());
-    private static PrintWriter sWriter;
+    private static final Map<String, PrintWriter> CHANNEL_WRITERS = new ConcurrentHashMap<>();
 
-    static
+    /**
+     * Enable diagnostics for a channel. Creates a per-channel log file.
+     * @param channelName the channel name (used in the log filename)
+     * @param logsDirectory the SDRTrunk application logs directory
+     */
+    public static void enableChannel(String channelName, Path logsDirectory)
     {
-        if(ENABLED)
+        if(channelName == null || logsDirectory == null) return;
+        if(CHANNEL_WRITERS.containsKey(channelName)) return;
+
+        try
         {
-            try
-            {
-                sWriter = new PrintWriter(new FileWriter(DIAG_FILE, true), true);
-                sWriter.println("--- P25 Pipeline Diagnostics started at " + Instant.now() + " ---");
-            }
-            catch(IOException e)
-            {
-                System.err.println("P25 diag: failed to open " + DIAG_FILE + ": " + e.getMessage());
-            }
+            Path p25LogDir = logsDirectory.resolve(SUBDIR);
+            Files.createDirectories(p25LogDir);
+            String safeName = channelName.replaceAll("[^a-zA-Z0-9_\\-]", "_");
+            Path logFile = p25LogDir.resolve("p25-diag-" + safeName + ".log");
+            PrintWriter writer = new PrintWriter(new FileWriter(logFile.toFile(), true), true);
+            writer.printf("--- P25 Pipeline Diagnostics for [%s] started at %s ---%n", channelName, Instant.now());
+            CHANNEL_WRITERS.put(channelName, writer);
+            mLog.info("Pipeline diagnostics enabled for [{}] → {}", channelName, logFile);
+        }
+        catch(IOException e)
+        {
+            mLog.error("Failed to open pipeline diagnostics log for [{}]: {}", channelName, e.getMessage());
+        }
+    }
+
+    /**
+     * Disable diagnostics for a channel. Closes the log file.
+     */
+    public static void disableChannel(String channelName)
+    {
+        if(channelName == null) return;
+        PrintWriter writer = CHANNEL_WRITERS.remove(channelName);
+        if(writer != null)
+        {
+            writer.printf("--- P25 Pipeline Diagnostics for [%s] stopped at %s ---%n", channelName, Instant.now());
+            writer.close();
+            mLog.info("Pipeline diagnostics disabled for [{}]", channelName);
         }
     }
 
     public static boolean isEnabled()
     {
-        return ENABLED && sWriter != null;
+        return !CHANNEL_WRITERS.isEmpty();
+    }
+
+    public static boolean isEnabled(String channel)
+    {
+        return channel != null && CHANNEL_WRITERS.containsKey(channel);
     }
 
     public static void log(String channel, String stage, String event, String detail)
     {
-        if(ENABLED && sWriter != null)
+        PrintWriter writer = CHANNEL_WRITERS.get(channel);
+        if(writer != null)
         {
-            sWriter.printf("%s | %-20s | %-12s | %-24s | %s%n",
-                TIME_FMT.format(Instant.now()), channel, stage, event, detail);
+            writer.printf("%s | %-12s | %-24s | %s%n",
+                TIME_FMT.format(Instant.now()), stage, event, detail);
         }
     }
 

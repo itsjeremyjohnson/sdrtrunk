@@ -79,6 +79,10 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private ToggleButton mLSMToggleButton;
     private ToggleButton mLSMv2ToggleButton;
 
+    // Pipeline diagnostics
+    private ToggleSwitch mPipelineDiagnosticsSwitch;
+    private Label mPipelineDiagnosticsLabel;
+
     // LSM v2 channel options
     private ToggleSwitch mIgnoreEncryptionSwitch;
     private Label mIgnoreEncryptionLabel;
@@ -252,6 +256,16 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
 
             GridPane.setConstraints(getCmaGearShiftMsSpinner(), 1, 7);
             gridPane.getChildren().add(getCmaGearShiftMsSpinner());
+
+            // Pipeline diagnostics (row 8) - visible for all modulations
+            mPipelineDiagnosticsLabel = new Label("Pipeline Diagnostics:");
+            mPipelineDiagnosticsLabel.setTooltip(new Tooltip("Log decode pipeline events to SDRTrunk/logs/p25_logs/ for this channel.\nCaptures messages, state transitions, squelch, and boundary detection."));
+            GridPane.setHalignment(mPipelineDiagnosticsLabel, HPos.RIGHT);
+            GridPane.setConstraints(mPipelineDiagnosticsLabel, 0, 8);
+            gridPane.getChildren().add(mPipelineDiagnosticsLabel);
+
+            GridPane.setConstraints(getPipelineDiagnosticsSwitch(), 1, 8);
+            gridPane.getChildren().add(getPipelineDiagnosticsSwitch());
 
             // Update visibility based on modulation selection
             updateLSMv2OptionsVisibility();
@@ -516,6 +530,18 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         getCmaGearShiftMsSpinner().setManaged(showCmaOptions);
     }
 
+    private ToggleSwitch getPipelineDiagnosticsSwitch()
+    {
+        if(mPipelineDiagnosticsSwitch == null)
+        {
+            mPipelineDiagnosticsSwitch = new ToggleSwitch();
+            mPipelineDiagnosticsSwitch.setDisable(true);
+            mPipelineDiagnosticsSwitch.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+        return mPipelineDiagnosticsSwitch;
+    }
+
     private ToggleSwitch getIgnoreEncryptionSwitch()
     {
         if(mIgnoreEncryptionSwitch == null)
@@ -673,12 +699,14 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         getCmaAcquisitionMuSpinner().setDisable(!enabled);
         getCmaTrackingMuSpinner().setDisable(!enabled);
         getCmaGearShiftMsSpinner().setDisable(!enabled);
+        getPipelineDiagnosticsSwitch().setDisable(!enabled);
 
         if(config instanceof DecodeConfigP25Phase1 decodeConfig)
         {
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
             getNACSpinner().getValueFactory().setValue(decodeConfig.getConfiguredNAC());
+            getPipelineDiagnosticsSwitch().setSelected(decodeConfig.isPipelineDiagnostics());
 
             // LSM v2 options
             getIgnoreEncryptionSwitch().setSelected(decodeConfig.isIgnoreEncryptionState());
@@ -720,6 +748,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getCmaAcquisitionMuSpinner().getValueFactory().setValue(0.0);
             getCmaTrackingMuSpinner().getValueFactory().setValue(0.0);
             getCmaGearShiftMsSpinner().getValueFactory().setValue(0);
+            getPipelineDiagnosticsSwitch().setSelected(false);
         }
     }
 
@@ -740,6 +769,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setConfiguredNAC(getNACSpinner().getValue());
+        config.setPipelineDiagnostics(getPipelineDiagnosticsSwitch().isSelected());
 
         // LSM v2 options
         config.setIgnoreEncryptionState(getIgnoreEncryptionSwitch().isSelected());
