@@ -85,7 +85,6 @@ import io.github.dsheirer.module.decode.p25.P25TrafficChannelManager;
 import io.github.dsheirer.module.decode.p25.audio.P25P1AudioModule;
 import io.github.dsheirer.module.decode.p25.audio.P25P2AudioModule;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
-import io.github.dsheirer.module.decode.p25.phase1.P25PipelineDiagnostics;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderC4FM;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderC4FMv2;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderLSM;
@@ -365,13 +364,6 @@ public class DecoderFactory
         {
             audioModule.setIgnoreEncryptionState(p1Config.isIgnoreEncryptionState());
             audioModule.setMaxImbeErrors(p1Config.getMaxImbeErrors());
-
-            if(p1Config.isPipelineDiagnostics())
-            {
-                mLog.info("Pipeline diagnostics enabled for channel: " + channel.getName());
-                P25PipelineDiagnostics.enableChannel(channel.getName(),
-                    userPreferences.getDirectoryPreference().getDirectoryApplicationLog());
-            }
         }
         modules.add(audioModule);
 

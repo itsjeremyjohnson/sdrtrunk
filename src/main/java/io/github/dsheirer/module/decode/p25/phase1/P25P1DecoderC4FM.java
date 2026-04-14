@@ -232,26 +232,15 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
             if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
             {
                 mSilenceSampleCount++;
-                if(mSilenceSampleCount >= mSilenceSamplesThreshold && !mInSilence)
+                if(mSilenceSampleCount >= mSilenceSamplesThreshold)
                 {
                     mInSilence = true;
-                    if(P25PipelineDiagnostics.isEnabled())
-                    {
-                        P25PipelineDiagnostics.log("C4FM", "BOUNDARY", "ENTER_SILENCE",
-                            String.format("energy=%.2e peak=%.2e", mEnergyAverage, mPeakEnergy));
-                    }
                 }
             }
             else
             {
                 if(mInSilence && mPeakEnergy > 0)
                 {
-                    if(P25PipelineDiagnostics.isEnabled())
-                    {
-                        P25PipelineDiagnostics.log("C4FM", "BOUNDARY", "SILENCE_TO_SIGNAL",
-                            String.format("energy=%.2e peak=%.2e threshold=%.2e silenceSamples=%d",
-                                mEnergyAverage, mPeakEnergy, mPeakEnergy * ENERGY_SILENCE_RATIO, mSilenceSampleCount));
-                    }
                     mSymbolProcessor.coldStartReset();
                     mMessageFramer.coldStartReset();
                     mMessageFramer.setBoundaryRecoveryActive(true);
