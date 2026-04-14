@@ -79,6 +79,8 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private ToggleButton mLSMToggleButton;
     private ToggleButton mLSMv2ToggleButton;
 
+    private ToggleSwitch mPipelineDiagnosticsSwitch;
+
     // LSM v2 channel options
     private ToggleSwitch mIgnoreEncryptionSwitch;
     private Label mIgnoreEncryptionLabel;
@@ -171,6 +173,15 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
 
             GridPane.setConstraints(getNACSpinner(), 1, 1);
             gridPane.getChildren().add(getNACSpinner());
+
+            GridPane.setConstraints(getPipelineDiagnosticsSwitch(), 4, 1);
+            gridPane.getChildren().add(getPipelineDiagnosticsSwitch());
+
+            Label diagLabel = new Label("Pipeline Diagnostics");
+            diagLabel.setTooltip(new Tooltip("Log decode pipeline events to p25-pipeline-diag.log for this channel only."));
+            GridPane.setHalignment(diagLabel, HPos.LEFT);
+            GridPane.setConstraints(diagLabel, 5, 1);
+            gridPane.getChildren().add(diagLabel);
 
             Label modulationHelpLabel = new Label("C4FM: repeaters and non-simulcast trunked.  C4FM v2: C4FM with equalizer for multipath.  LSM: simulcast trunked.  LSM v2: conventional (PTT) CQPSK channels.");
             GridPane.setConstraints(modulationHelpLabel, 0, 2, 6, 1);
@@ -516,6 +527,18 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         getCmaGearShiftMsSpinner().setManaged(showCmaOptions);
     }
 
+    private ToggleSwitch getPipelineDiagnosticsSwitch()
+    {
+        if(mPipelineDiagnosticsSwitch == null)
+        {
+            mPipelineDiagnosticsSwitch = new ToggleSwitch();
+            mPipelineDiagnosticsSwitch.setDisable(true);
+            mPipelineDiagnosticsSwitch.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+        return mPipelineDiagnosticsSwitch;
+    }
+
     private ToggleSwitch getIgnoreEncryptionSwitch()
     {
         if(mIgnoreEncryptionSwitch == null)
@@ -667,6 +690,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         getIgnoreDataCallsButton().setDisable(!enabled);
         getTrafficChannelPoolSizeSpinner().setDisable(!enabled);
         getNACSpinner().setDisable(!enabled);
+        getPipelineDiagnosticsSwitch().setDisable(!enabled);
         getIgnoreEncryptionSwitch().setDisable(!enabled);
         getMaxImbeErrorsSpinner().setDisable(!enabled);
         getMaxBchErrorsSpinner().setDisable(!enabled);
@@ -679,6 +703,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
             getNACSpinner().getValueFactory().setValue(decodeConfig.getConfiguredNAC());
+            getPipelineDiagnosticsSwitch().setSelected(decodeConfig.isPipelineDiagnostics());
 
             // LSM v2 options
             getIgnoreEncryptionSwitch().setSelected(decodeConfig.isIgnoreEncryptionState());
@@ -714,6 +739,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getIgnoreDataCallsButton().setSelected(false);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(0);
             getNACSpinner().getValueFactory().setValue(0);
+            getPipelineDiagnosticsSwitch().setSelected(false);
             getIgnoreEncryptionSwitch().setSelected(false);
             getMaxImbeErrorsSpinner().getValueFactory().setValue(0);
             getMaxBchErrorsSpinner().getValueFactory().setValue(DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT);
@@ -740,6 +766,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setConfiguredNAC(getNACSpinner().getValue());
+        config.setPipelineDiagnostics(getPipelineDiagnosticsSwitch().isSelected());
 
         // LSM v2 options
         config.setIgnoreEncryptionState(getIgnoreEncryptionSwitch().isSelected());

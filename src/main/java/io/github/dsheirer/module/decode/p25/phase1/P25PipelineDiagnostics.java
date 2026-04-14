@@ -24,27 +24,47 @@ import java.io.PrintWriter;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.util.Set;
+import java.util.concurrent.CopyOnWriteArraySet;
 
 /**
- * Lightweight P25 pipeline diagnostics. Writes structured events to a dedicated log file
- * when enabled via system property -Dp25.diag=true. Zero cost when disabled.
+ * P25 pipeline diagnostics with per-channel UI toggle.
+ * Writes structured events to a log file. Zero cost for channels with diagnostics disabled.
  *
- * Each line: timestamp | channel | stage | event | detail
+ * Channels are enabled/disabled at runtime via {@link #enableChannel(String)} and
+ * {@link #disableChannel(String)}, driven by the "Pipeline Diagnostics" toggle
+ * in the P25 Phase 1 channel configuration editor.
  *
- * Enable: add -Dp25.diag=true to JVM args (or set in SDRTrunk system properties)
- * Output: p25-pipeline-diag.log in the current working directory
+ * Each log line: timestamp | channel | stage | event | detail
+ *
+ * Output file: p25-pipeline-diag.log (configurable via -Dp25.diag.file=path)
  */
 public class P25PipelineDiagnostics
 {
-    private static final boolean ENABLED = Boolean.getBoolean("p25.diag");
     private static final String DIAG_FILE = System.getProperty("p25.diag.file", "p25-pipeline-diag.log");
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
         .withZone(ZoneId.systemDefault());
+    private static final Set<String> ENABLED_CHANNELS = new CopyOnWriteArraySet<>();
     private static PrintWriter sWriter;
 
-    static
+    public static synchronized void enableChannel(String channelName)
     {
-        if(ENABLED)
+        if(channelName == null) return;
+        ENABLED_CHANNELS.add(channelName);
+        ensureWriter();
+        log(channelName, "DIAG", "ENABLED", "Pipeline diagnostics enabled for channel");
+    }
+
+    public static void disableChannel(String channelName)
+    {
+        if(channelName == null) return;
+        log(channelName, "DIAG", "DISABLED", "Pipeline diagnostics disabled for channel");
+        ENABLED_CHANNELS.remove(channelName);
+    }
+
+    private static synchronized void ensureWriter()
+    {
+        if(sWriter == null)
         {
             try
             {
@@ -60,12 +80,17 @@ public class P25PipelineDiagnostics
 
     public static boolean isEnabled()
     {
-        return ENABLED && sWriter != null;
+        return !ENABLED_CHANNELS.isEmpty() && sWriter != null;
+    }
+
+    public static boolean isEnabled(String channel)
+    {
+        return channel != null && ENABLED_CHANNELS.contains(channel) && sWriter != null;
     }
 
     public static void log(String channel, String stage, String event, String detail)
     {
-        if(ENABLED && sWriter != null)
+        if(sWriter != null && ENABLED_CHANNELS.contains(channel))
         {
             sWriter.printf("%s | %-20s | %-12s | %-24s | %s%n",
                 TIME_FMT.format(Instant.now()), channel, stage, event, detail);

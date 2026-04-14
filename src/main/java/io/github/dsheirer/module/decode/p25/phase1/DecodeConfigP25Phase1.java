@@ -82,6 +82,9 @@ public class DecodeConfigP25Phase1 extends DecodeConfigP25
     private float mCmaTrackingMu = 0.001f;   // Stable tracking, proven +69% LDUs on ROC W simulcast
     private int mCmaGearShiftMs = 200;        // 200ms acquisition before switching to tracking
 
+    // Pipeline diagnostics — per-channel toggle
+    private boolean mPipelineDiagnostics = false;
+
     // C4FM V2 configuration
     private float mGardnerBandwidth = 0.01f;
     private float mAfcAlpha = 0.01f;
@@ -247,6 +250,17 @@ public class DecodeConfigP25Phase1 extends DecodeConfigP25
     public void setIgnoreEncryptionState(boolean ignore)
     {
         mIgnoreEncryptionState = ignore;
+    }
+
+    @JacksonXmlProperty(isAttribute = true, localName = "pipelineDiagnostics")
+    public boolean isPipelineDiagnostics()
+    {
+        return mPipelineDiagnostics;
+    }
+
+    public void setPipelineDiagnostics(boolean enabled)
+    {
+        mPipelineDiagnostics = enabled;
     }
 
     /**
