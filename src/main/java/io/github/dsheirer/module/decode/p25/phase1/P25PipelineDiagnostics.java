@@ -53,7 +53,11 @@ public class P25PipelineDiagnostics
      */
     public static void enableChannel(String channelName, Path logsDirectory)
     {
-        if(channelName == null || logsDirectory == null) return;
+        if(channelName == null || logsDirectory == null)
+        {
+            System.out.println("P25 diag: enableChannel called with null — channel=" + channelName + " dir=" + logsDirectory);
+            return;
+        }
         if(CHANNEL_WRITERS.containsKey(channelName)) return;
 
         try
@@ -61,6 +65,7 @@ public class P25PipelineDiagnostics
             Files.createDirectories(logsDirectory);
             String safeName = channelName.replaceAll("[^a-zA-Z0-9_\\-]", "_");
             Path logFile = logsDirectory.resolve("p25-diag-" + safeName + ".log");
+            System.out.println("P25 diag: enabling diagnostics for [" + channelName + "] → " + logFile);
             PrintWriter writer = new PrintWriter(new FileWriter(logFile.toFile(), true), true);
             writer.printf("--- P25 Pipeline Diagnostics for [%s] started at %s ---%n", channelName, Instant.now());
             CHANNEL_WRITERS.put(channelName, writer);

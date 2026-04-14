@@ -368,6 +368,7 @@ public class DecoderFactory
 
             if(p1Config.isPipelineDiagnostics())
             {
+                mLog.info("Pipeline diagnostics enabled for channel: " + channel.getName());
                 P25PipelineDiagnostics.enableChannel(channel.getName(),
                     userPreferences.getDirectoryPreference().getDirectoryApplicationLog());
             }
