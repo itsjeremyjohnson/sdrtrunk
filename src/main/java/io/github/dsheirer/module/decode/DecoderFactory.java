@@ -368,7 +368,8 @@ public class DecoderFactory
 
             if(p1Config.isPipelineDiagnostics())
             {
-                P25PipelineDiagnostics.enableChannel(channel.getName());
+                P25PipelineDiagnostics.enableChannel(channel.getName(),
+                    userPreferences.getDirectoryPreference().getDirectoryApplicationLog());
             }
         }
         modules.add(audioModule);
