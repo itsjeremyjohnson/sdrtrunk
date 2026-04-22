@@ -702,6 +702,41 @@ tasks.register('runDecodeScore', JavaExec) {
 }
 
 /**
+ * MDC1200 replay test: feeds a mono PCM WAV of FM-demodulated audio through the MDC1200 decoder.
+ * Usage: ./gradlew runMdcReplay -Pwav=/path/to/sample.wav
+ */
+tasks.register('runMdcReplay', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.mdc1200.MDCDecoderReplayTest'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    if(project.hasProperty('syncThreshold')) {
+        systemProperty 'mdc.sync.threshold', project.property('syncThreshold')
+    }
+    if(project.hasProperty('export')) {
+        systemProperty 'mdc.export.audio', project.property('export')
+    }
+    if(project.hasProperty('iqScale')) {
+        systemProperty 'mdc.iq.scale', project.property('iqScale')
+    }
+    if(project.hasProperty('swapIQ')) {
+        systemProperty 'mdc.iq.swap', 'true'
+    }
+    def argsList = []
+    if(project.hasProperty('wav')) {
+        argsList.add(project.property('wav'))
+    }
+    if(project.hasProperty('dump')) {
+        argsList.add('dump')
+    }
+    args = argsList
+}
+
+/**
  * Pipeline replay diagnostic: feeds baseband WAV through the FULL live ProcessingChain
  * (DecoderState, StateMachine, SquelchController, AudioModule) to diagnose live-only bugs.
  * Usage: ./gradlew runPipelineReplay -Psamples=path -Pfreq=154175000 -Pnac=2311 [-Pmod=C4FM] [-Pjmbe=path]
