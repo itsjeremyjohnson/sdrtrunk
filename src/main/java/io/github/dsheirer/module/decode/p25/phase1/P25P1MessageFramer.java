@@ -50,7 +50,14 @@ public class P25P1MessageFramer
 {
     private static final int DIBIT_LENGTH_NID = 33; //32 dibits (64 bits) +1 status
     private static final float SYNC_DETECTION_THRESHOLD = 60;
+    private static final float SYNC_FALLBACK_THRESHOLD = 52;     // Strategy 1: Conservative fallback for weak signals
+    private static final float SYNC_FADE_THRESHOLD = 48;          // Strategy 3: Lower threshold during fade
+    private static final float SYNC_INITIAL_THRESHOLD = 38;       // Strategy 4: Initial acquisition for weak preambles
+    private static final float SYNC_ULTRA_INITIAL_THRESHOLD = 34; // Strategy 4: Ultra-low for very first 50ms
+    private static final int RECOVERY_WINDOW_SYMBOLS = 240;       // Strategy 2: 50ms recovery window (first HDU sync)
+    private static final int INITIAL_ACQUISITION_WINDOW_SYMBOLS = 960;  // Strategy 4: 200ms at 4800 symbols/sec
     private final BCH_63_16_23_P25 mBCHDecoder = new BCH_63_16_23_P25();
+    private int mMaxBchErrors = 11; // Default: full T=11 capability (no filtering)
     private static final IntField NAC_FIELD = IntField.length12(0);
     private static final IntField DUID_FIELD = IntField.length4(12);
     private final NACTracker mNACTracker = new NACTracker();
@@ -69,6 +76,9 @@ public class P25P1MessageFramer
     private int mStatusSymbolDibitCounter = 36; //Set to 1-greater than the suppression trigger at 35 dibits
     private long mReferenceTimestamp = 0;
     private P25P1MessageAssembler mMessageAssembler;
+    //Package-private for testing: when true, blocks sync detections during active assembly (upstream audio squeak fix).
+    //When false, accepts all syncs unconditionally (pre-merge behavior). Default true preserves upstream behavior.
+    boolean mSyncGuardEnabled = true;
     private P25P1DataUnitID mPreviousDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
     private P25P1DataUnitID mDetectedDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
     private int mDetectedNAC = 0;
@@ -76,6 +86,39 @@ public class P25P1MessageFramer
     private final P25P1ChannelStatusProcessor mChannelStatusProcessor = new P25P1ChannelStatusProcessor();
     private PDUSequence mPDUSequence;
     private int mDebugSymbolCount = 0;
+
+    // Diagnostic counters for v2 analysis
+    private int mSyncDetectionCount = 0;
+    private int mNIDDecodeSuccessCount = 0;
+    private int mNIDDecodeFailCount = 0;
+    int mSyncBlockedCount = 0; //Package-private for testing: count of syncs blocked by the guard
+
+    // Strategy 1: Adaptive sync threshold based on signal energy
+    private ISignalEnergyProvider mEnergyProvider;
+    private int mFallbackSyncCount = 0;
+
+    // Strategy 2: Boundary recovery window - use hard sync after transmission boundary
+    private boolean mBoundaryRecoveryActive = false;
+    private int mRecoverySymbolCount = 0;
+    private int mRecoverySyncCount = 0;
+
+    // Strategy 3: Fade recovery - lower threshold when signal is fading
+    private boolean mFadeRecoveryActive = false;
+    private int mFadeRecoverySyncCount = 0;
+
+    // Strategy 4: Initial acquisition - lower threshold for weak preambles
+    private boolean mInitialAcquisitionActive = false;
+    private int mAcquisitionWindowSymbolCount = 0;
+    private int mInitialAcquisitionSyncCount = 0;
+
+    // Strategy 5: Sync flywheel — predict next DUID when sync is lost but frame timing is known
+    private static final int MAX_FLYWHEEL_MISSES = 3;
+    private boolean mFlywheelActive = false;
+    private boolean mFlywheelAssembly = false; // true when current assembler is from flywheel prediction
+    private int mFlywheelConsecutiveMisses = 0;
+    private int mFlywheelAttemptCount = 0;
+    private int mFlywheelSuccessCount = 0;
+    private int mFlywheelMissCount = 0;
 
     /**
      * Constructs an instance
@@ -86,20 +129,111 @@ public class P25P1MessageFramer
 
     /**
      * Process soft symbol and apply soft symbol sync pattern detection.
+     * Uses adaptive sync thresholds based on signal energy and recovery state.
+     *
      * @param softSymbol demodulated soft symbol
      * @param symbol as decision from the soft symbol
      * @return true if a sync pattern is detected and the following NID is decoded correctly.
      */
     public boolean processWithSoftSyncDetect(float softSymbol, Dibit symbol)
     {
+        // Track recovery window timeout (Strategy 2)
+        if(mBoundaryRecoveryActive)
+        {
+            mRecoverySymbolCount++;
+            if(mRecoverySymbolCount >= RECOVERY_WINDOW_SYMBOLS)
+            {
+                mBoundaryRecoveryActive = false;
+            }
+        }
+
+        // Track initial acquisition window timeout (Strategy 4)
+        if(mInitialAcquisitionActive)
+        {
+            mAcquisitionWindowSymbolCount++;
+            if(mAcquisitionWindowSymbolCount >= INITIAL_ACQUISITION_WINDOW_SYMBOLS)
+            {
+                mInitialAcquisitionActive = false;
+            }
+        }
+
         boolean validNIDDetected = process(symbol);
 
-        if(mSoftSyncDetector.process(softSymbol) > SYNC_DETECTION_THRESHOLD)
+        float syncScore = mSoftSyncDetector.process(softSymbol);
+
+        // Primary threshold - standard sync detection
+        if(syncScore > SYNC_DETECTION_THRESHOLD)
         {
             syncDetected();
         }
+        // Strategy 4: Initial acquisition with adaptive threshold for weak preambles
+        else if(mInitialAcquisitionActive && syncScore > getCurrentInitialThreshold())
+        {
+            syncDetected();
+            mInitialAcquisitionSyncCount++;
+        }
+        // Strategy 3: Fade recovery - even lower threshold during signal fade
+        else if(mFadeRecoveryActive && syncScore > SYNC_FADE_THRESHOLD)
+        {
+            syncDetected();
+            mFadeRecoverySyncCount++;
+            mFadeRecoveryActive = false; // One-shot
+        }
+        // Strategy 1: Fallback threshold when signal energy confirms transmission present
+        else if(syncScore > SYNC_FALLBACK_THRESHOLD &&
+                mEnergyProvider != null &&
+                mEnergyProvider.isSignalPresent())
+        {
+            syncDetected();
+            mFallbackSyncCount++;
+        }
+        // Strategy 2: Hard sync during boundary recovery (more bit-error tolerant)
+        else if(mBoundaryRecoveryActive && mHardSyncDetector.process(symbol))
+        {
+            syncDetected();
+            mRecoverySyncCount++;
+        }
 
         return validNIDDetected;
+    }
+
+    /**
+     * Gets the current threshold for initial acquisition mode with adaptive ramping.
+     * Ramps from 34 (ultra-initial) to 38 to 48 to 52 over 200ms in 4 phases.
+     * This aggressive ramping gives weak preamble transmissions more opportunity to sync.
+     *
+     * @return the current threshold based on acquisition window progress
+     */
+    private float getCurrentInitialThreshold()
+    {
+        if(!mInitialAcquisitionActive)
+        {
+            return SYNC_FALLBACK_THRESHOLD;
+        }
+
+        // Calculate progress through acquisition window (0 to 1)
+        float progress = (float)mAcquisitionWindowSymbolCount / INITIAL_ACQUISITION_WINDOW_SYMBOLS;
+
+        if(progress < 0.25f)
+        {
+            // First quarter (0-50ms): ultra-low threshold (34) for very weak starts
+            return SYNC_ULTRA_INITIAL_THRESHOLD;
+        }
+        else if(progress < 0.50f)
+        {
+            // Second quarter (50-100ms): initial threshold (38)
+            return SYNC_INITIAL_THRESHOLD;
+        }
+        else if(progress < 0.75f)
+        {
+            // Third quarter (100-150ms): fade threshold (48)
+            return SYNC_FADE_THRESHOLD;
+        }
+        else
+        {
+            // Final quarter (150-200ms): fallback threshold (52)
+            return SYNC_FALLBACK_THRESHOLD;
+        }
     }
 
     /**
@@ -120,14 +254,44 @@ public class P25P1MessageFramer
 
     /**
      * Externally triggered sync detection.
+     *
+     * The sync guard (de0e722f) blocks false syncs that arrive mid-assembly to prevent audio squeaks caused by
+     * premature force-completion of LDU assemblers.  However, the guard must allow syncs during PLACEHOLDER assembly
+     * to enable recovery from sample drops.  Without this exception, dropped samples cause a cascading failure:
+     * corrupted assembler → placeholder assembler → blocked syncs → new placeholder → blocked syncs, with recovery
+     * only possible in a ~12ms window between placeholders (~3% chance per message boundary).  This can lock out
+     * sync recovery for 10+ seconds, corrupting an entire call's audio.
+     *
+     * The fix: allow sync detection when the current assembler is a speculative PLACEHOLDER (NID decode failed).
+     * Real message assembly (LDU, HDU, TDU, etc.) remains protected by the guard.
      */
     public void syncDetected()
     {
-        //Only allow sync detection processing if we're not currently assembling a message
-        if(mMessageAssembler == null)
+        //When the sync guard is disabled, accept all sync detections unconditionally (pre-merge behavior).
+        if(!mSyncGuardEnabled)
         {
             mSyncDetected = true;
             mNIDPointer = 0;
+            mSyncDetectionCount++;
+            return;
+        }
+
+        //Allow sync detection when no assembler is active, when the assembler is a speculative placeholder,
+        //or when the assembler is a flywheel prediction (so real syncs can interrupt flywheel).
+        //Placeholders are created when NID decode fails — they collect data speculatively but are discarded on
+        //dispatch.  Blocking syncs during placeholder assembly prevents recovery from sample drops/discontinuities
+        //that corrupt the demodulator state.  Real message assembly (known DUIDs) remains protected.
+        if(mMessageAssembler == null ||
+           mMessageAssembler.getDataUnitID() == P25P1DataUnitID.PLACE_HOLDER ||
+           mFlywheelAssembly)
+        {
+            mSyncDetected = true;
+            mNIDPointer = 0;
+            mSyncDetectionCount++;
+        }
+        else
+        {
+            mSyncBlockedCount++;
         }
     }
 
@@ -197,12 +361,37 @@ public class P25P1MessageFramer
             {
                 mMessageAssembler = new P25P1MessageAssembler(mDetectedNAC, mDetectedDataUnitID);
                 mMessageAssemblyRequired = false;
+                mFlywheelAssembly = false;
+            }
+            //Strategy 5: Flywheel — predict DUID when sync is lost but frame timing is known
+            else if(mFlywheelActive && mFlywheelConsecutiveMisses < MAX_FLYWHEEL_MISSES && mDetectedNAC > 0)
+            {
+                P25P1DataUnitID predicted = predictNextDUID(mPreviousDataUnitID);
+
+                if(predicted != null)
+                {
+                    mDetectedDataUnitID = predicted;
+                    mMessageAssembler = new P25P1MessageAssembler(mDetectedNAC, predicted);
+                    mFlywheelAssembly = true;
+                    mFlywheelAttemptCount++;
+                    mFlywheelConsecutiveMisses++;
+                    mFlywheelMissCount++;
+                }
+                else
+                {
+                    //Can't predict — fall through to placeholder
+                    mDetectedDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
+                    mMessageAssembler = new P25P1MessageAssembler(mDetectedNAC, mDetectedDataUnitID);
+                    mFlywheelAssembly = false;
+                    mFlywheelActive = false;
+                }
             }
             else if(mDetectedNAC > 0)
             {
                 //Start a placeholder message assembly.  If it completes before another sync detect, throw it away
                 mDetectedDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
                 mMessageAssembler = new P25P1MessageAssembler(mDetectedNAC, mDetectedDataUnitID);
+                mFlywheelAssembly = false;
             }
         }
         else if(mDibitCounter >= 4800) //4800x (1-sec).
@@ -335,6 +524,12 @@ public class P25P1MessageFramer
 
         if(message != null)
         {
+            // Mark messages whose DUID was corrected by context-aware prediction.
+            // These are noise-derived LDUs after a missed TDU — audio should be suppressed.
+            if(mConsecutiveDuidCorrections > 0)
+            {
+                message.setDuidCorrected(true);
+            }
             broadcast(message);
         }
         else
@@ -705,6 +900,24 @@ public class P25P1MessageFramer
      * @param dataUnitID decoded from the NID
      * @param detectedBitErrors across the SYNc and NID
      */
+    private int mDuidCorrectionCount = 0;
+    private int mMaxConsecutiveDuidCorrections = Integer.MAX_VALUE; // Default: unlimited for backward compat
+    private int mConsecutiveDuidCorrections = 0;
+
+    public int getDuidCorrectionCount() { return mDuidCorrectionCount; }
+
+    /**
+     * Sets the maximum number of consecutive DUID corrections before accepting TDU as-is.
+     * After a missed TDU, mPreviousDataUnitID stays as LDU, causing infinite correction cycle
+     * that produces fake voice frames from noise. This limit breaks the cycle.
+     *
+     * @param limit max consecutive corrections (3 for C4FM, 10 for LSMv2)
+     */
+    public void setMaxConsecutiveDuidCorrections(int limit)
+    {
+        mMaxConsecutiveDuidCorrections = limit;
+    }
+
     public void nidDetected(int nac, P25P1DataUnitID dataUnitID, int detectedBitErrors)
     {
         mDetectedDataUnitID = dataUnitID;
@@ -715,12 +928,68 @@ public class P25P1MessageFramer
             mDetectedDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
         }
 
+        //Context-aware DUID correction: BCH error correction can produce a wrong DUID (commonly TDU
+        //when the actual frame is LDU). This fixes the "TDU flood" problem where voice frames are
+        //misidentified as terminators during active calls.
+        //
+        //Sequence prediction: if previous DUID was HDU/LDU1/LDU2, predict the next DUID.
+        //This only triggers when there's positive evidence of an active voice call, avoiding
+        //false LDU assembly from noise during idle channel periods.
+        //
+        //Consecutive correction limit: After a missed TDU, mPreviousDataUnitID stays as LDU, causing
+        //infinite correction cycle from noise. When the limit is reached, accept TDU and reset.
+        if(mDetectedDataUnitID == P25P1DataUnitID.TERMINATOR_DATA_UNIT)
+        {
+            if(mConsecutiveDuidCorrections < mMaxConsecutiveDuidCorrections)
+            {
+                P25P1DataUnitID predicted = predictNextDUID(mPreviousDataUnitID);
+
+                if(predicted != null)
+                {
+                    mDetectedDataUnitID = predicted;
+                    mDuidCorrectionCount++;
+                    mConsecutiveDuidCorrections++;
+                }
+            }
+            else
+            {
+                // Limit reached — accept TDU and break the correction cycle
+                mConsecutiveDuidCorrections = 0;
+            }
+        }
+
+        // Reset consecutive correction counter on uncorrected voice DUIDs (genuine voice frames)
+        if(mDetectedDataUnitID == P25P1DataUnitID.HEADER_DATA_UNIT ||
+           mDetectedDataUnitID == P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1 ||
+           mDetectedDataUnitID == P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_2)
+        {
+            if(dataUnitID == mDetectedDataUnitID)
+            {
+                // BCH decoded this DUID without correction — genuine voice frame
+                mConsecutiveDuidCorrections = 0;
+            }
+        }
+
         if(mDetectedDataUnitID != P25P1DataUnitID.PLACE_HOLDER)
         {
             mDetectedNAC = nac;
         }
 
         mDetectedSyncBitErrors = detectedBitErrors;
+
+        //Strategy 5: Activate flywheel on valid NID decode, reset consecutive miss counter
+        if(mDetectedDataUnitID != P25P1DataUnitID.PLACE_HOLDER)
+        {
+            mFlywheelActive = true;
+            if(mFlywheelAssembly)
+            {
+                //A real sync arrived during flywheel assembly — count the flywheel as successful
+                mFlywheelSuccessCount++;
+                mFlywheelMissCount--;
+            }
+            mFlywheelConsecutiveMisses = 0;
+            mFlywheelAssembly = false;
+        }
 
         //If there is a message assembler (still) active, force it to complete
         if(mMessageAssembler != null)
@@ -777,6 +1046,249 @@ public class P25P1MessageFramer
     }
 
     /**
+     * Resets transmission-dependent state for cold-start scenarios.  Called when a new transmission is detected
+     * after a period of silence.
+     *
+     * Note: We intentionally do NOT reset the NAC tracker here because on conventional PTT channels, the same
+     * site transmits on the same frequency with the same NAC. Preserving the tracked NAC improves NID error
+     * correction by providing NAC assist for the first few NIDs after a transmission boundary.
+     */
+    public void coldStartReset()
+    {
+        mDetectedNAC = 0;
+        mDetectedDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
+        mPreviousDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
+        mFlywheelActive = false;
+        mFlywheelConsecutiveMisses = 0;
+        mFlywheelAssembly = false;
+        mConsecutiveDuidCorrections = 0;
+        mMessageAssembler = null;
+        mMessageAssemblyRequired = false;
+        mSyncDetected = false;
+        mNIDPointer = 0;
+        // NAC tracker NOT reset — preserves learned NAC for known channels
+    }
+
+    /**
+     * Sets the signal energy provider for adaptive sync threshold detection (Strategy 1).
+     * @param provider that can report current signal energy state
+     */
+    public void setEnergyProvider(ISignalEnergyProvider provider)
+    {
+        mEnergyProvider = provider;
+    }
+
+    /**
+     * Activates boundary recovery mode which uses hard sync detection in parallel
+     * with soft sync for improved sync acquisition after transmission boundaries (Strategy 2).
+     * @param active true to activate recovery mode
+     */
+    public void setBoundaryRecoveryActive(boolean active)
+    {
+        mBoundaryRecoveryActive = active;
+        mRecoverySymbolCount = 0;
+    }
+
+    /**
+     * Activates fade recovery mode which uses a lower sync threshold when
+     * signal energy is fading at transmission end (Strategy 3).
+     * @param active true to activate fade recovery
+     */
+    public void setFadeRecoveryActive(boolean active)
+    {
+        mFadeRecoveryActive = active;
+    }
+
+    /**
+     * Activates initial acquisition mode which uses a lower, ramping sync threshold
+     * during the first 100ms of a new transmission to recover weak preambles (Strategy 4).
+     * @param active true to activate initial acquisition mode
+     */
+    public void setInitialAcquisitionActive(boolean active)
+    {
+        mInitialAcquisitionActive = active;
+        mAcquisitionWindowSymbolCount = 0;
+    }
+
+    /**
+     * Checks if initial acquisition mode is currently active.
+     * @return true if in initial acquisition window
+     */
+    public boolean isInitialAcquisitionActive()
+    {
+        return mInitialAcquisitionActive;
+    }
+
+    /**
+     * Sets a user-configured NAC value for this channel. When set, this NAC will be used for
+     * NID error correction assistance, improving decode reliability on known channels.
+     *
+     * @param nac the configured NAC value, or 0 to use automatic tracking
+     */
+    public void setConfiguredNAC(int nac)
+    {
+        mNACTracker.setConfiguredNAC(nac);
+    }
+
+    /**
+     * Gets the user-configured NAC value, or 0 if not configured.
+     */
+    public int getConfiguredNAC()
+    {
+        return mNACTracker.getConfiguredNAC();
+    }
+
+    /**
+     * Predicts the next DUID based on the P25 superframe sequence.
+     * Returns null if prediction is not possible (end of voice, control channel, unknown state).
+     *
+     * P25 voice superframe: HDU → LDU1 → LDU2 → LDU1 → LDU2 → ... → TDU/TDULC
+     * The flywheel only predicts within the LDU1↔LDU2 alternation (both have identical frame length).
+     */
+    private P25P1DataUnitID predictNextDUID(P25P1DataUnitID previousDUID)
+    {
+        return switch(previousDUID)
+        {
+            case HEADER_DATA_UNIT -> P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1;
+            case LOGICAL_LINK_DATA_UNIT_1 -> P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_2;
+            case LOGICAL_LINK_DATA_UNIT_2 -> P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1;
+            default -> null; //TDU, TDULC, TSBK, PDU, PLACEHOLDER — can't predict
+        };
+    }
+
+    /**
+     * Returns diagnostic statistics for analysis.
+     */
+    public String getDiagnostics()
+    {
+        double nidSuccessRate = mSyncDetectionCount > 0 ?
+                (double) mNIDDecodeSuccessCount / mSyncDetectionCount * 100.0 : 0;
+        return String.format("Sync: %d (initial: %d, fallback: %d, recovery: %d, fade: %d) | " +
+                        "NID success: %d (%.1f%%) | NID fail: %d | " +
+                        "Flywheel: %d attempts, %d success, %d miss",
+                mSyncDetectionCount, mInitialAcquisitionSyncCount, mFallbackSyncCount,
+                mRecoverySyncCount, mFadeRecoverySyncCount,
+                mNIDDecodeSuccessCount, nidSuccessRate, mNIDDecodeFailCount,
+                mFlywheelAttemptCount, mFlywheelSuccessCount, mFlywheelMissCount);
+    }
+
+    /**
+     * Returns the count of fallback sync detections (Strategy 1).
+     */
+    public int getFallbackSyncCount()
+    {
+        return mFallbackSyncCount;
+    }
+
+    /**
+     * Returns the count of recovery sync detections (Strategy 2).
+     */
+    public int getRecoverySyncCount()
+    {
+        return mRecoverySyncCount;
+    }
+
+    /**
+     * Returns the count of fade recovery sync detections (Strategy 3).
+     */
+    public int getFadeRecoverySyncCount()
+    {
+        return mFadeRecoverySyncCount;
+    }
+
+    /**
+     * Returns the count of initial acquisition sync detections (Strategy 4).
+     */
+    public int getInitialAcquisitionSyncCount()
+    {
+        return mInitialAcquisitionSyncCount;
+    }
+
+    /**
+     * Returns the count of successful NID decodes.
+     */
+    public int getNIDDecodeSuccessCount()
+    {
+        return mNIDDecodeSuccessCount;
+    }
+
+    /**
+     * Returns the count of failed NID decodes.
+     */
+    public int getNIDDecodeFailCount()
+    {
+        return mNIDDecodeFailCount;
+    }
+
+    /**
+     * Returns the count of sync pattern detections.
+     */
+    public int getSyncDetectionCount()
+    {
+        return mSyncDetectionCount;
+    }
+
+    /**
+     * Returns the count of sync detections that were blocked by the guard because a message
+     * was still being assembled.
+     */
+    public int getSyncBlockedCount()
+    {
+        return mSyncBlockedCount;
+    }
+
+    /**
+     * Sets the maximum BCH error corrections allowed for NAC-assisted/DUID-enumerated NID recovery.
+     * Standard BCH decode always uses full T=11 capability. This threshold only applies to the
+     * fallback NAC-forced and DUID-enumerated corrections, filtering out frames where heavy NID
+     * correction indicates likely voice data corruption.
+     *
+     * @param maxErrors maximum allowed BCH corrections (1-11, default 11 = no filtering)
+     */
+    public void setMaxBchErrors(int maxErrors)
+    {
+        mMaxBchErrors = Math.max(1, Math.min(maxErrors, 11));
+    }
+
+    public int getMaxBchErrors()
+    {
+        return mMaxBchErrors;
+    }
+
+    public int getFlywheelAttemptCount()
+    {
+        return mFlywheelAttemptCount;
+    }
+
+    public int getFlywheelSuccessCount()
+    {
+        return mFlywheelSuccessCount;
+    }
+
+    public int getFlywheelMissCount()
+    {
+        return mFlywheelMissCount;
+    }
+
+    /**
+     * Resets all diagnostic counters to zero. Call between file decodes.
+     */
+    public void resetDiagnostics()
+    {
+        mSyncDetectionCount = 0;
+        mNIDDecodeSuccessCount = 0;
+        mNIDDecodeFailCount = 0;
+        mSyncBlockedCount = 0;
+        mFallbackSyncCount = 0;
+        mRecoverySyncCount = 0;
+        mFadeRecoverySyncCount = 0;
+        mInitialAcquisitionSyncCount = 0;
+        mFlywheelAttemptCount = 0;
+        mFlywheelSuccessCount = 0;
+        mFlywheelMissCount = 0;
+    }
+
+    /**
      * Sets the listener to receive framed DMR messages.
      * @param listener for messages.
      */
@@ -829,7 +1341,7 @@ public class P25P1MessageFramer
 
 
         int trackedNAC = mNACTracker.getTrackedNAC();
-        mBCHDecoder.decode(nid, trackedNAC);
+        mBCHDecoder.decode(nid, trackedNAC, mMaxBchErrors);
 
         int nac = nid.getInt(NAC_FIELD);
         P25P1DataUnitID duid = P25P1DataUnitID.fromValue(nid.getInt(DUID_FIELD));
@@ -837,8 +1349,11 @@ public class P25P1MessageFramer
         //If error correction fails, return the original correction candidate
         if(nid.getCorrectedBitCount() < 0)
         {
+            mNIDDecodeFailCount++;
             return false;
         }
+
+        mNIDDecodeSuccessCount++;
 
         //The BCH decoder can over-correct the NID and produce an invalid NAC.  Compare it against the tracked NAC to
         //flag it as invalid NID when this happens.  The NAC tracker will give us a value of 0 until it has enough

@@ -77,6 +77,9 @@ public class P25P1DemodulatorC4FM
     private final NACTracker mNACTracker = new NACTracker();
     private final P25P1MessageFramer mMessageFramer;
     private final P25P1SoftSyncDetector mSyncDetector = P25P1SoftSyncDetectorFactory.getDetector();
+    private int mNidValidationSuccess = 0;
+    private int mNidValidationFail = 0;
+    private int mNidNacMismatch = 0;
     private final P25P1SoftSyncDetector mSyncDetectorLagging = P25P1SoftSyncDetectorFactory.getDetector();
     private boolean mFineSync = false;
     private double mMaxFineSyncTimingAdjustment;
@@ -109,6 +112,19 @@ public class P25P1DemodulatorC4FM
     public void resetPLL()
     {
         mEqualizer.reset();
+    }
+
+    /**
+     * Cold-start reset when a transmission boundary is detected (silence → signal).
+     * Resets equalizer (PLL, gain), timing adjustments, and sync tracking so the
+     * demodulator starts fresh for the new transmission.
+     */
+    public void coldStartReset()
+    {
+        mEqualizer.reset();
+        mSamplePointAdjustment = 0;
+        mSymbolsSinceLastSync = 0;
+        mFineSync = false;
     }
 
     /**
@@ -380,6 +396,7 @@ public class P25P1DemodulatorC4FM
         if(candidateNID.getCorrectedBitCount() < 0)
         {
             correction.addCorrectedBitCount(candidateNID.getCorrectedBitCount());
+            mNidValidationFail++;
             return;
         }
 
@@ -393,9 +410,11 @@ public class P25P1DemodulatorC4FM
 
         if(trackedNAC > 0 && trackedNAC != nac)
         {
+            mNidNacMismatch++;
             return;
         }
 
+        mNidValidationSuccess++;
         correction.setNID(nac, duid);
         correction.addCorrectedBitCount(candidateNID.getCorrectedBitCount());
     }
@@ -762,6 +781,17 @@ public class P25P1DemodulatorC4FM
         {
             return getOptimizationScore() >= getDetectionScore() && getOptimizationScore() > SYNC_THRESHOLD_EQUALIZED;
         }
+    }
+
+    public int getNidValidationSuccess() { return mNidValidationSuccess; }
+    public int getNidValidationFail() { return mNidValidationFail; }
+    public int getNidNacMismatch() { return mNidNacMismatch; }
+
+    public void resetDiagnostics()
+    {
+        mNidValidationSuccess = 0;
+        mNidValidationFail = 0;
+        mNidNacMismatch = 0;
     }
 
     /**

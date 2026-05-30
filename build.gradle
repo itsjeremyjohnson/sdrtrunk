@@ -391,3 +391,389 @@ tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
 
     configure(rt, jvmArgsLinux)
 }
+
+/**
+ * Runs the LSM v2 comparison test against a baseband WAV file.
+ * Usage: ./gradlew runComparison -PbasebandFile=path/to/baseband.wav [-Pnac=117]
+ */
+tasks.register('runComparison', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.LSMv2ComparisonTest'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('basebandFile')) {
+        argsList.add(project.property('basebandFile'))
+    }
+    if(project.hasProperty('nac')) {
+        argsList.add(project.property('nac'))
+    }
+    args = argsList
+}
+
+/**
+ * Runs the audio comparison test with IMBE decoding and WAV output.
+ * Usage: ./gradlew runAudioComparison -PbasebandFile=path/to/baseband.wav -PjmbePath=/path/to/jmbe.jar [-Pnac=117] [-PoutputDir=output]
+ */
+tasks.register('runAudioComparison', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.AudioComparisonTest'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('basebandFile')) {
+        argsList.add(project.property('basebandFile'))
+    }
+    if(project.hasProperty('jmbePath')) {
+        argsList.add(project.property('jmbePath'))
+    }
+    if(project.hasProperty('nac')) {
+        argsList.add(project.property('nac'))
+    }
+    if(project.hasProperty('outputDir')) {
+        argsList.add(project.property('outputDir'))
+    }
+    args = argsList
+}
+
+/**
+ * Extracts a time segment from a baseband WAV file for isolated testing.
+ * Usage: ./gradlew extractSegment -PinputFile=input.wav -PoutputFile=segment.wav -PstartMs=45000 -PendMs=46000
+ */
+tasks.register('extractSegment', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.SegmentExtractor'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('inputFile')) {
+        argsList.add(project.property('inputFile'))
+    }
+    if(project.hasProperty('outputFile')) {
+        argsList.add(project.property('outputFile'))
+    }
+    if(project.hasProperty('startMs')) {
+        argsList.add(project.property('startMs'))
+    }
+    if(project.hasProperty('endMs')) {
+        argsList.add(project.property('endMs'))
+    }
+    args = argsList
+}
+
+/**
+ * Runs the transmission scoring test to analyze decode quality per transmission.
+ * Usage: ./gradlew runTransmissionScoring -PbasebandFile=path/to/baseband.wav [-Pnac=117] [-PextractWorst=N] [-PextractRegressions=true] [-PoutputDir=dir]
+ */
+tasks.register('runTransmissionScoring', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.TransmissionScoringTest'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('basebandFile')) {
+        argsList.add(project.property('basebandFile'))
+    }
+    if(project.hasProperty('nac')) {
+        argsList.add(project.property('nac'))
+    }
+    if(project.hasProperty('extractWorst')) {
+        argsList.add('--extract-worst')
+        argsList.add(project.property('extractWorst'))
+    }
+    if(project.hasProperty('extractRegressions')) {
+        argsList.add('--extract-regressions')
+    }
+    if(project.hasProperty('outputDir')) {
+        argsList.add('--output-dir')
+        argsList.add(project.property('outputDir'))
+    }
+    args = argsList
+}
+
+/**
+ * Runs the sync failure investigation to analyze why transmissions fail to sync.
+ * Usage: ./gradlew runSyncFailureInvestigation -Pdir=path/to/samples [-Pnac=117]
+ */
+tasks.register('runSyncFailureInvestigation', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.SyncFailureInvestigator'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('dir')) {
+        argsList.add('--dir')
+        argsList.add(project.property('dir'))
+    }
+    if(project.hasProperty('basebandFile')) {
+        argsList.add(project.property('basebandFile'))
+    }
+    if(project.hasProperty('nac')) {
+        argsList.add('--nac')
+        argsList.add(project.property('nac'))
+    }
+    args = argsList
+}
+
+/**
+ * Runs the missed transmission analysis to identify optimization opportunities.
+ * Usage: ./gradlew runMissedTransmissionAnalysis -Pdir=path/to/samples [-Pnac=117] [-Pextract=output/dir]
+ */
+tasks.register('runMissedTransmissionAnalysis', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.MissedTransmissionAnalyzer'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('dir')) {
+        argsList.add('--dir')
+        argsList.add(project.property('dir'))
+    }
+    if(project.hasProperty('basebandFile')) {
+        argsList.add(project.property('basebandFile'))
+    }
+    if(project.hasProperty('nac')) {
+        argsList.add('--nac')
+        argsList.add(project.property('nac'))
+    }
+    if(project.hasProperty('extract')) {
+        argsList.add('--extract')
+        argsList.add(project.property('extract'))
+    }
+    args = argsList
+}
+
+/**
+ * 3-way decoder comparison: runs C4FM, LSM, and LSM v2 decoders against baseband recordings.
+ * Usage: ./gradlew runDerryComparison -Pdir=path/to/samples [-Pnac=117]
+ *    or: ./gradlew runDerryComparison -PbasebandFile=path/to/file.wav [-Pnac=117]
+ */
+tasks.register('runDerryComparison', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.DerryDecoderComparisonTest'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('dir')) {
+        argsList.add('--dir')
+        argsList.add(project.property('dir'))
+    }
+    if(project.hasProperty('basebandFile')) {
+        argsList.add(project.property('basebandFile'))
+    }
+    if(project.hasProperty('nac')) {
+        argsList.add(project.property('nac'))
+    }
+    args = argsList
+}
+
+/**
+ * Audio regression test: processes baseband WAV segments through C4FM decoder with JMBE decoding.
+ * Usage: ./gradlew runDerryAudioRegression -Pbaseband=path/to/segment.wav -Pjmbe=path/to/jmbe.jar -Poutput=path/to/output [-Pmode=both]
+ * Modes: fixed (default), broken, both
+ */
+tasks.register('runDerryAudioRegression', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.DerryAudioRegressionTest'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('baseband')) {
+        argsList.add(project.property('baseband'))
+    }
+    if(project.hasProperty('jmbe')) {
+        argsList.add(project.property('jmbe'))
+    }
+    if(project.hasProperty('output')) {
+        argsList.add(project.property('output'))
+    }
+    if(project.hasProperty('mode')) {
+        argsList.add(project.property('mode'))
+    }
+    if(project.hasProperty('codecReset')) {
+        argsList.add(project.property('codecReset'))
+    }
+    args = argsList
+}
+
+/**
+ * Decode quality scoring: processes baseband files through playlist-matched decoders and outputs metrics JSON.
+ * Usage: ./gradlew runDecodeScore -Psamples=path/to/samples -Pplaylist=path/to/playlist.xml -Poutput=path/to/output [-Pjmbe=path/to/jmbe.jar] [-Pmode=quick|full]
+ */
+tasks.register('runDecodeScore', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.DecodeQualityTest'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('samples')) {
+        argsList.addAll(['--samples', project.property('samples')])
+    }
+    if(project.hasProperty('playlist')) {
+        argsList.addAll(['--playlist', project.property('playlist')])
+    }
+    if(project.hasProperty('output')) {
+        argsList.addAll(['--output', project.property('output')])
+    }
+    if(project.hasProperty('jmbe')) {
+        argsList.addAll(['--jmbe', project.property('jmbe')])
+    }
+    if(project.hasProperty('mode')) {
+        argsList.addAll(['--mode', project.property('mode')])
+    }
+    if(project.hasProperty('forceMod')) {
+        argsList.addAll(['--force-mod', project.property('forceMod')])
+    }
+    if(project.hasProperty('forceNac')) {
+        argsList.addAll(['--force-nac', project.property('forceNac')])
+    }
+    if(project.hasProperty('diag')) {
+        argsList.add('--diag')
+    }
+    if(project.hasProperty('maxBchErrors')) {
+        argsList.addAll(['--max-bch-errors', project.property('maxBchErrors')])
+    }
+    if(project.hasProperty('maxImbeErrors')) {
+        argsList.addAll(['--max-imbe-errors', project.property('maxImbeErrors')])
+    }
+    if(project.hasProperty('segmentGap')) {
+        argsList.addAll(['--segment-gap', project.property('segmentGap')])
+    }
+    if(project.hasProperty('silenceThreshold')) {
+        argsList.addAll(['--silence-threshold', project.property('silenceThreshold')])
+    }
+    if(project.hasProperty('silenceMinMs')) {
+        argsList.addAll(['--silence-min-ms', project.property('silenceMinMs')])
+    }
+    if(project.hasProperty('cmaAcqMu')) {
+        argsList.addAll(['--cma-acq-mu', project.property('cmaAcqMu')])
+    }
+    if(project.hasProperty('cmaTrkMu')) {
+        argsList.addAll(['--cma-trk-mu', project.property('cmaTrkMu')])
+    }
+    if(project.hasProperty('cmaShiftMs')) {
+        argsList.addAll(['--cma-shift-ms', project.property('cmaShiftMs')])
+    }
+    if(project.hasProperty('verbose')) {
+        argsList.add('--verbose')
+    }
+    if(project.hasProperty('sysprop')) {
+        project.property('sysprop').split(',').each { prop ->
+            jvmArgs += "-D${prop}"
+        }
+    }
+    args = argsList
+}
+
+/**
+ * MDC1200 replay test: feeds a mono PCM WAV of FM-demodulated audio through the MDC1200 decoder.
+ * Usage: ./gradlew runMdcReplay -Pwav=/path/to/sample.wav
+ */
+tasks.register('runMdcReplay', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.mdc1200.MDCDecoderReplayTest'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    if(project.hasProperty('syncThreshold')) {
+        systemProperty 'mdc.sync.threshold', project.property('syncThreshold')
+    }
+    if(project.hasProperty('export')) {
+        systemProperty 'mdc.export.audio', project.property('export')
+    }
+    if(project.hasProperty('iqScale')) {
+        systemProperty 'mdc.iq.scale', project.property('iqScale')
+    }
+    if(project.hasProperty('swapIQ')) {
+        systemProperty 'mdc.iq.swap', 'true'
+    }
+    def argsList = []
+    if(project.hasProperty('wav')) {
+        argsList.add(project.property('wav'))
+    }
+    if(project.hasProperty('dump')) {
+        argsList.add('dump')
+    }
+    args = argsList
+}
+
+/**
+ * Pipeline replay diagnostic: feeds baseband WAV through the FULL live ProcessingChain
+ * (DecoderState, StateMachine, SquelchController, AudioModule) to diagnose live-only bugs.
+ * Usage: ./gradlew runPipelineReplay -Psamples=path -Pfreq=154175000 -Pnac=2311 [-Pmod=C4FM] [-Pjmbe=path]
+ */
+tasks.register('runPipelineReplay', JavaExec) {
+    dependsOn testClasses
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = 'io.github.dsheirer.module.decode.p25.phase1.PipelineReplayTest'
+    if(os.isWindows()) {
+        jvmArgs = jvmArgsWindows
+    } else {
+        jvmArgs = jvmArgsLinux
+    }
+    def argsList = []
+    if(project.hasProperty('samples')) {
+        argsList.addAll(['--samples', project.property('samples')])
+    }
+    if(project.hasProperty('freq')) {
+        argsList.addAll(['--freq', project.property('freq')])
+    }
+    if(project.hasProperty('nac')) {
+        argsList.addAll(['--nac', project.property('nac')])
+    }
+    if(project.hasProperty('mod')) {
+        argsList.addAll(['--mod', project.property('mod')])
+    }
+    if(project.hasProperty('jmbe')) {
+        argsList.addAll(['--jmbe', project.property('jmbe')])
+    }
+    if(project.hasProperty('maxFiles')) {
+        argsList.addAll(['--max-files', project.property('maxFiles')])
+    }
+    if(project.hasProperty('continuous')) {
+        argsList.add('--continuous')
+    }
+    if(project.hasProperty('diag')) {
+        jvmArgs += '-Dp25.diag=true'
+    }
+    args = argsList
+}

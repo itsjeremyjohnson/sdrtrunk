@@ -78,6 +78,9 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     private static final int SYMBOL_RATE = 4800;
     private static final Map<Double,float[]> BASEBAND_FILTERS = new HashMap<>();
 
+    private static final float ENERGY_EMA_FACTOR = 0.001f;
+    private static final float ENERGY_SILENCE_RATIO = 0.10f;
+
     private final P25P1DemodulatorC4FM mSymbolProcessor;
     private final P25P1MessageFramer mMessageFramer = new P25P1MessageFramer();
     private final P25P1MessageProcessor mMessageProcessor = new P25P1MessageProcessor();
@@ -90,6 +93,13 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     private IRealFilter mPulseShapingFilterI;
     private IRealFilter mPulseShapingFilterQ;
 
+    // Transmission boundary detection — mirrors LSMv2 pattern
+    private float mEnergyAverage = 0;
+    private float mPeakEnergy = 0;
+    private boolean mInSilence = true;
+    private int mSilenceSampleCount = 0;
+    private int mSilenceSamplesThreshold = 2500; // ~100ms at 25kHz decimated rate, updated in setSampleRate()
+
     @Override
     public DecoderType getDecoderType()
     {
@@ -98,6 +108,21 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
 
     public P25P1DecoderC4FM()
     {
+        // Disable sync guard for C4FM — its 4-level FSK sync detection is highly reliable,
+        // so blocked syncs are almost always genuine. Guard helps CQPSK (noisy symbol recovery)
+        // but costs C4FM 0.8% LDUs and 12%+ words on busy channels like Salem Fire.
+        mMessageFramer.mSyncGuardEnabled = false;
+        // Limit consecutive DUID corrections for C4FM. Corrections recover genuine voice frames
+        // where the NID BCH decoded TDU instead of LDU (~10% improvement on LFD). The limit
+        // breaks the correction cycling that generates noise LDUs after call ends. DUID-corrected
+        // messages are marked isDuidCorrected() and blocked from state/identifier processing in
+        // P25P1DecoderState.processLDU() to prevent stuck calls and garbage identifiers.
+        // System property p25.duid.limit.c4fm: 0 = disabled (unlimited), default = 3
+        int duidLimit = Integer.parseInt(System.getProperty("p25.duid.limit.c4fm", "3"));
+        if(duidLimit > 0)
+        {
+            mMessageFramer.setMaxConsecutiveDuidCorrections(duidLimit);
+        }
         mMessageProcessor.setMessageListener(getMessageListener());
         mSymbolProcessor = new P25P1DemodulatorC4FM(mMessageFramer, this);
     }
@@ -148,6 +173,9 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         mSymbolProcessor.setSamplesPerSymbol(mDemodulator.getSamplesPerSymbol());
         mMessageFramer.setListener(mMessageProcessor);
         mMessageProcessor.setMessageListener(getMessageListener());
+
+        // ~100ms of silence at the decimated sample rate triggers boundary detection
+        mSilenceSamplesThreshold = (int)(decimatedSampleRate * 0.1f);
     }
 
     /**
@@ -157,13 +185,14 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     @Override
     public void receive(ComplexSamples samples)
     {
-        //Update the message framer with the timestamp from the incoming sample buffer.
         mMessageFramer.setTimestamp(samples.timestamp());
 
         float[] i = mDecimationFilterI.decimateReal(samples.i());
         float[] q = mDecimationFilterQ.decimateReal(samples.q());
 
-        //Process buffer for channel power measurements
+        // Detect transmission boundaries on raw decimated samples (before filtering distorts energy)
+        detectTransmissionBoundary(i, q);
+
         mPowerMonitor.process(i, q);
 
         i = mBasebandFilterI.filter(i);
@@ -172,12 +201,86 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         i = mPulseShapingFilterI.filter(i);
         q = mPulseShapingFilterQ.filter(q);
 
-        // PI/4 DQPSK differential demodulation
         float[] demodulated = mDemodulator.demodulate(i, q);
-
-        //Process demodulated samples into symbols and apply message sync detection and framing.
         mSymbolProcessor.process(demodulated);
     }
+
+    /**
+     * Monitors energy on raw decimated I/Q samples to detect transmission boundaries.
+     * When sustained silence is followed by signal return, triggers a cold-start reset
+     * of the demodulator and framer to clear accumulated noise state.
+     * Mirrors the proven pattern in P25P1DecoderLSMv2.detectTransmissionBoundary().
+     */
+    private void detectTransmissionBoundary(float[] i, float[] q)
+    {
+        for(int idx = 0; idx < i.length; idx++)
+        {
+            float energy = (i[idx] * i[idx]) + (q[idx] * q[idx]);
+            mEnergyAverage += (energy - mEnergyAverage) * ENERGY_EMA_FACTOR;
+
+            if(mEnergyAverage > mPeakEnergy)
+            {
+                mPeakEnergy = mEnergyAverage;
+            }
+            else
+            {
+                mPeakEnergy *= 0.99999f;
+            }
+
+            float silenceThreshold = mPeakEnergy * ENERGY_SILENCE_RATIO;
+
+            if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
+            {
+                mSilenceSampleCount++;
+                if(mSilenceSampleCount >= mSilenceSamplesThreshold && !mInSilence)
+                {
+                    mInSilence = true;
+                    if(P25PipelineDiagnostics.isEnabled())
+                    {
+                        P25PipelineDiagnostics.log("C4FM", "BOUNDARY", "ENTER_SILENCE",
+                            String.format("energy=%.2e peak=%.2e", mEnergyAverage, mPeakEnergy));
+                    }
+                }
+            }
+            else
+            {
+                if(mInSilence && mPeakEnergy > 0)
+                {
+                    if(P25PipelineDiagnostics.isEnabled())
+                    {
+                        P25PipelineDiagnostics.log("C4FM", "BOUNDARY", "SILENCE_TO_SIGNAL",
+                            String.format("energy=%.2e peak=%.2e threshold=%.2e silenceSamples=%d",
+                                mEnergyAverage, mPeakEnergy, mPeakEnergy * ENERGY_SILENCE_RATIO, mSilenceSampleCount));
+                    }
+                    mSymbolProcessor.coldStartReset();
+                    mMessageFramer.coldStartReset();
+                    mMessageFramer.setBoundaryRecoveryActive(true);
+                    mMessageFramer.setInitialAcquisitionActive(true);
+                    mInSilence = false;
+                }
+                mSilenceSampleCount = 0;
+            }
+        }
+    }
+
+    /**
+     * Sets the configured NAC for improved NID error correction.
+     * @param nac the configured NAC value (0-4095), or 0 to use automatic tracking
+     */
+    public void setConfiguredNAC(int nac)
+    {
+        mMessageFramer.setConfiguredNAC(nac);
+    }
+
+    /**
+     * Accessor for the message framer's diagnostic counters.
+     */
+    public P25P1MessageFramer getMessageFramer() { return mMessageFramer; }
+
+    /**
+     * Accessor for the demodulator's diagnostic counters.
+     */
+    public P25P1DemodulatorC4FM getDemodulator() { return mSymbolProcessor; }
 
     /**
      * Constructs a baseband filter for this decoder using the current sample rate

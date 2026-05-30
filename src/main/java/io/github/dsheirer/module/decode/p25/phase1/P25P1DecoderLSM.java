@@ -99,6 +99,17 @@ public class P25P1DecoderLSM extends FeedbackDecoder implements IByteBufferProvi
     }
 
     /**
+     * Sets the configured NAC for improved NID error correction.
+     * @param nac the configured NAC value (0-4095), or 0 to use automatic tracking
+     */
+    public void setConfiguredNAC(int nac)
+    {
+        mMessageFramer.setConfiguredNAC(nac);
+    }
+
+    public P25P1MessageFramer getMessageFramer() { return mMessageFramer; }
+
+    /**
      * Sets the sample rate and configures internal components.
      * @param sampleRate of the channel to decode
      */

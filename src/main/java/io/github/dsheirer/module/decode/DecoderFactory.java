@@ -85,8 +85,11 @@ import io.github.dsheirer.module.decode.p25.P25TrafficChannelManager;
 import io.github.dsheirer.module.decode.p25.audio.P25P1AudioModule;
 import io.github.dsheirer.module.decode.p25.audio.P25P2AudioModule;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
+import io.github.dsheirer.module.decode.p25.phase1.P25PipelineDiagnostics;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderC4FM;
+import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderC4FMv2;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderLSM;
+import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderLSMv2;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderState;
 import io.github.dsheirer.module.decode.p25.phase1.message.filter.P25P1MessageFilterSet;
 import io.github.dsheirer.module.decode.p25.phase2.DecodeConfigP25Phase2;
@@ -270,30 +273,74 @@ public class DecoderFactory
                                          AliasList aliasList, TrafficChannelManager trafficChannelManager,
                                          IChannelDescriptor channelDescriptor)
     {
+        P25P1DecoderLSMv2 lsmv2Decoder = null;
+
         if(channel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 p1)
         {
             switch(p1.getModulation())
             {
                 case C4FM:
-                    modules.add(new P25P1DecoderC4FM());
+                    P25P1DecoderC4FM c4fmDecoder = new P25P1DecoderC4FM();
+                    if(p1.hasConfiguredNAC())
+                    {
+                        c4fmDecoder.setConfiguredNAC(p1.getConfiguredNAC());
+                        c4fmDecoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
+                    }
+                    modules.add(c4fmDecoder);
+                    break;
+                case C4FM_V2:
+                    P25P1DecoderC4FMv2 c4fmv2Decoder = new P25P1DecoderC4FMv2();
+                    c4fmv2Decoder.setGardnerBandwidth(p1.getGardnerBandwidth());
+                    c4fmv2Decoder.setAfcAlpha(p1.getAfcAlpha());
+                    c4fmv2Decoder.setAdaptiveThresholdsEnabled(p1.isAdaptiveThresholds());
+                    c4fmv2Decoder.setDfeEnabled(p1.isDfeEnabled());
+                    c4fmv2Decoder.setDfeMu(p1.getDfeMu());
+                    if(p1.hasConfiguredNAC())
+                    {
+                        c4fmv2Decoder.setConfiguredNAC(p1.getConfiguredNAC());
+                        c4fmv2Decoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
+                    }
+                    modules.add(c4fmv2Decoder);
                     break;
                 case CQPSK:
-                    modules.add(new P25P1DecoderLSM());
+                    P25P1DecoderLSM lsmDecoder = new P25P1DecoderLSM();
+                    if(p1.hasConfiguredNAC())
+                    {
+                        lsmDecoder.setConfiguredNAC(p1.getConfiguredNAC());
+                        lsmDecoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
+                    }
+                    modules.add(lsmDecoder);
+                    break;
+                case CQPSK_V2:
+                    lsmv2Decoder = new P25P1DecoderLSMv2();
+                    // Apply configured NAC if specified
+                    if(p1.hasConfiguredNAC())
+                    {
+                        lsmv2Decoder.setConfiguredNAC(p1.getConfiguredNAC());
+                        lsmv2Decoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
+                    }
+                    // Apply per-channel CMA equalizer config (0 values = use system defaults)
+                    lsmv2Decoder.setCMAConfig(p1.getCmaAcquisitionMu(),
+                            p1.getCmaTrackingMu(), p1.getCmaGearShiftMs());
+                    modules.add(lsmv2Decoder);
                     break;
                 default:
                     throw new IllegalArgumentException("Unrecognized P25 Phase 1 Modulation [" + p1.getModulation() + "]");
             }
         }
 
+        P25P1DecoderState decoderState = null;
+
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
             P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel);
             modules.add(primaryTCM);
-            modules.add(new P25P1DecoderState(channel, primaryTCM));
+            decoderState = new P25P1DecoderState(channel, primaryTCM);
+            modules.add(decoderState);
         }
         else if(trafficChannelManager instanceof P25TrafficChannelManager parentTCM)
         {
-            P25P1DecoderState decoderState = new P25P1DecoderState(channel, parentTCM);
+            decoderState = new P25P1DecoderState(channel, parentTCM);
             decoderState.setCurrentChannel(channelDescriptor);
             modules.add(decoderState);
         }
@@ -302,7 +349,30 @@ public class DecoderFactory
             mLog.warn("Expected non-null traffic channel manager for channel " + channel.getName());
         }
 
-        modules.add(new P25P1AudioModule(userPreferences, aliasList));
+        // Wire signal energy provider, holdover, and voice-only channel configuration
+        if(channel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 p1Config)
+        {
+            if(lsmv2Decoder != null && decoderState != null)
+            {
+                decoderState.setSignalEnergyProvider(lsmv2Decoder);
+                decoderState.setHoldoverMs(p1Config.getAudioHoldoverMs());
+            }
+        }
+
+        // Create audio module and configure channel options
+        P25P1AudioModule audioModule = new P25P1AudioModule(userPreferences, aliasList);
+        if(channel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 p1Config)
+        {
+            audioModule.setIgnoreEncryptionState(p1Config.isIgnoreEncryptionState());
+            audioModule.setMaxImbeErrors(p1Config.getMaxImbeErrors());
+
+            if(p1Config.isPipelineDiagnostics())
+            {
+                P25PipelineDiagnostics.enableChannel(channel.getName(),
+                    userPreferences.getDirectoryPreference().getDirectoryApplicationLog());
+            }
+        }
+        modules.add(audioModule);
 
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
         if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
