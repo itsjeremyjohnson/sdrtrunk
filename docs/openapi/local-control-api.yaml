@@ -1,0 +1,120 @@
+openapi: 3.0.3
+info:
+  title: sdrtrunk Local Control API
+  version: 1.0.0
+  description: >
+    Localhost-first control API for sdrtrunk. Phase 1 exposes a minimal
+    read-only status surface and documents the security model used for later
+    read/write control endpoints.
+servers:
+  - url: http://127.0.0.1:9997
+    description: Default local API listener when explicitly enabled
+security:
+  - bearerAuth: []
+paths:
+  /api/v1/status:
+    get:
+      summary: Get local API and application status
+      description: >
+        Returns non-secret runtime health for the local sdrtrunk process. If an
+        API token is configured, this endpoint requires an Authorization bearer
+        token. The response reports whether a token is configured but never
+        returns the token value.
+      operationId: getStatus
+      responses:
+        '200':
+          description: Local API status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StatusResponse'
+        '401':
+          description: Missing or invalid bearer token
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '405':
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /api/v1/openapi.yaml:
+    get:
+      summary: Get this OpenAPI document
+      description: Returns the local OpenAPI document for client/tooling discovery.
+      operationId: getOpenApi
+      security: []
+      responses:
+        '200':
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+        '405':
+          description: Method not allowed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: opaque-local-token
+      description: >
+        Configure via JVM property sdrtrunk.api.token or environment variable
+        SDRTRUNK_API_TOKEN. Tokens are never returned by the API.
+  schemas:
+    StatusResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - application
+        - apiEnabled
+        - readOnly
+        - host
+        - port
+        - tokenConfigured
+        - startedAt
+        - uptimeSeconds
+      properties:
+        status:
+          type: string
+          enum: [ok]
+        application:
+          type: string
+        apiEnabled:
+          type: boolean
+        readOnly:
+          type: boolean
+          description: Phase 1 is read-only. Later phases add guarded write endpoints.
+        host:
+          type: string
+          example: 127.0.0.1
+        port:
+          type: integer
+          minimum: 0
+          maximum: 65535
+        tokenConfigured:
+          type: boolean
+        startedAt:
+          type: string
+          format: date-time
+        uptimeSeconds:
+          type: integer
+          minimum: 0
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [error]
+      properties:
+        error:
+          type: string
+          examples:
+            - unauthorized
+            - method_not_allowed
