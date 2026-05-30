@@ -6,6 +6,9 @@ on:
   push:
     branches: [ master ]
 
+permissions:
+  contents: write
+
 concurrency:
   group: nightly-release
   cancel-in-progress: true
