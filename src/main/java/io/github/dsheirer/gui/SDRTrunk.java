@@ -21,6 +21,8 @@ package io.github.dsheirer.gui;
 import com.jidesoft.plaf.LookAndFeelFactory;
 import com.jidesoft.swing.JideSplitPane;
 import io.github.dsheirer.alias.AliasModel;
+import io.github.dsheirer.api.LocalControlApiConfig;
+import io.github.dsheirer.api.LocalControlApiServer;
 import io.github.dsheirer.audio.DuplicateCallDetector;
 import io.github.dsheirer.audio.broadcast.AudioStreamingManager;
 import io.github.dsheirer.audio.broadcast.BroadcastFormat;
@@ -135,6 +137,7 @@ public class SDRTrunk implements Listener<TunerEvent>
     private JFrame mMainGui;
     private JideSplitPane mSplitPane;
     private JavaFxWindowManager mJavaFxWindowManager;
+    private LocalControlApiServer mLocalControlApiServer;
     private UserPreferences mUserPreferences = new UserPreferences();
     private TunerManager mTunerManager;
     private ApplicationLog mApplicationLog;
@@ -185,6 +188,8 @@ public class SDRTrunk implements Listener<TunerEvent>
 
         //Log current properties setting
         SystemProperties.getInstance().logCurrentSettings();
+
+        startLocalControlApi();
 
         //Register FontAwesome so we can use the fonts in Swing windows
         IconFontSwing.register(FontAwesome.getIconFont());
@@ -633,11 +638,43 @@ public class SDRTrunk implements Listener<TunerEvent>
     }
 
     /**
+     * Starts the optional local control API when explicitly enabled.
+     */
+    private void startLocalControlApi()
+    {
+        LocalControlApiConfig apiConfig = LocalControlApiConfig.from(SystemProperties.getInstance());
+
+        if(apiConfig.isEnabled())
+        {
+            try
+            {
+                mLocalControlApiServer = new LocalControlApiServer(apiConfig,
+                    () -> SystemProperties.getInstance().getApplicationName());
+                mLocalControlApiServer.start();
+            }
+            catch(IOException ioe)
+            {
+                mLog.error("Unable to start local control API", ioe);
+            }
+        }
+        else
+        {
+            mLog.info("Local control API disabled");
+        }
+    }
+
+    /**
      * Performs shutdown operations
      */
     private void processShutdown()
     {
         mLog.info("Application shutdown started ...");
+
+        if(mLocalControlApiServer != null)
+        {
+            mLocalControlApiServer.stop();
+        }
+
         mDiagnosticMonitor.stop();
         mUserPreferences.getSwingPreference().setLocation(WINDOW_FRAME_IDENTIFIER, mMainGui.getLocation());
         mUserPreferences.getSwingPreference().setDimension(WINDOW_FRAME_IDENTIFIER, mMainGui.getSize());
