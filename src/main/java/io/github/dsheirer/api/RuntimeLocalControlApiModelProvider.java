@@ -98,10 +98,14 @@ public class RuntimeLocalControlApiModelProvider implements LocalControlApiModel
         for(int x = 0; x < mTunerManager.getDiscoveredTunerModel().getRowCount(); x++)
         {
             DiscoveredTuner discoveredTuner = mTunerManager.getDiscoveredTunerModel().getDiscoveredTuner(x);
-            String status = discoveredTuner.getTunerStatus() != null ? discoveredTuner.getTunerStatus().name() : null;
-            String tunerClass = discoveredTuner.getTunerClass() != null ? discoveredTuner.getTunerClass().name() : null;
-            tuners.add(new ApiTuner(discoveredTuner.getId(), tunerClass, status, discoveredTuner.isAvailable(),
-                discoveredTuner.isEnabled(), discoveredTuner.getErrorMessage()));
+
+            if(discoveredTuner != null)
+            {
+                String status = discoveredTuner.getTunerStatus() != null ? discoveredTuner.getTunerStatus().name() : null;
+                String tunerClass = discoveredTuner.getTunerClass() != null ? discoveredTuner.getTunerClass().name() : null;
+                tuners.add(new ApiTuner(discoveredTuner.getId(), tunerClass, status, discoveredTuner.isAvailable(),
+                    discoveredTuner.isEnabled(), discoveredTuner.getErrorMessage()));
+            }
         }
 
         return page(tuners, limit, offset);
@@ -133,7 +137,11 @@ public class RuntimeLocalControlApiModelProvider implements LocalControlApiModel
         int activeChannels = (int)mPlaylistManager.getChannelModel().getChannels().stream()
             .filter(Channel::isProcessing)
             .count();
-        int aliasLists = getAliases(Integer.MAX_VALUE, 0).getTotal();
+        int aliasLists = (int)mPlaylistManager.getAliasModel().getAliases().stream()
+            .map(Alias::getAliasListName)
+            .filter(aliasListName -> aliasListName != null && !aliasListName.isEmpty())
+            .distinct()
+            .count();
         int tuners = mTunerManager.getDiscoveredTunerModel().getRowCount();
         int broadcasts = mPlaylistManager.getBroadcastModel().getConfiguredBroadcasts().size();
 
