@@ -71,6 +71,7 @@ public class Alias
     private StringProperty mGroup = new SimpleStringProperty();
     private StringProperty mIconName = new SimpleStringProperty();
     private StringProperty mName = new SimpleStringProperty();
+    private StringProperty mAudioOutputDevice = new SimpleStringProperty();
     private ObservableList<AliasID> mAliasIDs = FXCollections.observableArrayList();
     private ObservableList<AliasAction> mAliasActions = FXCollections.observableArrayList();
     private ObjectProperty<StreamAsTalkgroup> mStreamTalkgroupAlias = new SimpleObjectProperty<>();
@@ -196,6 +197,15 @@ public class Alias
     }
 
     /**
+     * Audio output device property
+     */
+    @JsonIgnore
+    public StringProperty audioOutputDeviceProperty()
+    {
+        return mAudioOutputDevice;
+    }
+
+    /**
      * Alias identifiers list property
      */
     @JsonIgnore
@@ -313,6 +323,34 @@ public class Alias
     public boolean hasGroup()
     {
         return mGroup.get() != null;
+    }
+
+    /**
+     * Audio output device name for this alias
+     */
+    @JacksonXmlProperty(isAttribute = true, localName = "audio_output_device")
+    public String getAudioOutputDevice()
+    {
+        return mAudioOutputDevice.get();
+    }
+
+    /**
+     * Sets the audio output device for this alias
+     * @param deviceName the name of the audio output device
+     */
+    public void setAudioOutputDevice(String deviceName)
+    {
+        mAudioOutputDevice.set(deviceName);
+    }
+
+    /**
+     * Indicates if this alias has a specific audio output device configured
+     */
+    @JsonIgnore
+    public boolean hasAudioOutputDevice()
+    {
+        String device = mAudioOutputDevice.get();
+        return device != null && !device.isEmpty();
     }
 
     /**
@@ -735,6 +773,6 @@ public class Alias
         return (Alias a) -> new Observable[] {a.recordableProperty(), a.streamableProperty(), a.colorProperty(),
             a.aliasListNameProperty(), a.groupProperty(), a.iconNameProperty(), a.nameProperty(), a.aliasIds(),
             a.aliasActions(), a.nonAudioIdentifierCountProperty(), a.overlapProperty(), a.priorityProperty(),
-                a.streamTalkgroupAliasProperty()};
+                a.streamTalkgroupAliasProperty(), a.audioOutputDeviceProperty()};
     }
 }

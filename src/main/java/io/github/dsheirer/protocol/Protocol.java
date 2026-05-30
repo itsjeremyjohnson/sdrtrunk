@@ -44,6 +44,7 @@ public enum Protocol
     PASSPORT("Passport", "PASSPORT", 300),
     TAIT1200("Tait 1200", "TAIT1200", 1200),
     UDP("UDP", "UDP", 0),
+    CTCSS("CTCSS", "CTCSS", 0),
     UNKNOWN("Unknown", "UNKNOWN", 0);
 
     private String mLabel;

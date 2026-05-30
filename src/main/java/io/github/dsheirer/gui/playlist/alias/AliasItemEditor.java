@@ -34,7 +34,9 @@ import io.github.dsheirer.alias.action.script.ScriptAction;
 import io.github.dsheirer.alias.id.AliasID;
 import io.github.dsheirer.alias.id.AliasIDType;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
+import io.github.dsheirer.alias.id.ctcss.Ctcss;
 import io.github.dsheirer.alias.id.dcs.Dcs;
+import io.github.dsheirer.alias.id.nac.Nac;
 import io.github.dsheirer.alias.id.esn.Esn;
 import io.github.dsheirer.alias.id.lojack.LoJackFunctionAndID;
 import io.github.dsheirer.alias.id.radio.P25FullyQualifiedRadio;
@@ -167,6 +169,12 @@ public class AliasItemEditor extends Editor<Alias>
     private EmptyActionEditor mEmptyActionEditor = new EmptyActionEditor();
     private ActionEditor mActionEditor;
 
+    /**
+     * Flag to suppress modification events during programmatic UI updates (e.g., from @Subscribe handlers).
+     * Prevents race conditions between event bus updates and user-initiated changes.
+     */
+    private volatile boolean mSuppressModification = false;
+
 
     public AliasItemEditor(PlaylistManager playlistManager, UserPreferences userPreferences)
     {
@@ -222,10 +230,54 @@ public class AliasItemEditor extends Editor<Alias>
         }
     }
 
+    /**
+     * Handles AliasPriorityChangedEvent from the global event bus.
+     * When the Now Playing right-click menu mutes/unmutes a channel, the alias priority changes.
+     * This handler refreshes the Listen toggle in the alias editor in real time.
+     *
+     * Uses mSuppressModification flag to prevent the toggle/combo change listeners from
+     * marking the editor as modified during this programmatic update, which would otherwise
+     * cause a race condition requiring multiple clicks to sync the toggle state.
+     */
+    @Subscribe
+    public void aliasPriorityChanged(io.github.dsheirer.channel.metadata.AliasPriorityChangedEvent event)
+    {
+        if(event.getAlias() != null && event.getAlias() == getItem())
+        {
+            Platform.runLater(() -> {
+                mSuppressModification = true;
+
+                try
+                {
+                    int priority = event.getAlias().getPlaybackPriority();
+                    boolean canMonitor = (priority != io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR);
+                    getMonitorAudioToggleSwitch().setSelected(canMonitor);
+
+                    if(canMonitor && priority != io.github.dsheirer.alias.id.priority.Priority.DEFAULT_PRIORITY)
+                    {
+                        getMonitorPriorityComboBox().getSelectionModel().select(priority);
+                    }
+                    else
+                    {
+                        getMonitorPriorityComboBox().getSelectionModel().select(null);
+                    }
+                }
+                finally
+                {
+                    mSuppressModification = false;
+                }
+
+                modifiedProperty().set(false);
+            });
+        }
+    }
+
     @Override
     public void setItem(Alias alias)
     {
         super.setItem(alias);
+
+        mSuppressModification = true;
 
         refreshAutoCompleteBindings();
 
@@ -323,6 +375,7 @@ public class AliasItemEditor extends Editor<Alias>
             getMonitorAudioToggleSwitch().setSelected(false);
         }
 
+        mSuppressModification = false;
         modifiedProperty().set(false);
     }
 
@@ -446,7 +499,7 @@ public class AliasItemEditor extends Editor<Alias>
             mStreamAsTalkgroupField.setTooltip(new Tooltip("When specified, all streamed call audio will use this " +
                     "talkgroup value in place of the decoded talkgroup value."));
             mStreamAsTalkgroupField.textProperty().addListener((o, old, newV) -> {
-                if(getItem() != null)
+                if(!mSuppressModification && getItem() != null)
                 {
                     modifiedProperty().set(true);
                 }
@@ -735,6 +788,7 @@ public class AliasItemEditor extends Editor<Alias>
             p25Menu.getItems().add(new AddUserStatusItem());
             p25Menu.getItems().add(new AddUnitStatusItem());
             p25Menu.getItems().add(new SeparatorMenuItem());
+            p25Menu.getItems().add(new AddNacItem());
             p25Menu.getItems().add(new AddTonesItem("AMBE Audio Tones (Phase 2 Only)"));
 
             Menu dmrMenu = new ProtocolMenu(Protocol.DMR);
@@ -764,6 +818,8 @@ public class AliasItemEditor extends Editor<Alias>
             Menu nbfmMenu = new ProtocolMenu(Protocol.NBFM);
             nbfmMenu.getItems().add(new AddTalkgroupItem(Protocol.NBFM));
             nbfmMenu.getItems().add(new AddTalkgroupRangeItem(Protocol.NBFM));
+            nbfmMenu.getItems().add(new SeparatorMenuItem());
+            nbfmMenu.getItems().add(new AddCtcssItem());
             nbfmMenu.getItems().add(new AddDcsItem());
 
             Menu passportMenu = new ProtocolMenu(Protocol.PASSPORT);
@@ -861,43 +917,53 @@ public class AliasItemEditor extends Editor<Alias>
     private void updateStreamViews()
     {
         Platform.runLater(() -> {
-            getAvailableStreamsView().getItems().clear();
-            getSelectedStreamsView().getItems().clear();
-            getAvailableStreamsView().setDisable(getItem() == null);
-            getSelectedStreamsView().setDisable(getItem() == null);
-            getStreamAsTalkgroupField().setDisable(getItem() == null);
+            mSuppressModification = true;
 
-            if(getItem() != null)
+            try
             {
-                List<String> availableStreams = mPlaylistManager.getBroadcastModel().getBroadcastConfigurationNames();
+                getAvailableStreamsView().getItems().clear();
+                getSelectedStreamsView().getItems().clear();
+                getAvailableStreamsView().setDisable(getItem() == null);
+                getSelectedStreamsView().setDisable(getItem() == null);
+                getStreamAsTalkgroupField().setDisable(getItem() == null);
 
-                Set<BroadcastChannel> selectedChannels = getItem().getBroadcastChannels();
-
-                for(BroadcastChannel channel: selectedChannels)
+                if(getItem() != null)
                 {
-                    if(availableStreams.contains(channel.getChannelName()))
+                    List<String> availableStreams = mPlaylistManager.getBroadcastModel().getBroadcastConfigurationNames();
+
+                    Set<BroadcastChannel> selectedChannels = getItem().getBroadcastChannels();
+
+                    for(BroadcastChannel channel: selectedChannels)
                     {
-                        availableStreams.remove(channel.getChannelName());
+                        if(availableStreams.contains(channel.getChannelName()))
+                        {
+                            availableStreams.remove(channel.getChannelName());
+                        }
                     }
-                }
 
-                getSelectedStreamsView().getItems().addAll(selectedChannels);
-                getAvailableStreamsView().getItems().addAll(availableStreams);
+                    getSelectedStreamsView().getItems().addAll(selectedChannels);
+                    getAvailableStreamsView().getItems().addAll(availableStreams);
 
-                AliasID streamAs = getItem().getStreamTalkgroupAlias();
+                    AliasID streamAs = getItem().getStreamTalkgroupAlias();
 
-                if(streamAs instanceof StreamAsTalkgroup sat)
-                {
-                    mStreamAsIntegerTextFormatter.setValue(sat.getValue());
+                    if(streamAs instanceof StreamAsTalkgroup sat)
+                    {
+                        mStreamAsIntegerTextFormatter.setValue(sat.getValue());
+                    }
+                    else
+                    {
+                        mStreamAsIntegerTextFormatter.setValue(null);
+                    }
                 }
                 else
                 {
                     mStreamAsIntegerTextFormatter.setValue(null);
                 }
             }
-            else
+            finally
             {
-                mStreamAsIntegerTextFormatter.setValue(null);
+                mSuppressModification = false;
+                modifiedProperty().set(false);
             }
         });
     }
@@ -1092,7 +1158,12 @@ public class AliasItemEditor extends Editor<Alias>
             mMonitorAudioToggleSwitch = new ToggleSwitch();
             mMonitorAudioToggleSwitch.setDisable(true);
             mMonitorAudioToggleSwitch.selectedProperty()
-                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+                .addListener((observable, oldValue, newValue) -> {
+                    if(!mSuppressModification)
+                    {
+                        modifiedProperty().set(true);
+                    }
+                });
         }
 
         return mMonitorAudioToggleSwitch;
@@ -1112,7 +1183,12 @@ public class AliasItemEditor extends Editor<Alias>
 
             mMonitorPriorityComboBox.disableProperty().bind(getMonitorAudioToggleSwitch().selectedProperty().not());
             mMonitorPriorityComboBox.getSelectionModel().selectedItemProperty()
-                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+                .addListener((observable, oldValue, newValue) -> {
+                    if(!mSuppressModification)
+                    {
+                        modifiedProperty().set(true);
+                    }
+                });
         }
 
         return mMonitorPriorityComboBox;
@@ -1125,7 +1201,12 @@ public class AliasItemEditor extends Editor<Alias>
             mRecordAudioToggleSwitch = new ToggleSwitch();
             mRecordAudioToggleSwitch.setDisable(true);
             mRecordAudioToggleSwitch.selectedProperty()
-                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+                .addListener((observable, oldValue, newValue) -> {
+                    if(!mSuppressModification)
+                    {
+                        modifiedProperty().set(true);
+                    }
+                });
         }
 
         return mRecordAudioToggleSwitch;
@@ -1139,7 +1220,12 @@ public class AliasItemEditor extends Editor<Alias>
             mColorPicker.setDisable(true);
             mColorPicker.setEditable(true);
             mColorPicker.setStyle("-fx-color-rect-width: 60px; -fx-color-label-visible: false;");
-            mColorPicker.setOnAction(event -> modifiedProperty().set(true));
+            mColorPicker.setOnAction(event -> {
+                if(!mSuppressModification)
+                {
+                    modifiedProperty().set(true);
+                }
+            });
         }
 
         return mColorPicker;
@@ -1155,7 +1241,12 @@ public class AliasItemEditor extends Editor<Alias>
             mIconNodeComboBox.setItems(new SortedList(mPlaylistManager.getIconModel().iconsProperty(), Ordering.natural()));
             mIconNodeComboBox.setCellFactory(new IconCellFactory());
             mIconNodeComboBox.getSelectionModel().selectedItemProperty()
-                    .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+                    .addListener((observable, oldValue, newValue) -> {
+                        if(!mSuppressModification)
+                        {
+                            modifiedProperty().set(true);
+                        }
+                    });
         }
 
         return mIconNodeComboBox;
@@ -1351,6 +1442,24 @@ public class AliasItemEditor extends Editor<Alias>
     }
 
     /**
+     * Add Continuous Tone-Coded Squelch (CTCSS) alias identifier menu item
+     */
+    public class AddCtcssItem extends MenuItem
+    {
+        public AddCtcssItem()
+        {
+            super("Continuous Tone-Coded Squelch (CTCSS)");
+            setOnAction(event -> {
+                Ctcss ctcss = new Ctcss();
+                getIdentifiersList().getItems().add(ctcss);
+                getIdentifiersList().getSelectionModel().select(ctcss);
+                getIdentifiersList().scrollTo(ctcss);
+                modifiedProperty().set(true);
+            });
+        }
+    }
+
+    /**
      * Add Digital Coded Squelch (DCS) alias identifier menu item
      */
     public class AddDcsItem extends MenuItem
@@ -1363,6 +1472,24 @@ public class AliasItemEditor extends Editor<Alias>
                 getIdentifiersList().getItems().add(dcs);
                 getIdentifiersList().getSelectionModel().select(dcs);
                 getIdentifiersList().scrollTo(dcs);
+                modifiedProperty().set(true);
+            });
+        }
+    }
+
+    /**
+     * Add P25 Network Access Code (NAC) alias identifier menu item
+     */
+    public class AddNacItem extends MenuItem
+    {
+        public AddNacItem()
+        {
+            super("P25 Network Access Code (NAC)");
+            setOnAction(event -> {
+                Nac nac = new Nac();
+                getIdentifiersList().getItems().add(nac);
+                getIdentifiersList().getSelectionModel().select(nac);
+                getIdentifiersList().scrollTo(nac);
                 modifiedProperty().set(true);
             });
         }
@@ -1598,7 +1725,10 @@ public class AliasItemEditor extends Editor<Alias>
         @Override
         public void changed(ObservableValue<? extends String> observable, String oldValue, String newValue)
         {
-            modifiedProperty().set(true);
+            if(!mSuppressModification)
+            {
+                modifiedProperty().set(true);
+            }
         }
     }
 

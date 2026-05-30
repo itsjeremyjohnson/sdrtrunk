@@ -22,6 +22,7 @@ import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.codec.mbe.ImbeAudioModule;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
+import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
 import io.github.dsheirer.dsp.gain.NonClippingGain;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.hdu.HDUMessage;
@@ -32,19 +33,44 @@ import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.sample.Listener;
 import java.util.ArrayList;
 import java.util.List;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class P25P1AudioModule extends ImbeAudioModule
 {
+    private final static Logger mLog = LoggerFactory.getLogger(P25P1AudioModule.class);
     private boolean mEncryptedCall = false;
     private boolean mEncryptedCallStateEstablished = false;
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
+    private volatile GraphicEqualizer mGraphicEQ;
     private List<LDUMessage> mCachedLDUMessages = new ArrayList<>();
 
     public P25P1AudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
         super(userPreferences, aliasList);
+    }
+
+    /**
+     * Configures the 10-band graphic equalizer for this audio module.
+     *
+     * @param enabled true to enable the EQ
+     * @param bandGains array of 10 gain values in dB (-12 to +12)
+     */
+    public void setGraphicEQ(boolean enabled, double[] bandGains)
+    {
+        // IMBE audio is decoded at 8 kHz
+        mGraphicEQ = new GraphicEqualizer(8000.0);
+        mGraphicEQ.setEnabled(enabled);
+
+        if(bandGains != null)
+        {
+            mGraphicEQ.setBandGains(bandGains);
+        }
+
+        mLog.debug("P25P1AudioModule graphic EQ configured: enabled={} gains={}",
+            enabled, bandGains != null ? java.util.Arrays.toString(bandGains) : "null");
     }
 
     @Override
@@ -139,6 +165,13 @@ public class P25P1AudioModule extends ImbeAudioModule
             {
                 float[] audio = getAudioCodec().getAudio(frame);
                 audio = mGain.apply(audio);
+
+                GraphicEqualizer eq = mGraphicEQ;
+                if(eq != null && eq.isEnabled())
+                {
+                    eq.process(audio);
+                }
+
                 addAudio(audio);
             }
         }

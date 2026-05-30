@@ -50,7 +50,7 @@ public class DCSDecoder extends Decoder implements IRealBufferListener, Listener
     //Slope calculation sumXX value is always the same for 59 evenly spaced samples
     private static final double SLOPE_CALCULATION_SUM_XX = 2247.5;
     private static final float BAUD_LENGTH = 8000.0f / 134.4f;
-    private static final float SLOPE_THRESHOLD = 0.002750f;
+    private static final float SLOPE_THRESHOLD = 0.001375f;
     private static final int MAX_ONES_SEQUENCE = 6;
     private static final int OVERLAP = (int)Math.ceil(BAUD_LENGTH);
     private static final int POST_TRANSITION_SAMPLES_TO_SKIP = 30;

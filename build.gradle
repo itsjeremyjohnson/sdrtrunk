@@ -121,6 +121,7 @@ dependencies {
     implementation 'org.usb4java:libusb4java:1.3.0'
     implementation 'org.usb4java:usb4java-javax:1.3.0'
     implementation 'pl.edu.icm:JLargeArrays:1.6'
+    implementation 'io.github.jaredmdobson:concentus:1.0.2'
 }
 
 def os = org.gradle.nativeplatform.platform.internal.DefaultNativePlatform.currentOperatingSystem
@@ -145,6 +146,7 @@ def jvmArgsWindows =
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
          '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
+         '-Xmx6g',                         //Set max heap size to 6GB
          '-Djava.library.path=c:\\Program Files\\SDRplay\\API\\x64'] //SDRPlay API library path
 
 /**
@@ -157,7 +159,8 @@ def jvmArgsLinux =
          '--sun-misc-unsafe-memory-access=allow', //JDK24 - suppress sun.misc.Unsafe::allocateMemory warning
          '-XX:+UseCompactObjectHeaders',   //JDK25 - use compact object headers
          '--enable-native-access=javafx.graphics', //JDK24 - suppress restricted java.lang.System calls
-         '--enable-native-access=ALL-UNNAMED'] //SDRPlay API library path
+         '--enable-native-access=ALL-UNNAMED', //SDRPlay API library path
+         '-Xmx6g']                         //Set max heap size to 6GB
 
 application {
     mainClass = "io.github.dsheirer.gui.SDRTrunk"
@@ -275,6 +278,12 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
  * Usage: ./gradlew runtimeZipCurrent   (linux - using gradlew)
  */
 tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
+    //ap-fork: only configure platforms when this task is actually being run, otherwise
+    //the beryx runtime plugin accumulates platforms from every runtimeZip* task into
+    //the shared jre task and produces zips you didn't ask for.
+    if(!gradle.startParameter.taskNames.any { it.endsWith('runtimeZipCurrent') }) {
+        return
+    }
     def arch = System.properties.getProperty("os.arch")
     def javaHome = org.gradle.internal.jvm.Jvm.current().getJavaHome().toString()
 
@@ -320,16 +329,11 @@ tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
  * Usage: ./gradlew runtimeZipWindows   (linux - using gradlew)
  */
 tasks.register('runtimeZipWindows', org.beryx.runtime.RuntimeZipTask) {rt ->
-    //Windows aarch64
-    if(file(jdk_windows_aarch64).exists()) {
-        rt.extension.targetPlatform(targetWindowsAarch64, jdk_windows_aarch64, [])
+    //ap-fork: only configure platforms when this task is actually being run (see runtimeZipCurrent note).
+    if(!gradle.startParameter.taskNames.any { it.endsWith('runtimeZipWindows') }) {
+        return
     }
-    else {
-        rt.extension.targetPlatform(targetWindowsAarch64) {
-            jdkHome = jdkDownload(jdk_download_windows_aarch64)
-        }
-    }
-    //Windows x86-64
+    //ap-fork: Windows x86_64 only. aarch64 intentionally omitted to keep builds lean.
     if(file(jdk_windows_x86_64).exists()) {
         rt.extension.targetPlatform(targetWindowsX86_64, jdk_windows_x86_64, [])
     }
@@ -352,6 +356,10 @@ tasks.register('runtimeZipWindows', org.beryx.runtime.RuntimeZipTask) {rt ->
  * Usage: ./gradlew runtimeZipOthers   (linux - using gradlew)
  */
 tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
+    //ap-fork: only configure platforms when this task is actually being run (see runtimeZipCurrent note).
+    if(!gradle.startParameter.taskNames.any { it.endsWith('runtimeZipOthers') }) {
+        return
+    }
     //Linux aarch64
     if(file(jdk_linux_aarch64).exists()) {
         rt.extension.targetPlatform(targetLinuxAarch64, jdk_linux_aarch64, [])
@@ -390,4 +398,51 @@ tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
     }
 
     configure(rt, jvmArgsLinux)
+}
+
+/**
+ * ap-fork: Archive built runtime zips to the sibling sdrtrunk-ap-versions folder.
+ *
+ * After any runtimeZip* task completes, this task copies every .zip produced under
+ * build/image/ to ../sdrtrunk-ap-versions/v<version>/ so a clean build does not wipe
+ * prior deliverables. The destination can be overridden with -PversionsDir=<path>.
+ *
+ * Usage (runs automatically as a finalizer): gradlew runtimeZipCurrent
+ * Usage (manual):                            gradlew archiveVersion
+ */
+tasks.register('archiveVersion', Copy) {
+    description = 'ap-fork: copies built runtime zips into sdrtrunk-ap-versions/v<version>'
+    group = 'ap-fork'
+
+    def defaultVersionsDir = file("${rootDir}/../sdrtrunk-ap-versions")
+    def versionsDir = project.hasProperty('versionsDir') ? file(project.versionsDir) : defaultVersionsDir
+
+    from("$buildDir/image") {
+        include '*.zip'
+    }
+    into(new File(versionsDir, "v${version}"))
+
+    doFirst {
+        versionsDir.mkdirs()
+        logger.lifecycle("ap-fork: archiving v${version} zips -> ${destinationDir}")
+    }
+    doLast {
+        def copied = destinationDir.listFiles()?.findAll { it.name.endsWith('.zip') } ?: []
+        if (copied.isEmpty()) {
+            logger.lifecycle("ap-fork: no zips found in ${buildDir}/image (did runtimeZip* run?)")
+        } else {
+            copied.each { logger.lifecycle("ap-fork: archived ${it.name}") }
+        }
+    }
+}
+
+//Hook the archive task onto every runtimeZip* task as a finalizer so it runs
+//automatically after each build, even if the runtimeZip task fails partway through.
+afterEvaluate {
+    ['runtimeZipCurrent', 'runtimeZipWindows', 'runtimeZipOthers'].each { name ->
+        def t = tasks.findByName(name)
+        if (t != null) {
+            t.finalizedBy('archiveVersion')
+        }
+    }
 }

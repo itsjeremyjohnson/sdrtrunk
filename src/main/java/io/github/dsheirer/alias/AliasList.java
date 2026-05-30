@@ -21,8 +21,10 @@ package io.github.dsheirer.alias;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.alias.id.AliasID;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
+import io.github.dsheirer.alias.id.ctcss.Ctcss;
 import io.github.dsheirer.alias.id.dcs.Dcs;
 import io.github.dsheirer.alias.id.esn.Esn;
+import io.github.dsheirer.alias.id.nac.Nac;
 import io.github.dsheirer.alias.id.priority.Priority;
 import io.github.dsheirer.alias.id.radio.P25FullyQualifiedRadio;
 import io.github.dsheirer.alias.id.radio.Radio;
@@ -35,8 +37,10 @@ import io.github.dsheirer.alias.id.talkgroup.TalkgroupRange;
 import io.github.dsheirer.alias.id.tone.TonesID;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierCollection;
+import io.github.dsheirer.identifier.ctcss.CTCSSIdentifier;
 import io.github.dsheirer.identifier.dcs.DCSIdentifier;
 import io.github.dsheirer.identifier.esn.ESNIdentifier;
+import io.github.dsheirer.module.decode.p25.identifier.APCO25Nac;
 import io.github.dsheirer.identifier.patch.PatchGroup;
 import io.github.dsheirer.identifier.patch.PatchGroupIdentifier;
 import io.github.dsheirer.identifier.radio.FullyQualifiedRadioIdentifier;
@@ -47,6 +51,7 @@ import io.github.dsheirer.identifier.talkgroup.FullyQualifiedTalkgroupIdentifier
 import io.github.dsheirer.identifier.talkgroup.TalkgroupIdentifier;
 import io.github.dsheirer.identifier.tone.ToneIdentifier;
 import io.github.dsheirer.identifier.tone.ToneSequence;
+import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import io.github.dsheirer.module.decode.dcs.DCSCode;
 import io.github.dsheirer.protocol.Protocol;
 import java.util.ArrayList;
@@ -73,7 +78,9 @@ public class AliasList
     private final static Logger mLog = LoggerFactory.getLogger(AliasList.class);
     private Map<Protocol,TalkgroupAliasList> mTalkgroupProtocolMap = new EnumMap<>(Protocol.class);
     private Map<Protocol,RadioAliasList> mRadioProtocolMap = new EnumMap<>(Protocol.class);
+    private Map<CTCSSCode,Alias> mCTCSSCodeAliasMap = new EnumMap<>(CTCSSCode.class);
     private Map<DCSCode,Alias> mDCSCodeAliasMap = new EnumMap<>(DCSCode.class);
+    private Map<Integer,Alias> mNACValueAliasMap = new HashMap<>();
     private Map<String,Alias> mESNMap = new HashMap<>();
     private Map<Integer,Alias> mUnitStatusMap = new HashMap<>();
     private Map<Integer,Alias> mUserStatusMap = new HashMap<>();
@@ -211,10 +218,22 @@ public class AliasList
 
                         radioRangeAliasList.add(radioRange, alias);
                         break;
+                    case CTCSS:
+                        if(id instanceof Ctcss ctcss)
+                        {
+                            mCTCSSCodeAliasMap.put(ctcss.getCTCSSCode(), alias);
+                        }
+                        break;
                     case DCS:
                         if(id instanceof Dcs dcs)
                         {
                             mDCSCodeAliasMap.put(dcs.getDCSCode(), alias);
+                        }
+                        break;
+                    case NAC:
+                        if(id instanceof Nac nac)
+                        {
+                            mNACValueAliasMap.put(nac.getNacValue(), alias);
                         }
                         break;
                     case ESN:
@@ -310,6 +329,7 @@ public class AliasList
         mRadioProtocolMap.values().stream().forEach(radioAliasList -> radioAliasList.remove(alias));
 
         Collection<Alias> collection = Collections.singleton(alias);
+        mNACValueAliasMap.values().removeAll(collection);
         mESNMap.values().removeAll(collection);
         mUnitStatusMap.values().removeAll(collection);
         mUserStatusMap.values().removeAll(collection);
@@ -510,6 +530,15 @@ public class AliasList
                             }
                         }
                     }
+                    else if(identifier instanceof CTCSSIdentifier ctcssIdentifier)
+                    {
+                        CTCSSCode ctcssCode = ctcssIdentifier.getValue();
+
+                        if(ctcssCode != null)
+                        {
+                            return toList(mCTCSSCodeAliasMap.get(ctcssCode));
+                        }
+                    }
                     else if(identifier instanceof DCSIdentifier dcsIdentifier)
                     {
                         DCSCode dcsCode = dcsIdentifier.getValue();
@@ -518,6 +547,10 @@ public class AliasList
                         {
                             return toList(mDCSCodeAliasMap.get(dcsCode));
                         }
+                    }
+                    else if(identifier instanceof APCO25Nac nacIdentifier)
+                    {
+                        return toList(mNACValueAliasMap.get(nacIdentifier.getValue()));
                     }
                     break;
             }
@@ -663,10 +696,49 @@ public class AliasList
 
         public Alias getAlias(TalkgroupIdentifier identifier)
         {
-            //Attempt to do a fully qualified identifier match only
+            //Attempt to do a fully qualified identifier match first
             if(identifier instanceof FullyQualifiedTalkgroupIdentifier fqti)
             {
-                return mFullyQualifiedTalkgroupAliasMap.get(fqti.getFullyQualifiedTalkgroupAddress());
+                Alias fqAlias = mFullyQualifiedTalkgroupAliasMap.get(fqti.getFullyQualifiedTalkgroupAddress());
+
+                if(fqAlias != null)
+                {
+                    return fqAlias;
+                }
+
+                //Fall through: try matching by the actual talkgroup ID from the home system
+                int talkgroupId = fqti.getTalkgroup();
+                Alias tgAlias = mTalkgroupAliasMap.get(talkgroupId);
+
+                if(tgAlias != null)
+                {
+                    return tgAlias;
+                }
+
+                //Also try the local address value if it differs from the home talkgroup ID
+                int localAddress = fqti.getValue();
+
+                if(localAddress != talkgroupId)
+                {
+                    Alias localAlias = mTalkgroupAliasMap.get(localAddress);
+
+                    if(localAlias != null)
+                    {
+                        return localAlias;
+                    }
+                }
+
+                //Try range matching against both the talkgroup ID and local address
+                for(Map.Entry<TalkgroupRange, Alias> entry : mTalkgroupRangeAliasMap.entrySet())
+                {
+                    if(entry.getKey().contains(talkgroupId) ||
+                       (localAddress != talkgroupId && entry.getKey().contains(localAddress)))
+                    {
+                        return entry.getValue();
+                    }
+                }
+
+                return null;
             }
 
             //Attempt to match the talkgroup value
@@ -783,10 +855,49 @@ public class AliasList
 
         public Alias getAlias(RadioIdentifier identifier)
         {
-            //Match fully qualified identifier only.
+            //Match fully qualified identifier first, then fall through to simpler matching
             if(identifier instanceof FullyQualifiedRadioIdentifier fqri)
             {
-                return mFullyQualifiedRadioAliasMap.get(fqri.getFullyQualifiedRadioAddress());
+                Alias fqAlias = mFullyQualifiedRadioAliasMap.get(fqri.getFullyQualifiedRadioAddress());
+
+                if(fqAlias != null)
+                {
+                    return fqAlias;
+                }
+
+                //Fall through: try matching by the actual radio ID from the home system
+                int radioId = fqri.getRadio();
+                Alias radioAlias = mRadioAliasMap.get(radioId);
+
+                if(radioAlias != null)
+                {
+                    return radioAlias;
+                }
+
+                //Also try the local address value if it differs from the home radio ID
+                int localAddress = fqri.getValue();
+
+                if(localAddress != radioId)
+                {
+                    Alias localAlias = mRadioAliasMap.get(localAddress);
+
+                    if(localAlias != null)
+                    {
+                        return localAlias;
+                    }
+                }
+
+                //Try range matching against both the radio ID and local address
+                for(Map.Entry<RadioRange, Alias> entry : mRadioRangeAliasMap.entrySet())
+                {
+                    if(entry.getKey().contains(radioId) ||
+                       (localAddress != radioId && entry.getKey().contains(localAddress)))
+                    {
+                        return entry.getValue();
+                    }
+                }
+
+                return null;
             }
 
             //Attempt to match against the radio identifier

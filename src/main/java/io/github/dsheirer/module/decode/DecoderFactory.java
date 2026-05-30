@@ -84,6 +84,7 @@ import io.github.dsheirer.module.decode.nbfm.NBFMDecoderState;
 import io.github.dsheirer.module.decode.p25.P25TrafficChannelManager;
 import io.github.dsheirer.module.decode.p25.audio.P25P1AudioModule;
 import io.github.dsheirer.module.decode.p25.audio.P25P2AudioModule;
+import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderC4FM;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderLSM;
@@ -220,7 +221,7 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            p25TrafficChannelManager = new P25TrafficChannelManager(channel);
+            p25TrafficChannelManager = new P25TrafficChannelManager(channel, aliasList);
         }
         else if(trafficChannelManager instanceof P25TrafficChannelManager p25)
         {
@@ -228,7 +229,7 @@ public class DecoderFactory
         }
         else
         {
-            p25TrafficChannelManager = new P25TrafficChannelManager(channel);
+            p25TrafficChannelManager = new P25TrafficChannelManager(channel, aliasList);
         }
 
         //Only add traffic channel manager to the modules if this is the control channel
@@ -246,8 +247,20 @@ public class DecoderFactory
         decoderState2.setCurrentChannel(channelDescriptor);
         modules.add(decoderState1);
         modules.add(decoderState2);
-        modules.add(new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_1, aliasList));
-        modules.add(new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_2, aliasList));
+        P25P2AudioModule p25p2Audio1 = new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_1, aliasList);
+        p25p2Audio1.setAudioHangtimeMs(channel.getDecodeConfiguration().getAudioHangtimeMs());
+        if(channel.getDecodeConfiguration() instanceof DecodeConfigP25 configP25)
+        {
+            p25p2Audio1.setGraphicEQ(configP25.isGraphicEQEnabled(), configP25.getGraphicEQBandGains());
+        }
+        modules.add(p25p2Audio1);
+        P25P2AudioModule p25p2Audio2 = new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_2, aliasList);
+        p25p2Audio2.setAudioHangtimeMs(channel.getDecodeConfiguration().getAudioHangtimeMs());
+        if(channel.getDecodeConfiguration() instanceof DecodeConfigP25 configP25_ts2)
+        {
+            p25p2Audio2.setGraphicEQ(configP25_ts2.isGraphicEQEnabled(), configP25_ts2.getGraphicEQBandGains());
+        }
+        modules.add(p25p2Audio2);
 
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
         if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
@@ -275,11 +288,27 @@ public class DecoderFactory
             switch(p1.getModulation())
             {
                 case C4FM:
-                    modules.add(new P25P1DecoderC4FM());
+                {
+                    P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
+                    java.util.Set<Integer> nacs = p1.getAllowedNACSet();
+                    if(nacs != null)
+                    {
+                        decoder.setAllowedNACs(nacs);
+                    }
+                    modules.add(decoder);
                     break;
+                }
                 case CQPSK:
-                    modules.add(new P25P1DecoderLSM());
+                {
+                    P25P1DecoderLSM decoder = new P25P1DecoderLSM();
+                    java.util.Set<Integer> nacs = p1.getAllowedNACSet();
+                    if(nacs != null)
+                    {
+                        decoder.setAllowedNACs(nacs);
+                    }
+                    modules.add(decoder);
                     break;
+                }
                 default:
                     throw new IllegalArgumentException("Unrecognized P25 Phase 1 Modulation [" + p1.getModulation() + "]");
             }
@@ -287,7 +316,7 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel);
+            P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel, aliasList);
             modules.add(primaryTCM);
             modules.add(new P25P1DecoderState(channel, primaryTCM));
         }
@@ -302,7 +331,15 @@ public class DecoderFactory
             mLog.warn("Expected non-null traffic channel manager for channel " + channel.getName());
         }
 
-        modules.add(new P25P1AudioModule(userPreferences, aliasList));
+        P25P1AudioModule p25AudioModule = new P25P1AudioModule(userPreferences, aliasList);
+        p25AudioModule.setAudioHangtimeMs(channel.getDecodeConfiguration().getAudioHangtimeMs());
+
+        if(channel.getDecodeConfiguration() instanceof DecodeConfigP25 configP25)
+        {
+            p25AudioModule.setGraphicEQ(configP25.isGraphicEQEnabled(), configP25.getGraphicEQBandGains());
+        }
+
+        modules.add(p25AudioModule);
 
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
         if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
@@ -435,9 +472,14 @@ public class DecoderFactory
         }
 
         DecodeConfigNBFM decodeConfigNBFM = (DecodeConfigNBFM)decodeConfig;
-        modules.add(new NBFMDecoder(decodeConfigNBFM));
-        modules.add(new NBFMDecoderState(channel.getName(), decodeConfigNBFM));
-        modules.add(new AudioModule(aliasList, 0, 60000, decodeConfigNBFM.isAudioFilter()));
+        NBFMDecoderState decoderState = new NBFMDecoderState(channel.getName(), decodeConfigNBFM);
+        NBFMDecoder decoder = new NBFMDecoder(decodeConfigNBFM);
+        decoder.setDecoderState(decoderState);
+        modules.add(decoder);
+        modules.add(decoderState);
+        AudioModule audioModule = new AudioModule(aliasList, 0, 60000, decodeConfigNBFM.isAudioFilter());
+        audioModule.setAudioHangtimeMs(decodeConfigNBFM.getAudioHangtimeMs());
+        modules.add(audioModule);
     }
 
     /**
@@ -490,7 +532,7 @@ public class DecoderFactory
         }
         else
         {
-            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel);
+            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel, aliasList);
         }
 
         //Only register the traffic channel manager as a module if this is the parent control channel.
@@ -583,6 +625,10 @@ public class DecoderFactory
             {
                 switch(auxDecoder)
                 {
+                    case CTCSS:
+                        modules.add(new io.github.dsheirer.module.decode.ctcss.CTCSSAuxDecoder());
+                        modules.add(new io.github.dsheirer.module.decode.ctcss.CTCSSDecoderState());
+                        break;
                     case DCS:
                         modules.add(new DCSDecoder());
                         modules.add(new DCSDecoderState());

@@ -411,6 +411,7 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
             mChannelTableView = new TableView<>();
 
             TableColumn<Channel,Boolean> playingColumn = new TableColumn("Playing");
+            playingColumn.setId("channelTable.playing");
             playingColumn.setPrefWidth(75);
             playingColumn.setCellValueFactory(new PropertyValueFactory<>("processing"));
             playingColumn.setCellFactory(param -> {
@@ -439,6 +440,7 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
             });
 
             TableColumn<Channel,Boolean> autoStartColumn = new TableColumn<>("Auto-Start");
+            autoStartColumn.setId("channelTable.autoStart");
             autoStartColumn.setCellValueFactory(new PropertyValueFactory<>("autoStart"));
             autoStartColumn.setPrefWidth(95);
             autoStartColumn.setCellFactory(param -> {
@@ -467,22 +469,27 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
             });
 
             TableColumn systemColumn = new TableColumn("System");
+            systemColumn.setId("channelTable.system");
             systemColumn.setCellValueFactory(new PropertyValueFactory<>("system"));
             systemColumn.setPrefWidth(175);
 
             TableColumn siteColumn = new TableColumn("Site");
+            siteColumn.setId("channelTable.site");
             siteColumn.setCellValueFactory(new PropertyValueFactory<>("site"));
             siteColumn.setPrefWidth(175);
 
             TableColumn nameColumn = new TableColumn("Name");
+            nameColumn.setId("channelTable.name");
             nameColumn.setCellValueFactory(new PropertyValueFactory<>("name"));
             nameColumn.setPrefWidth(200);
 
             TableColumn frequencyColumn = new TableColumn("Frequency");
+            frequencyColumn.setId("channelTable.frequency");
             frequencyColumn.setCellValueFactory(new FrequencyCellValueFactory());
             frequencyColumn.setPrefWidth(100);
 
             TableColumn protocolColumn = new TableColumn("Protocol");
+            protocolColumn.setId("channelTable.protocol");
             protocolColumn.setCellValueFactory(new ProtocolCellValueFactory());
             protocolColumn.setPrefWidth(100);
 
@@ -495,6 +502,9 @@ public class ChannelEditor extends SplitPane implements IFilterProcessor, IAlias
             SortedList<Channel> sortedList = new SortedList<>(mChannelFilteredList);
             sortedList.comparatorProperty().bind(mChannelTableView.comparatorProperty());
             mChannelTableView.setItems(sortedList);
+
+            //Persist column widths, order, and sort across sessions (ap-14.6)
+            new io.github.dsheirer.preference.javafx.FxTableColumnMonitor(mUserPreferences, mChannelTableView, "channelTable");
             mChannelTableView.getSelectionModel().selectedItemProperty()
                 .addListener((observable, oldValue, newValue) -> setChannel(newValue));
             mChannelTableView.setOnMouseClicked(event -> {

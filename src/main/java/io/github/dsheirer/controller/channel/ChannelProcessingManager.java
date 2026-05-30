@@ -85,6 +85,9 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
     private List<Listener<IDecodeEvent>> mDecodeEventListeners = new CopyOnWriteArrayList<>();
     private Broadcaster<ChannelEvent> mChannelEventBroadcaster = new Broadcaster();
 
+    private Map<ProcessingChain, Listener<IDecodeEvent>> mParentDecodeEventHistoryListeners = new ConcurrentHashMap<>();
+    private Map<ProcessingChain, Listener<IDecodeEvent>> mChildDecodeEventHistoryListeners = new ConcurrentHashMap<>();
+
     private ChannelMapModel mChannelMapModel;
     private ChannelMetadataModel mChannelMetadataModel;
     private EventLogManager mEventLogManager;
@@ -426,11 +429,15 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
         //the traffic channel event history.
         if(request.hasParentDecodeEventHistory())
         {
-            processingChain.getDecodeEventHistory().addListener(request.getParentDecodeEventHistory());
+            Listener<IDecodeEvent> parentListener = request.getParentDecodeEventHistory();
+            processingChain.getDecodeEventHistory().addListener(parentListener);
+            mParentDecodeEventHistoryListeners.put(processingChain, parentListener);
         }
         else if(request.hasChildDecodeEventHistory())
         {
-            request.getChildDecodeEventHistory().addListener(processingChain.getDecodeEventHistory());
+            Listener<IDecodeEvent> childListener = processingChain.getDecodeEventHistory();
+            request.getChildDecodeEventHistory().addListener(childListener);
+            mChildDecodeEventHistoryListeners.put(processingChain, childListener);
         }
 
         //Register to receive event bus requests/notifications
@@ -684,6 +691,19 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
                 //the owning parent channel's traffic channel manager can cleanup it's accounting.
                 mChannelEventBroadcaster.broadcast(new ChannelEvent(channel, ChannelEvent.Event.NOTIFICATION_PROCESSING_STOP));
                 mChannelEventBroadcaster.removeListener(processingChain);
+
+                //Remove decode event history listeners
+                Listener<IDecodeEvent> parentListener = mParentDecodeEventHistoryListeners.remove(processingChain);
+                if(parentListener != null)
+                {
+                    processingChain.getDecodeEventHistory().removeListener(parentListener);
+                }
+
+                Listener<IDecodeEvent> childListener = mChildDecodeEventHistoryListeners.remove(processingChain);
+                if(childListener != null)
+                {
+                    processingChain.getDecodeEventHistory().removeListener(childListener);
+                }
 
                 //Unregister for event bus requests and notifications
                 processingChain.getEventBus().unregister(ChannelProcessingManager.this);

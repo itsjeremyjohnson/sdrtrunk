@@ -167,6 +167,7 @@ public class UserPreferencesEditor extends BorderPane
 
             TreeItem<String> applicationItem = new TreeItem<>("Application");
             applicationItem.getChildren().add(new TreeItem(PreferenceEditorType.APPLICATION));
+            applicationItem.getChildren().add(new TreeItem(PreferenceEditorType.DIAGNOSTICS));
             treeRoot.getChildren().add(applicationItem);
             applicationItem.setExpanded(true);
 
