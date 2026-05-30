@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.api;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -41,17 +42,38 @@ public class LocalControlApiServer
     private static final String STATUS_PATH = "/api/v1/status";
     private static final String OPENAPI_PATH = "/api/v1/openapi.yaml";
     private static final String OPENAPI_RESOURCE = "/openapi/local-control-api.yaml";
+    private static final String CHANNELS_PATH = "/api/v1/channels";
+    private static final String ALIASES_PATH = "/api/v1/aliases";
+    private static final String TUNERS_PATH = "/api/v1/tuners";
+    private static final String BROADCASTS_PATH = "/api/v1/broadcasts";
+    private static final String RUNTIME_PATH = "/api/v1/runtime";
+    private static final int DEFAULT_LIMIT = 100;
+    private static final int MAX_LIMIT = 1000;
 
     private final LocalControlApiConfig mConfig;
     private final Supplier<String> mApplicationNameSupplier;
+    private final ObjectMapper mObjectMapper = new ObjectMapper();
+    private volatile LocalControlApiModelProvider mModelProvider;
     private final Instant mStartedAt = Instant.now();
     private HttpServer mServer;
     private ExecutorService mExecutor;
 
     public LocalControlApiServer(LocalControlApiConfig config, Supplier<String> applicationNameSupplier)
     {
+        this(config, applicationNameSupplier, EmptyLocalControlApiModelProvider.INSTANCE);
+    }
+
+    public LocalControlApiServer(LocalControlApiConfig config, Supplier<String> applicationNameSupplier,
+                                 LocalControlApiModelProvider modelProvider)
+    {
         mConfig = config;
         mApplicationNameSupplier = applicationNameSupplier;
+        mModelProvider = modelProvider != null ? modelProvider : EmptyLocalControlApiModelProvider.INSTANCE;
+    }
+
+    public void setModelProvider(LocalControlApiModelProvider modelProvider)
+    {
+        mModelProvider = modelProvider != null ? modelProvider : EmptyLocalControlApiModelProvider.INSTANCE;
     }
 
     public synchronized void start() throws IOException
@@ -76,6 +98,16 @@ public class LocalControlApiServer
         mServer = HttpServer.create(address, 0);
         mServer.createContext(STATUS_PATH, this::handleStatus);
         mServer.createContext(OPENAPI_PATH, this::handleOpenApi);
+        mServer.createContext(CHANNELS_PATH, exchange -> handleModelResponse(exchange,
+            () -> mModelProvider.getChannels(getLimit(exchange), getOffset(exchange))));
+        mServer.createContext(ALIASES_PATH, exchange -> handleModelResponse(exchange,
+            () -> mModelProvider.getAliases(getLimit(exchange), getOffset(exchange))));
+        mServer.createContext(TUNERS_PATH, exchange -> handleModelResponse(exchange,
+            () -> mModelProvider.getTuners(getLimit(exchange), getOffset(exchange))));
+        mServer.createContext(BROADCASTS_PATH, exchange -> handleModelResponse(exchange,
+            () -> mModelProvider.getBroadcasts(getLimit(exchange), getOffset(exchange))));
+        mServer.createContext(RUNTIME_PATH, exchange -> handleModelResponse(exchange,
+            () -> mModelProvider.getRuntimeSummary()));
         mExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r, "sdrtrunk-local-control-api");
             thread.setDaemon(true);
@@ -150,6 +182,73 @@ public class LocalControlApiServer
         }
 
         send(exchange, 200, "application/yaml", loadOpenApiDocument());
+    }
+
+    private void handleModelResponse(HttpExchange exchange, ThrowingSupplier<Object> responseSupplier) throws IOException
+    {
+        if(!isGet(exchange))
+        {
+            send(exchange, 405, "application/json", "{\"error\":\"method_not_allowed\"}");
+            return;
+        }
+
+        if(!authorized(exchange))
+        {
+            send(exchange, 401, "application/json", "{\"error\":\"unauthorized\"}");
+            return;
+        }
+
+        try
+        {
+            send(exchange, 200, "application/json", mObjectMapper.writeValueAsString(responseSupplier.get()));
+        }
+        catch(IllegalArgumentException iae)
+        {
+            send(exchange, 400, "application/json", "{\"error\":\"bad_request\",\"message\":\"" + escape(iae.getMessage()) + "\"}");
+        }
+    }
+
+    private int getLimit(HttpExchange exchange)
+    {
+        return Math.min(MAX_LIMIT, Math.max(1, getQueryInt(exchange, "limit", DEFAULT_LIMIT)));
+    }
+
+    private int getOffset(HttpExchange exchange)
+    {
+        return Math.max(0, getQueryInt(exchange, "offset", 0));
+    }
+
+    private int getQueryInt(HttpExchange exchange, String name, int defaultValue)
+    {
+        String query = exchange.getRequestURI().getRawQuery();
+
+        if(query == null || query.isEmpty())
+        {
+            return defaultValue;
+        }
+
+        for(String parameter: query.split("&"))
+        {
+            String[] parts = parameter.split("=", 2);
+            if(parts.length == 2 && name.equals(parts[0]))
+            {
+                try
+                {
+                    return Integer.parseInt(parts[1]);
+                }
+                catch(NumberFormatException nfe)
+                {
+                    throw new IllegalArgumentException("Invalid integer query parameter: " + name);
+                }
+            }
+        }
+
+        return defaultValue;
+    }
+
+    private interface ThrowingSupplier<T>
+    {
+        T get() throws IOException;
     }
 
     private boolean isGet(HttpExchange exchange)

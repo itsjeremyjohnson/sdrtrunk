@@ -23,6 +23,7 @@ import com.jidesoft.swing.JideSplitPane;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.api.LocalControlApiConfig;
 import io.github.dsheirer.api.LocalControlApiServer;
+import io.github.dsheirer.api.RuntimeLocalControlApiModelProvider;
 import io.github.dsheirer.audio.DuplicateCallDetector;
 import io.github.dsheirer.audio.broadcast.AudioStreamingManager;
 import io.github.dsheirer.audio.broadcast.BroadcastFormat;
@@ -255,6 +256,7 @@ public class SDRTrunk implements Listener<TunerEvent>
         mTunerManager.getDiscoveredTunerModel().addListener(this);
 
         mPlaylistManager.init();
+        attachLocalControlApiModels();
 
         if(GraphicsEnvironment.isHeadless())
         {
@@ -660,6 +662,17 @@ public class SDRTrunk implements Listener<TunerEvent>
         else
         {
             mLog.info("Local control API disabled");
+        }
+    }
+
+    /**
+     * Attaches runtime models to the optional local control API after playlist/tuner models are initialized.
+     */
+    private void attachLocalControlApiModels()
+    {
+        if(mLocalControlApiServer != null)
+        {
+            mLocalControlApiServer.setModelProvider(new RuntimeLocalControlApiModelProvider(mPlaylistManager, mTunerManager));
         }
     }
 
