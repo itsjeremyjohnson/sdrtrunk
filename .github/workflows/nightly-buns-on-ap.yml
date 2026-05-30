@@ -1,12 +1,12 @@
 # Create nightly release for Linux, Mac and Windows.
 # Builds native JNI libraries for each platform, then packages with Gradle.
-name: Nightly Release
+name: Nightly Release (buns-on-ap-14.9.11)
 
 on:
   workflow_dispatch:
 
 concurrency:
-  group: nightly-release
+  group: nightly-release-buns-on-ap
   cancel-in-progress: true
 
 jobs:
@@ -207,15 +207,15 @@ jobs:
           echo -e "ref: $GITHUB_REF \ncommit: $GITHUB_SHA\nbuild: $(date +"%Y-%m-%dT%H:%M:%SZ")" > build/image/build_info.txt
 
       - name: Delete previous nightly release
-        run: gh release delete nightly --yes --cleanup-tag || true
+        run: gh release delete nightly-buns-on-ap --yes --cleanup-tag || true
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Create nightly release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: nightly
-          name: Nightly Build
+          tag_name: nightly-buns-on-ap
+          name: Nightly Build (buns-on-ap-14.9.11)
           prerelease: true
           body: |
             Automatic nightly build of the HydraSDR fork of sdrtrunk.

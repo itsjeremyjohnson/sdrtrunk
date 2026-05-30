@@ -26,6 +26,15 @@ import io.github.dsheirer.identifier.MutableIdentifierCollection;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.sample.Broadcaster;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.identifier.Form;
+import io.github.dsheirer.identifier.IdentifierClass;
+import io.github.dsheirer.identifier.Role;
+import io.github.dsheirer.identifier.configuration.SiteConfigurationIdentifier;
+import io.github.dsheirer.identifier.configuration.SystemConfigurationIdentifier;
+import io.github.dsheirer.module.decode.p25.phase1.PcmStreamManager;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -46,6 +55,16 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     private int mAudioSampleCount = 0;
     private boolean mRecordAudioOverride;
     private int mTimeslot;
+
+    // PCM stream state — used to broadcast decoded audio to connected TCP clients on port 9503
+    private static final DateTimeFormatter PCM_TIMESTAMP_FMT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
+    private volatile String mPcmCallId = null;
+    private final AtomicInteger mPcmFrameSeq = new AtomicInteger(0);
+    private final AtomicInteger mPcmFrameCount = new AtomicInteger(0);
+    private String mPcmCachedSystem = "";
+    private String mPcmCachedSite = "";
+    private String mPcmCachedTalkgroup = "";
+    private String mPcmCachedFrom = "";
 
     /**
      * Constructs an abstract audio module
@@ -92,7 +111,62 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                 mAudioSegment.decrementConsumerCount();
                 mAudioSegment = null;
             }
+
+            // PCM stream: broadcast call_end when the segment closes.
+            // Wrapped in try-catch so any PCM failure cannot affect the existing audio pipeline.
+            try
+            {
+                if(mPcmCallId != null)
+                {
+                    PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
+                    if(pcmMgr != null && pcmMgr.isRunning())
+                    {
+                        pcmMgr.broadcastCallEnd(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
+                                mPcmCachedTalkgroup, mPcmFrameCount.get());
+                    }
+                }
+            }
+            catch(Exception e)
+            {
+                mLog.warn("PCM call_end broadcast error: {}", e.getMessage());
+            }
+            finally
+            {
+                // Always clear PCM state regardless of broadcast success or failure
+                mPcmCallId = null;
+                mPcmCachedSystem = "";
+                mPcmCachedSite = "";
+                mPcmCachedTalkgroup = "";
+                mPcmCachedFrom = "";
+            }
         }
+    }
+
+    /** Returns the user-configured system name from the identifier collection, or empty string. */
+    private String pcmGetSystem()
+    {
+        io.github.dsheirer.identifier.Identifier id =
+                mIdentifierCollection.getIdentifier(IdentifierClass.CONFIGURATION, Form.SYSTEM, Role.ANY);
+        if(id instanceof SystemConfigurationIdentifier)
+            return pcmEscape(((SystemConfigurationIdentifier)id).getValue());
+        return "";
+    }
+
+    /** Returns the user-configured site name from the identifier collection, or empty string. */
+    private String pcmGetSite()
+    {
+        io.github.dsheirer.identifier.Identifier id =
+                mIdentifierCollection.getIdentifier(IdentifierClass.CONFIGURATION, Form.SITE, Role.ANY);
+        if(id instanceof SiteConfigurationIdentifier)
+            return pcmEscape(((SiteConfigurationIdentifier)id).getValue());
+        return "";
+    }
+
+    private static String pcmEscape(String s)
+    {
+        if(s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"")
+                .replace("\n", " ").replace("\r", "");
     }
 
     @Override
@@ -128,6 +202,39 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                 }
 
                 mAudioSampleCount = 0;
+
+                // PCM stream: broadcast call_start for the new segment.
+                // Wrapped in try-catch so any PCM failure cannot affect the existing audio pipeline.
+                try
+                {
+                    PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
+                    if(pcmMgr != null && pcmMgr.isRunning() && mPcmCallId == null)
+                    {
+                        mPcmCallId = Long.toHexString(System.currentTimeMillis()).substring(4);
+                        mPcmFrameSeq.set(0);
+                        mPcmFrameCount.set(0);
+                        // Cache metadata once at call_start — reused on every addAudio() frame
+                        mPcmCachedSystem = pcmGetSystem();
+                        mPcmCachedSite = pcmGetSite();
+                        mPcmCachedTalkgroup = pcmEscape(mIdentifierCollection.getToIdentifier() != null
+                                ? mIdentifierCollection.getToIdentifier().toString() : "");
+                        mPcmCachedFrom = pcmEscape(mIdentifierCollection.getFromIdentifier() != null
+                                ? mIdentifierCollection.getFromIdentifier().toString() : "");
+                        pcmMgr.broadcastCallStart(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
+                                mPcmCachedTalkgroup, mPcmCachedFrom,
+                                LocalDateTime.now().format(PCM_TIMESTAMP_FMT));
+                    }
+                }
+                catch(Exception e)
+                {
+                    mLog.warn("PCM call_start broadcast error: {}", e.getMessage());
+                    // Reset PCM state so the next call gets a clean slate
+                    mPcmCallId = null;
+                    mPcmCachedSystem = "";
+                    mPcmCachedSite = "";
+                    mPcmCachedTalkgroup = "";
+                    mPcmCachedFrom = "";
+                }
             }
 
             return mAudioSegment;
@@ -146,6 +253,24 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
             closeAudioSegment();
             audioSegment = getAudioSegment();
             audioSegment.linkTo(previous);
+        }
+
+        // PCM stream: broadcast decoded audio to connected TCP clients.
+        // Wrapped in try-catch so any PCM failure cannot affect the existing audio pipeline.
+        try
+        {
+            PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
+            if(pcmMgr != null && pcmMgr.isRunning() && mPcmCallId != null)
+            {
+                pcmMgr.broadcastPcm(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
+                        mPcmCachedTalkgroup, mPcmCachedFrom,
+                        mPcmFrameSeq.getAndIncrement(), audioBuffer);
+                mPcmFrameCount.incrementAndGet();
+            }
+        }
+        catch(Exception e)
+        {
+            mLog.warn("PCM frame broadcast error: {}", e.getMessage());
         }
 
         try

@@ -29,11 +29,14 @@ import io.github.dsheirer.controller.channel.Channel.ChannelType;
 import io.github.dsheirer.controller.channel.ChannelEvent;
 import io.github.dsheirer.controller.channel.IChannelEventListener;
 import io.github.dsheirer.identifier.Form;
+import io.github.dsheirer.identifier.integer.IntegerIdentifier;
 import io.github.dsheirer.identifier.Identifier;
 import io.github.dsheirer.identifier.IdentifierClass;
 import io.github.dsheirer.identifier.MutableIdentifierCollection;
 import io.github.dsheirer.identifier.Role;
 import io.github.dsheirer.identifier.configuration.FrequencyConfigurationIdentifier;
+import io.github.dsheirer.identifier.configuration.SiteConfigurationIdentifier;
+import io.github.dsheirer.identifier.configuration.SystemConfigurationIdentifier;
 import io.github.dsheirer.identifier.decoder.DecoderLogicalChannelNameIdentifier;
 import io.github.dsheirer.identifier.patch.PatchGroupIdentifier;
 import io.github.dsheirer.identifier.patch.PatchGroupManager;
@@ -172,7 +175,11 @@ import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.util.PacketUtil;
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
+import java.time.Instant;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import org.jdesktop.swingx.mapviewer.GeoPosition;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -185,6 +192,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(P25P1DecoderState.class);
     private static final LoggingSuppressor LOGGING_SUPPRESSOR = new LoggingSuppressor(LOGGER);
+    private static final DateTimeFormatter PCM_VID_TIMESTAMP_FMT =
+            DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss").withZone(ZoneId.systemDefault());
     private final Channel mChannel;
     private final Modulation mModulation;
     private final PatchGroupManager mPatchGroupManager = new PatchGroupManager();
@@ -192,6 +201,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private final Listener<ChannelEvent> mChannelEventListener;
     private final P25TrafficChannelManager mTrafficChannelManager;
     private ServiceOptions mCurrentServiceOptions;
+    private List<ControlChannelHeartbeat> mHeartbeatMonitors = new ArrayList<>();
+    private Listener<IMessage> mRawStreamListener;
 
     /**
      * Constructs an APCO-25 decoder state with an optional traffic channel manager.
@@ -272,9 +283,30 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     /**
      * Primary message processing method.
      */
+    /**
+     * Sets heartbeat monitors to fire on RFSS status broadcasts.
+     */
+    public void setHeartbeatMonitors(List<ControlChannelHeartbeat> monitors)
+    {
+        mHeartbeatMonitors = monitors;
+    }
+
+    /**
+     * Sets a listener to receive raw valid messages (for TCP streaming).
+     */
+    public void setRawStreamListener(Listener<IMessage> listener)
+    {
+        mRawStreamListener = listener;
+    }
+
     @Override
     public void receive(IMessage iMessage)
     {
+        if(mRawStreamListener != null && iMessage.isValid())
+        {
+            mRawStreamListener.receive(iMessage);
+        }
+
         if(iMessage instanceof P25P1Message message)
         {
             getIdentifierCollection().update(message.getNAC());
@@ -634,6 +666,15 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
                     }
                     mNetworkConfigurationMonitor.process(ambtc);
+                    if(!mHeartbeatMonitors.isEmpty() && ambtc instanceof AMBTCRFSSStatusBroadcast rsbHb
+                            && rsbHb.getSystem() instanceof IntegerIdentifier sysIdent
+                            && rsbHb.getSite() instanceof IntegerIdentifier siteIdent)
+                    {
+                        for(ControlChannelHeartbeat hb : mHeartbeatMonitors)
+                        {
+                            hb.onRFSSStatusBroadcast(sysIdent.getValue(), siteIdent.getValue());
+                        }
+                    }
                     break;
 
                 //Channel grants
@@ -877,6 +918,17 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             if(lcw != null && lcw.isValid())
             {
                 processLC(lcw, message.getTimestamp(), false);
+                // Broadcast fast voice_id (~180ms after squelch open, before audio module releases audio)
+                PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
+                if(pcmMgr != null)
+                {
+                    pcmMgr.broadcastVoiceId(
+                            pcmVidGetSystem(),
+                            pcmVidGetSite(),
+                            pcmVidGetIdentifier(getIdentifierCollection().getToIdentifier()),
+                            pcmVidGetIdentifier(getIdentifierCollection().getFromIdentifier()),
+                            PCM_VID_TIMESTAMP_FMT.format(Instant.ofEpochMilli(message.getTimestamp())));
+                }
                 mTrafficChannelManager.processP1TrafficLDU1(getCurrentFrequency(),
                         getIdentifierCollection().getIdentifiers(), message.getTimestamp(), ldu1.toString());
             }
@@ -1264,6 +1316,15 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                         getIdentifierCollection().update(frequencyID);
                     }
                     mNetworkConfigurationMonitor.process(tsbk);
+                    if(!mHeartbeatMonitors.isEmpty() && tsbk instanceof RFSSStatusBroadcast rfssHb
+                            && rfssHb.getSystem() instanceof IntegerIdentifier sysIdent
+                            && rfssHb.getSite() instanceof IntegerIdentifier siteIdent)
+                    {
+                        for(ControlChannelHeartbeat hb : mHeartbeatMonitors)
+                        {
+                            hb.onRFSSStatusBroadcast(sysIdent.getValue(), siteIdent.getValue());
+                        }
+                    }
                     break;
 
                 case OSP_UNIT_TO_UNIT_ANSWER_REQUEST:
@@ -2179,5 +2240,35 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     @Override
     public void init()
     {
+    }
+
+    // -----------------------------------------------------------------------
+    // PCM voice_id helpers — extract system/site/identifier strings from the
+    // identifier collection without throwing if nothing is present yet.
+    // -----------------------------------------------------------------------
+
+    private String pcmVidGetSystem()
+    {
+        io.github.dsheirer.identifier.Identifier id =
+                getIdentifierCollection().getIdentifier(IdentifierClass.CONFIGURATION, Form.SYSTEM, Role.ANY);
+        if(id instanceof SystemConfigurationIdentifier sci)
+            return sci.getValue();
+        return "";
+    }
+
+    private String pcmVidGetSite()
+    {
+        io.github.dsheirer.identifier.Identifier id =
+                getIdentifierCollection().getIdentifier(IdentifierClass.CONFIGURATION, Form.SITE, Role.ANY);
+        if(id instanceof SiteConfigurationIdentifier sici)
+            return sici.getValue();
+        return "";
+    }
+
+    private String pcmVidGetIdentifier(io.github.dsheirer.identifier.Identifier id)
+    {
+        if(id == null)
+            return "";
+        return id.toString();
     }
 }
