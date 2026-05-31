@@ -3,9 +3,10 @@ info:
   title: sdrtrunk Local Control API
   version: 1.0.0
   description: >
-    Localhost-first control API for sdrtrunk. Phase 2 exposes read-only
-    application models for operator tools while preserving the safety model:
-    localhost binding, token-gated API surfaces, and no secret leakage.
+    Localhost-first control API for sdrtrunk. Phase 3 exposes read-only
+    application models plus dry-run-capable runtime channel start/stop controls
+    while preserving the safety model: localhost binding, token-gated API
+    surfaces, validation before mutation, audit records, and no secret leakage.
 servers:
   - url: http://127.0.0.1:9997
     description: Default local API listener when explicitly enabled
@@ -50,6 +51,43 @@ paths:
                           $ref: '#/components/schemas/Channel'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/v1/channels/{channelId}/{action}:
+    post:
+      summary: Dry-run or apply a runtime channel start/stop action
+      operationId: controlChannel
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: Channel numeric ID as returned by /api/v1/channels.
+        - name: action
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [start, stop]
+        - name: dry_run
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: true
+          description: Defaults to true. Set false explicitly to apply the runtime action.
+      responses:
+        '200':
+          description: Runtime control validation or apply result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ControlResult'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '405':
+          $ref: '#/components/responses/MethodNotAllowed'
   /api/v1/aliases:
     get:
       summary: List alias-list summaries
@@ -132,6 +170,29 @@ paths:
                 $ref: '#/components/schemas/RuntimeSummary'
         '401':
           $ref: '#/components/responses/Unauthorized'
+  /api/v1/audit:
+    get:
+      summary: List local control API audit records for applied mutations
+      operationId: listAuditRecords
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated append-only audit records
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AuditRecord'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/v1/openapi.yaml:
     get:
       summary: Get this OpenAPI document
@@ -181,6 +242,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     MethodNotAllowed:
       description: Method not allowed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadRequest:
+      description: Invalid request or failed validation
       content:
         application/json:
           schema:
@@ -308,6 +375,50 @@ components:
         broadcastCount:
           type: integer
           minimum: 0
+    ControlResult:
+      type: object
+      required: [channelId, action, dryRun, wouldChange, result, messages]
+      properties:
+        channelId:
+          type: string
+        action:
+          type: string
+          enum: [start, stop]
+        dryRun:
+          type: boolean
+        wouldChange:
+          type: boolean
+        result:
+          type: string
+          enum: [dry_run, applied]
+        messages:
+          type: array
+          items:
+            type: string
+    AuditRecord:
+      type: object
+      required: [timestamp, endpoint, actorMode, action, channelId, dryRun, result, changedFields]
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        endpoint:
+          type: string
+        actorMode:
+          type: string
+          example: local-api
+        action:
+          type: string
+        channelId:
+          type: string
+        dryRun:
+          type: boolean
+        result:
+          type: string
+        changedFields:
+          type: array
+          items:
+            type: string
     StatusResponse:
       type: object
       additionalProperties: false
