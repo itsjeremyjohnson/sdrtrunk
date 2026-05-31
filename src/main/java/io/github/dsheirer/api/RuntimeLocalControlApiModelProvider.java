@@ -20,8 +20,10 @@ package io.github.dsheirer.api;
 
 import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.api.model.ApiAliasList;
+import io.github.dsheirer.api.model.ApiAuditRecord;
 import io.github.dsheirer.api.model.ApiBroadcastConfiguration;
 import io.github.dsheirer.api.model.ApiChannel;
+import io.github.dsheirer.api.model.ApiControlResult;
 import io.github.dsheirer.api.model.ApiModelResponse;
 import io.github.dsheirer.api.model.ApiRuntimeSummary;
 import io.github.dsheirer.api.model.ApiTuner;
@@ -29,7 +31,9 @@ import io.github.dsheirer.audio.broadcast.BroadcastConfiguration;
 import io.github.dsheirer.audio.broadcast.BroadcastModel;
 import io.github.dsheirer.audio.broadcast.ConfiguredBroadcast;
 import io.github.dsheirer.controller.channel.Channel;
+import io.github.dsheirer.controller.channel.ChannelException;
 import io.github.dsheirer.controller.channel.ChannelModel;
+import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.playlist.PlaylistManager;
 import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
@@ -47,11 +51,20 @@ public class RuntimeLocalControlApiModelProvider implements LocalControlApiModel
 {
     private final PlaylistManager mPlaylistManager;
     private final TunerManager mTunerManager;
+    private final ChannelProcessingManager mChannelProcessingManager;
+    private final List<ApiAuditRecord> mAuditRecords = new ArrayList<>();
 
     public RuntimeLocalControlApiModelProvider(PlaylistManager playlistManager, TunerManager tunerManager)
     {
+        this(playlistManager, tunerManager, null);
+    }
+
+    public RuntimeLocalControlApiModelProvider(PlaylistManager playlistManager, TunerManager tunerManager,
+                                               ChannelProcessingManager channelProcessingManager)
+    {
         mPlaylistManager = playlistManager;
         mTunerManager = tunerManager;
+        mChannelProcessingManager = channelProcessingManager;
     }
 
     @Override
@@ -146,6 +159,87 @@ public class RuntimeLocalControlApiModelProvider implements LocalControlApiModel
         int broadcasts = mPlaylistManager.getBroadcastModel().getConfiguredBroadcasts().size();
 
         return new ApiRuntimeSummary(configuredChannels, activeChannels, aliasLists, tuners, broadcasts);
+    }
+
+    @Override
+    public ApiModelResponse<ApiAuditRecord> getAuditRecords(int limit, int offset)
+    {
+        return page(new ArrayList<>(mAuditRecords), limit, offset);
+    }
+
+    @Override
+    public ApiControlResult controlChannel(String channelId, String action, boolean dryRun, String endpoint)
+    {
+        Channel channel = getChannel(channelId);
+
+        if(channel == null)
+        {
+            throw new IllegalArgumentException("channel_not_found: " + channelId);
+        }
+
+        if(!"start".equals(action) && !"stop".equals(action))
+        {
+            throw new IllegalArgumentException("unsupported_channel_action: " + action);
+        }
+
+        if(mChannelProcessingManager == null && !dryRun)
+        {
+            throw new IllegalArgumentException("channel_processing_manager_not_attached");
+        }
+
+        boolean targetProcessing = "start".equals(action);
+        boolean wouldChange = channel.isProcessing() != targetProcessing;
+        String result = dryRun ? "dry_run" : "applied";
+
+        if(!dryRun && wouldChange)
+        {
+            try
+            {
+                if(targetProcessing)
+                {
+                    mChannelProcessingManager.start(channel);
+                }
+                else
+                {
+                    mChannelProcessingManager.stop(channel);
+                }
+            }
+            catch(ChannelException ce)
+            {
+                throw new IllegalArgumentException("channel_control_failed: " + ce.getMessage());
+            }
+        }
+
+        if(!dryRun)
+        {
+            mAuditRecords.add(new ApiAuditRecord(endpoint, "local-api", action, channelId, dryRun, result,
+                wouldChange ? List.of("processing") : List.of()));
+        }
+
+        return new ApiControlResult(channelId, action, dryRun, wouldChange, result,
+            List.of(wouldChange ? "processing would change" : "channel already in requested state"));
+    }
+
+    private Channel getChannel(String channelId)
+    {
+        try
+        {
+            int id = Integer.parseInt(channelId);
+
+            for(Channel channel: mPlaylistManager.getChannelModel().getChannels())
+            {
+                if(channel.getChannelID() == id)
+                {
+                    return channel;
+                }
+            }
+        }
+        catch(NumberFormatException nfe)
+        {
+            throw new IllegalArgumentException("invalid_channel_id: " + channelId);
+        }
+
+        return null;
     }
 
     private ApiChannel toApiChannel(Channel channel)

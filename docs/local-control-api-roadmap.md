@@ -68,6 +68,8 @@ This roadmap defines a community-oriented, safety-first path for adding programm
 
 ## Phase 3 — Safe write endpoints
 
+**Status:** Initial runtime-control slice implemented in the fork: dry-run-capable channel start/stop endpoints, validation errors, and append-only in-memory audit records for applied mutations. Persisted playlist/alias/broadcast edits remain future Phase 3 work and still require snapshot/rollback support before implementation.
+
 **Goal:** allow controlled editing and runtime actions without making accidental damage easy.
 
 ### Scope

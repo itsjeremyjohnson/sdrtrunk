@@ -47,6 +47,7 @@ public class LocalControlApiServer
     private static final String TUNERS_PATH = "/api/v1/tuners";
     private static final String BROADCASTS_PATH = "/api/v1/broadcasts";
     private static final String RUNTIME_PATH = "/api/v1/runtime";
+    private static final String AUDIT_PATH = "/api/v1/audit";
     private static final int DEFAULT_LIMIT = 100;
     private static final int MAX_LIMIT = 1000;
 
@@ -98,8 +99,7 @@ public class LocalControlApiServer
         mServer = HttpServer.create(address, 0);
         mServer.createContext(STATUS_PATH, this::handleStatus);
         mServer.createContext(OPENAPI_PATH, this::handleOpenApi);
-        mServer.createContext(CHANNELS_PATH, exchange -> handleModelResponse(exchange,
-            () -> mModelProvider.getChannels(getLimit(exchange), getOffset(exchange))));
+        mServer.createContext(CHANNELS_PATH, this::handleChannels);
         mServer.createContext(ALIASES_PATH, exchange -> handleModelResponse(exchange,
             () -> mModelProvider.getAliases(getLimit(exchange), getOffset(exchange))));
         mServer.createContext(TUNERS_PATH, exchange -> handleModelResponse(exchange,
@@ -108,6 +108,8 @@ public class LocalControlApiServer
             () -> mModelProvider.getBroadcasts(getLimit(exchange), getOffset(exchange))));
         mServer.createContext(RUNTIME_PATH, exchange -> handleModelResponse(exchange,
             () -> mModelProvider.getRuntimeSummary()));
+        mServer.createContext(AUDIT_PATH, exchange -> handleModelResponse(exchange,
+            () -> mModelProvider.getAuditRecords(getLimit(exchange), getOffset(exchange))));
         mExecutor = Executors.newSingleThreadExecutor(r -> {
             Thread thread = new Thread(r, "sdrtrunk-local-control-api");
             thread.setDaemon(true);
@@ -162,7 +164,7 @@ public class LocalControlApiServer
             "\"status\":\"ok\"," +
             "\"application\":\"" + escape(mApplicationNameSupplier.get()) + "\"," +
             "\"apiEnabled\":true," +
-            "\"readOnly\":true," +
+            "\"readOnly\":false," +
             "\"host\":\"" + escape(mConfig.getHost()) + "\"," +
             "\"port\":" + getPort() + "," +
             "\"tokenConfigured\":" + mConfig.hasToken() + "," +
@@ -182,6 +184,56 @@ public class LocalControlApiServer
         }
 
         send(exchange, 200, "application/yaml", loadOpenApiDocument());
+    }
+
+    private void handleChannels(HttpExchange exchange) throws IOException
+    {
+        if(isGet(exchange))
+        {
+            handleModelResponse(exchange, () -> mModelProvider.getChannels(getLimit(exchange), getOffset(exchange)));
+            return;
+        }
+
+        if(!isPost(exchange))
+        {
+            send(exchange, 405, "application/json", "{\"error\":\"method_not_allowed\"}");
+            return;
+        }
+
+        if(!authorized(exchange))
+        {
+            send(exchange, 401, "application/json", "{\"error\":\"unauthorized\"}");
+            return;
+        }
+
+        String path = exchange.getRequestURI().getPath();
+        String prefix = CHANNELS_PATH + "/";
+
+        if(!path.startsWith(prefix))
+        {
+            send(exchange, 404, "application/json", "{\"error\":\"not_found\"}");
+            return;
+        }
+
+        String[] parts = path.substring(prefix.length()).split("/");
+
+        if(parts.length != 2 || !("start".equals(parts[1]) || "stop".equals(parts[1])))
+        {
+            send(exchange, 404, "application/json", "{\"error\":\"not_found\"}");
+            return;
+        }
+
+        String endpoint = prefix + parts[0] + "/" + parts[1];
+
+        try
+        {
+            Object result = mModelProvider.controlChannel(parts[0], parts[1], getDryRun(exchange), endpoint);
+            send(exchange, 200, "application/json", mObjectMapper.writeValueAsString(result));
+        }
+        catch(IllegalArgumentException iae)
+        {
+            send(exchange, 400, "application/json", "{\"error\":\"bad_request\",\"message\":\"" + escape(iae.getMessage()) + "\"}");
+        }
     }
 
     private void handleModelResponse(HttpExchange exchange, ThrowingSupplier<Object> responseSupplier) throws IOException
@@ -216,6 +268,49 @@ public class LocalControlApiServer
     private int getOffset(HttpExchange exchange)
     {
         return Math.max(0, getQueryInt(exchange, "offset", 0));
+    }
+
+    private boolean getDryRun(HttpExchange exchange)
+    {
+        String value = getQueryValue(exchange, "dry_run");
+
+        if(value == null)
+        {
+            return true;
+        }
+
+        if("true".equalsIgnoreCase(value))
+        {
+            return true;
+        }
+
+        if("false".equalsIgnoreCase(value))
+        {
+            return false;
+        }
+
+        throw new IllegalArgumentException("Invalid boolean query parameter: dry_run");
+    }
+
+    private String getQueryValue(HttpExchange exchange, String name)
+    {
+        String query = exchange.getRequestURI().getRawQuery();
+
+        if(query == null || query.isEmpty())
+        {
+            return null;
+        }
+
+        for(String parameter: query.split("&"))
+        {
+            String[] parts = parameter.split("=", 2);
+            if(parts.length == 2 && name.equals(parts[0]))
+            {
+                return parts[1];
+            }
+        }
+
+        return null;
     }
 
     private int getQueryInt(HttpExchange exchange, String name, int defaultValue)
@@ -254,6 +349,11 @@ public class LocalControlApiServer
     private boolean isGet(HttpExchange exchange)
     {
         return "GET".equalsIgnoreCase(exchange.getRequestMethod());
+    }
+
+    private boolean isPost(HttpExchange exchange)
+    {
+        return "POST".equalsIgnoreCase(exchange.getRequestMethod());
     }
 
     private boolean authorized(HttpExchange exchange)

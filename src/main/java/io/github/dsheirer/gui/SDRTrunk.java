@@ -690,7 +690,8 @@ public class SDRTrunk implements Listener<TunerEvent>
     {
         if(mLocalControlApiServer != null)
         {
-            mLocalControlApiServer.setModelProvider(new RuntimeLocalControlApiModelProvider(mPlaylistManager, mTunerManager));
+            mLocalControlApiServer.setModelProvider(new RuntimeLocalControlApiModelProvider(mPlaylistManager, mTunerManager,
+                mPlaylistManager.getChannelProcessingManager()));
         }
     }
 
