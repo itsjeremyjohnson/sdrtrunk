@@ -283,7 +283,9 @@ public class SDRTrunk implements Listener<TunerEvent>
                     }
                 }
 
-                if(calibrating && !GraphicsEnvironment.isHeadless())
+                boolean hasAutoStartChannels = !mPlaylistManager.getChannelModel().getAutoStartChannels().isEmpty();
+
+                if(shouldShowCalibrationDialogBeforeAutoStart(calibrating, GraphicsEnvironment.isHeadless(), hasAutoStartChannels))
                 {
                     Platform.runLater(() ->
                     {
@@ -303,14 +305,30 @@ public class SDRTrunk implements Listener<TunerEvent>
                 }
                 else
                 {
+                    if(calibrating && hasAutoStartChannels)
+                    {
+                        mLog.info("Deferring calibration prompt because channel auto-start is configured");
+                    }
+
                     autoStartChannels();
                 }
             }
             catch(Exception e)
             {
-                e.printStackTrace();
+                mLog.error("Error during startup auto-start/calibration workflow", e);
             }
         });
+    }
+
+    /**
+     * Indicates if the calibration dialog should be displayed before auto-start processing.  Configured auto-start
+     * channels should not be blocked by a calibration prompt since unattended scanner deployments rely on automatic
+     * startup after reboots and scheduled restarts.
+     */
+    static boolean shouldShowCalibrationDialogBeforeAutoStart(boolean calibrating, boolean headless,
+                                                             boolean hasAutoStartChannels)
+    {
+        return calibrating && !headless && !hasAutoStartChannels;
     }
 
     /**
