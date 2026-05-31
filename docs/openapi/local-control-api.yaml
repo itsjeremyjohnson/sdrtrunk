@@ -3,9 +3,9 @@ info:
   title: sdrtrunk Local Control API
   version: 1.0.0
   description: >
-    Localhost-first control API for sdrtrunk. Phase 1 exposes a minimal
-    read-only status surface and documents the security model used for later
-    read/write control endpoints.
+    Localhost-first control API for sdrtrunk. Phase 2 exposes read-only
+    application models for operator tools while preserving the safety model:
+    localhost binding, token-gated API surfaces, and no secret leakage.
 servers:
   - url: http://127.0.0.1:9997
     description: Default local API listener when explicitly enabled
@@ -15,11 +15,6 @@ paths:
   /api/v1/status:
     get:
       summary: Get local API and application status
-      description: >
-        Returns non-secret runtime health for the local sdrtrunk process. If an
-        API token is configured, this endpoint requires an Authorization bearer
-        token. The response reports whether a token is configured but never
-        returns the token value.
       operationId: getStatus
       responses:
         '200':
@@ -29,17 +24,114 @@ paths:
               schema:
                 $ref: '#/components/schemas/StatusResponse'
         '401':
-          description: Missing or invalid bearer token
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/Unauthorized'
         '405':
-          description: Method not allowed
+          $ref: '#/components/responses/MethodNotAllowed'
+  /api/v1/channels:
+    get:
+      summary: List configured channels
+      operationId: listChannels
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated channel DTOs
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/ErrorResponse'
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Channel'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/aliases:
+    get:
+      summary: List alias-list summaries
+      operationId: listAliases
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated alias-list DTOs
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/AliasList'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/tuners:
+    get:
+      summary: List discovered tuners
+      operationId: listTuners
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated tuner DTOs
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/Tuner'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/broadcasts:
+    get:
+      summary: List broadcast configurations with secrets redacted
+      operationId: listBroadcasts
+      parameters:
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200':
+          description: Paginated broadcast DTOs. Passwords/tokens are never returned.
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/PaginatedResponse'
+                  - type: object
+                    properties:
+                      items:
+                        type: array
+                        items:
+                          $ref: '#/components/schemas/BroadcastConfiguration'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/runtime:
+    get:
+      summary: Get aggregate runtime summary counts
+      operationId: getRuntimeSummary
+      responses:
+        '200':
+          description: Runtime summary
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeSummary'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
   /api/v1/openapi.yaml:
     get:
       summary: Get this OpenAPI document
@@ -54,11 +146,7 @@ paths:
               schema:
                 type: string
         '405':
-          description: Method not allowed
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ErrorResponse'
+          $ref: '#/components/responses/MethodNotAllowed'
 components:
   securitySchemes:
     bearerAuth:
@@ -68,7 +156,158 @@ components:
       description: >
         Configure via JVM property sdrtrunk.api.token or environment variable
         SDRTRUNK_API_TOKEN. Tokens are never returned by the API.
+  parameters:
+    Limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 1
+        maximum: 1000
+        default: 100
+    Offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+        default: 0
+  responses:
+    Unauthorized:
+      description: Missing or invalid bearer token
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    MethodNotAllowed:
+      description: Method not allowed
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
   schemas:
+    PaginatedResponse:
+      type: object
+      required: [schemaVersion, generatedAt, items, total, limit, offset]
+      properties:
+        schemaVersion:
+          type: string
+          example: '1.0'
+        generatedAt:
+          type: string
+          format: date-time
+        items:
+          type: array
+          items: {}
+        total:
+          type: integer
+          minimum: 0
+        limit:
+          type: integer
+          minimum: 1
+        offset:
+          type: integer
+          minimum: 0
+    Channel:
+      type: object
+      properties:
+        id:
+          type: integer
+        name:
+          type: string
+        system:
+          type: string
+          nullable: true
+        site:
+          type: string
+          nullable: true
+        aliasList:
+          type: string
+          nullable: true
+        autoStart:
+          type: boolean
+        autoStartOrder:
+          type: integer
+        processing:
+          type: boolean
+        channelType:
+          type: string
+        decoderType:
+          type: string
+          nullable: true
+        frequencies:
+          type: array
+          items:
+            type: integer
+            format: int64
+    AliasList:
+      type: object
+      properties:
+        name:
+          type: string
+        aliasCount:
+          type: integer
+          minimum: 0
+    Tuner:
+      type: object
+      properties:
+        id:
+          type: string
+        tunerClass:
+          type: string
+          nullable: true
+        status:
+          type: string
+          nullable: true
+        available:
+          type: boolean
+        enabled:
+          type: boolean
+        errorMessage:
+          type: string
+          nullable: true
+    BroadcastConfiguration:
+      type: object
+      description: Secret-safe broadcast DTO. Passwords and tokens are never included.
+      properties:
+        id:
+          type: string
+        format:
+          type: string
+          nullable: true
+        name:
+          type: string
+        enabled:
+          type: boolean
+        status:
+          type: string
+          nullable: true
+        secretRedacted:
+          type: boolean
+    RuntimeSummary:
+      type: object
+      properties:
+        schemaVersion:
+          type: string
+          example: '1.0'
+        generatedAt:
+          type: string
+          format: date-time
+        configuredChannelCount:
+          type: integer
+          minimum: 0
+        activeChannelCount:
+          type: integer
+          minimum: 0
+        aliasListCount:
+          type: integer
+          minimum: 0
+        tunerCount:
+          type: integer
+          minimum: 0
+        broadcastCount:
+          type: integer
+          minimum: 0
     StatusResponse:
       type: object
       additionalProperties: false
@@ -92,7 +331,6 @@ components:
           type: boolean
         readOnly:
           type: boolean
-          description: Phase 1 is read-only. Later phases add guarded write endpoints.
         host:
           type: string
           example: 127.0.0.1
@@ -118,3 +356,6 @@ components:
           examples:
             - unauthorized
             - method_not_allowed
+            - bad_request
+        message:
+          type: string
