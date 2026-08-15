@@ -87,6 +87,7 @@ mkdir -p "$OUTPUT_DIR"
 
 CONTROL_OUTPUT="$OUTPUT_DIR/control"
 TEST_OUTPUT="$OUTPUT_DIR/test"
+rm -rf "$CONTROL_OUTPUT" "$TEST_OUTPUT"
 mkdir -p "$CONTROL_OUTPUT" "$TEST_OUTPUT"
 
 echo "╔══════════════════════════════════════════════════════╗"
@@ -144,16 +145,12 @@ run_decode() {
         gradle_args+=("-Pjmbe=$JMBE_JAR")
     fi
 
-    if (cd "$src_dir" && ./gradlew tasks --all --quiet | grep -q '^runDecodeScore '); then
-        (cd "$src_dir" && ./gradlew runDecodeScore "${gradle_args[@]}" 2>&1)
-    else
-        # Historical revisions predate the scoring task. Compile their production classes, then run the
-        # current test harness with those classes first on the runtime classpath.
-        (cd "$src_dir" && ./gradlew classes 2>&1)
-        (cd "$TEST_DIR" && ./gradlew runDecodeScore "${gradle_args[@]}" \
-            "-PdecodeMainClasses=$src_dir/build/classes/java/main" \
-            "-PdecodeMainResources=$src_dir/build/resources/main" 2>&1)
-    fi
+    # Use the current revision-compatible scoring harness for both sides, with each revision's production
+    # classes first on the runtime classpath so harness changes cannot masquerade as decoder changes.
+    (cd "$src_dir" && ./gradlew classes 2>&1)
+    (cd "$TEST_DIR" && ./gradlew runDecodeScore "${gradle_args[@]}" \
+        "-PdecodeMainClasses=$src_dir/build/classes/java/main" \
+        "-PdecodeMainResources=$src_dir/build/resources/main" 2>&1)
 }
 
 # Run control decode

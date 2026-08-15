@@ -40,6 +40,14 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void codecResetBoundaryUsesConfiguredTransmissionGap()
+    {
+        assertEquals(false, DecodeQualityTest.isSegmentBoundary(1000, 1500, 500));
+        assertEquals(true, DecodeQualityTest.isSegmentBoundary(1000, 1501, 500));
+        assertEquals(false, DecodeQualityTest.isSegmentBoundary(0, 5000, 500));
+    }
+
+    @Test
     void missingHistoricalTuningMethodIsIgnored()
     {
         HistoricalDecoder decoder = new HistoricalDecoder();

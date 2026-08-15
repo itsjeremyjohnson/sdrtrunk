@@ -141,6 +141,11 @@ def _run_stt_with_model(model, mp3_files):
     return total_words
 
 
+def analysis_window_starts(sample_count, window_size):
+    """Return starts for every complete non-overlapping analysis window."""
+    return range(0, sample_count - window_size + 1, window_size)
+
+
 def detect_tones_and_distortion(mp3_files):
     """
     Detect dispatch tones and distortion events in audio segments.
@@ -168,7 +173,7 @@ def detect_tones_and_distortion(mp3_files):
             sustained_tone_windows = 0
             last_peak_freq = None
 
-            for i in range(0, len(samples) - window_size, window_size):
+            for i in analysis_window_starts(len(samples), window_size):
                 window = samples[i:i + window_size]
 
                 # Check for perfect silence (distortion indicator)

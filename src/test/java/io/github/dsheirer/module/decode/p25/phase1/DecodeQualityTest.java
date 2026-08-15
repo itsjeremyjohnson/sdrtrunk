@@ -617,6 +617,11 @@ public class DecodeQualityTest
         return signalSamples / sampleRate;
     }
 
+    static boolean isSegmentBoundary(long previousTimestamp, long currentTimestamp, int segmentGapMs)
+    {
+        return previousTimestamp > 0 && currentTimestamp - previousTimestamp > segmentGapMs;
+    }
+
     private static AudioResult decodeAudio(File file, String modulation, int nac, TestJmbeCodecLoader codec, Path audioDir, int maxBchErrors, int maxImbeErrors, int segmentGapMs, float silenceThreshold, int silenceMinMs, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
     {
         List<float[]> audioBuffers = new ArrayList<>();
@@ -631,11 +636,44 @@ public class DecodeQualityTest
         int[] adaptiveIdx = {0};
         int[] adaptivePass = {0};
         boolean[] adaptiveDisabled = {false};
+        boolean[] encryptedCall = {false};
+        long[] lastDecodedLduTimestamp = {0};
+        codec.reset();
 
         Listener<IMessage> listener = msg -> {
-            if(msg instanceof LDUMessage ldu && ((P25P1Message)msg).isValid())
+            if(!(msg instanceof P25P1Message p25Message) || !p25Message.isValid())
             {
-                lduTimestamps.add(((P25P1Message)msg).getTimestamp());
+                return;
+            }
+
+            if(msg instanceof HDUMessage hdu && hdu.getHeaderData() != null && hdu.getHeaderData().isValid())
+            {
+                encryptedCall[0] = hdu.getHeaderData().isEncryptedAudio();
+            }
+            else if(msg instanceof LDU2Message ldu2 && ldu2.getEncryptionSyncParameters() != null &&
+                    ldu2.getEncryptionSyncParameters().isValid())
+            {
+                encryptedCall[0] = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
+            }
+            else if(p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT ||
+                    p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL)
+            {
+                encryptedCall[0] = false;
+                lastDecodedLduTimestamp[0] = 0;
+                codec.reset();
+            }
+
+            if(msg instanceof LDUMessage ldu && !encryptedCall[0])
+            {
+                long timestamp = p25Message.getTimestamp();
+                if(isSegmentBoundary(lastDecodedLduTimestamp[0], timestamp, segmentGapMs))
+                {
+                    codec.reset();
+                    lastGoodFrame[0] = null;
+                    consecutiveGated[0] = 0;
+                }
+                lastDecodedLduTimestamp[0] = timestamp;
+                lduTimestamps.add(timestamp);
                 for(byte[] frame : ldu.getIMBEFrames())
                 {
                     // Pre-codec quality gate with adaptive disable

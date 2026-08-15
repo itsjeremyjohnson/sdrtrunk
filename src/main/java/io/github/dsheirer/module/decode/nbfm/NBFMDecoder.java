@@ -45,6 +45,8 @@ import io.github.dsheirer.sample.complex.IComplexSamplesListener;
 import io.github.dsheirer.sample.real.IRealBufferProvider;
 import io.github.dsheirer.source.ISourceEventListener;
 import io.github.dsheirer.source.SourceEvent;
+import java.util.ArrayList;
+import java.util.List;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -62,6 +64,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private final SourceEventProcessor mSourceEventProcessor = new SourceEventProcessor();
     private final NoiseSquelch mNoiseSquelch;
     private final CTCSSDetector mCTCSSDetector;
+    private final List<float[]> mPendingSquelchAudio = new ArrayList<>();
     private IRealFilter mIBasebandFilter;
     private IRealFilter mQBasebandFilter;
     private IRealFilter mCTCSSOutputFilter;
@@ -101,14 +104,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         //Send squelch controlled audio to the resampler and notify the decoder state that the call continues.
         //When CTCSS is configured, only pass audio when the tone is detected.
-        mNoiseSquelch.setAudioListener(audio -> {
-            if(mCTCSSDetector == null || mCTCSSDetector.isToneDetected())
-            {
-                float[] output = mCTCSSOutputFilter != null ? mCTCSSOutputFilter.filter(audio) : audio;
-                mResampler.resample(output);
-                notifyCallContinuation();
-            }
-        });
+        mNoiseSquelch.setAudioListener(mPendingSquelchAudio::add);
 
         //Notify the decoder state of call starts and ends
         mNoiseSquelch.setSquelchStateListener(squelchState -> {
@@ -283,14 +279,17 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         float[] demodulated = mDemodulator.demodulate(filteredI, filteredQ);
 
+        mPendingSquelchAudio.clear();
         mNoiseSquelch.process(demodulated);
 
-        //Only learn CTCSS state while carrier squelch is open. The detector still receives the original
-        //demodulated audio because the squelch audio path removes the sub-audible tone.
+        //Only learn CTCSS state while carrier squelch is open. Delay synchronous squelch audio dispatch until this
+        //buffer's tone decision is available, so onset/loss applies to the corresponding audio region.
         if(mCTCSSDetector != null && shouldProcessCTCSS(mNoiseSquelch.isSquelched()))
         {
             mCTCSSDetector.process(demodulated);
         }
+
+        flushPendingSquelchAudio();
 
         //Once we process the sample buffer, if the ending state is squelch closed, update the decoder state that we
         // are idle.
@@ -303,6 +302,21 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     static boolean shouldProcessCTCSS(boolean squelched)
     {
         return !squelched;
+    }
+
+    private void flushPendingSquelchAudio()
+    {
+        if(mCTCSSDetector == null || mCTCSSDetector.isToneDetected())
+        {
+            for(float[] audio : mPendingSquelchAudio)
+            {
+                float[] output = mCTCSSOutputFilter != null ? mCTCSSOutputFilter.filter(audio) : audio;
+                mResampler.resample(output);
+                notifyCallContinuation();
+            }
+        }
+
+        mPendingSquelchAudio.clear();
     }
 
     /**
