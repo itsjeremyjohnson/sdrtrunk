@@ -524,7 +524,15 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 						mLog.error("Error applying gain mode", ex);
 					}
 
-					updateGainControls();
+					setLoading(true);
+					try
+					{
+						updateGainControls();
+					}
+					finally
+					{
+						setLoading(false);
+					}
 				}
 			});
 		}

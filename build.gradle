@@ -350,9 +350,10 @@ def jdk_download_windows_aarch64 = jdk_download_base + "windows-aarch64-full.zip
  * Configures the runtime zip task with additional options/settings.
  * @param rt task to configure
  * @param jvmArgs to use (windows or linux)
+ * @param includeHostNativeLibraries whether to copy the locally built host JNI library
  * @return configured task.
  */
-def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
+def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs, boolean includeHostNativeLibraries) {
     //Use the correct set of JVM arguments
     rt.extension.launcherData.get().jvmArgs = jvmArgs
 
@@ -375,23 +376,25 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
     //Ensure native JNI libs are built before packaging
     rt.dependsOn 'buildHydraSdrJni'
 
-    //Copy HydraSDR native JNI libraries into runtime image (if available from local build)
-    rt.doFirst {
-        def nativeDir = hydraSdrJniDir
-        if(nativeDir.exists()) {
-            file("${buildDir}/image").eachDir { imageDir ->
-                if(imageDir.name.startsWith('sdr-trunk-')) {
-                    def targetDir = file("${imageDir}/lib/native")
-                    targetDir.mkdirs()
-                    copy {
-                        from(nativeDir) {
-                            include '*.dll'
-                            include '*.so'
-                            include '*.dylib'
+    //Only a current-platform image can safely use the locally built host JNI library.
+    if(includeHostNativeLibraries) {
+        rt.doFirst {
+            def nativeDir = hydraSdrJniDir
+            if(nativeDir.exists()) {
+                file("${buildDir}/image").eachDir { imageDir ->
+                    if(imageDir.name.startsWith('sdr-trunk-')) {
+                        def targetDir = file("${imageDir}/lib/native")
+                        targetDir.mkdirs()
+                        copy {
+                            from(nativeDir) {
+                                include '*.dll'
+                                include '*.so'
+                                include '*.dylib'
+                            }
+                            into targetDir
                         }
-                        into targetDir
+                        logger.lifecycle("Copied HydraSDR native libs to ${targetDir}")
                     }
-                    logger.lifecycle("Copied HydraSDR native libs to ${targetDir}")
                 }
             }
         }
@@ -418,7 +421,7 @@ tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
         else if(arch.equals("aarch64")) {
             rt.extension.targetPlatform(targetWindowsAarch64, javaHome)
         }
-        configure(rt, jvmArgsWindows)
+        configure(rt, jvmArgsWindows, true)
     }
     else if(os.isLinux())
     {
@@ -428,7 +431,7 @@ tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
         else if(arch.equals("aarch64")) {
             rt.extension.targetPlatform(targetLinuxAarch64, javaHome)
         }
-        configure(rt, jvmArgsLinux)
+        configure(rt, jvmArgsLinux, true)
     }
     else if(os.isMacOsX())
     {
@@ -438,7 +441,7 @@ tasks.register('runtimeZipCurrent', org.beryx.runtime.RuntimeZipTask) {rt ->
         else if(arch.equals("aarch64")) {
             rt.extension.targetPlatform(targetOsxAarch64, javaHome)
         }
-        configure(rt, jvmArgsLinux)
+        configure(rt, jvmArgsLinux, true)
     }
 }
 
@@ -463,7 +466,7 @@ tasks.register('runtimeZipWindows', org.beryx.runtime.RuntimeZipTask) {rt ->
         }
     }
 
-    configure(rt, jvmArgsWindows)
+    configure(rt, jvmArgsWindows, false)
 }
 
 /**
@@ -513,5 +516,5 @@ tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
         }
     }
 
-    configure(rt, jvmArgsLinux)
+    configure(rt, jvmArgsLinux, false)
 }
