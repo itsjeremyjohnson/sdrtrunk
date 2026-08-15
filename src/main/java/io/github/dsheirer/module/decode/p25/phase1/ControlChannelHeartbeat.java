@@ -120,11 +120,12 @@ public class ControlChannelHeartbeat
                     .build();
 
             HttpResponse<Void> response = HTTP_CLIENT.send(request, HttpResponse.BodyHandlers.discarding());
-            mLog.debug("Heartbeat ping [{}] channel [{}] -> HTTP {}", url, mChannelName, response.statusCode());
+            mLog.debug("Heartbeat ping channel [{}] -> HTTP {}", mChannelName, response.statusCode());
         }
         catch(Exception e)
         {
-            mLog.warn("Heartbeat ping failed [{}] channel [{}]: {}", url, mChannelName, e.getMessage());
+            mLog.warn("Heartbeat ping failed for channel [{}]: {}", mChannelName,
+                e.getClass().getSimpleName());
         }
     }
 

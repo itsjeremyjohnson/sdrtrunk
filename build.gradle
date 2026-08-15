@@ -220,8 +220,8 @@ ext.hydraSdrJniDir = file("${projectDir}/jni/${jniBuildName}")
  * Uses whatever compiler is available in the current environment
  * (GCC from MINGW64, cl.exe from VS dev prompt, gcc/clang on Linux/macOS).
  *
- * Skipped when the JNI build directory already contains native libraries
- * (e.g. CI pre-builds them in a separate step before calling Gradle).
+ * CMake performs the incremental rebuild even when a prior native artifact exists,
+ * ensuring source or build-script changes cannot leave a stale library packaged.
  */
 tasks.register('buildHydraSdrJni', Exec) {
     def jniSrcDir = file("${projectDir}/jni")
@@ -240,12 +240,10 @@ tasks.register('buildHydraSdrJni', Exec) {
         commandLine 'bash', '-c', 'cmake ../ -G Ninja -DCMAKE_BUILD_TYPE=Release && cmake --build . --config Release'
     }
 
-    // Skip if native libs already present (CI pre-build or previous local build)
     // Skip if jni/ source directory doesn't exist
     // Skip if cmake is not available (no C toolchain configured)
     onlyIf {
         if(!jniSrcDir.exists()) return false
-        if(!fileTree(hydraSdrJniDir).matching { include '*.dll'; include '*.so'; include '*.dylib' }.files.isEmpty()) return false
 
         // Check cmake and ninja are available
         for(def tool : ['cmake', 'ninja']) {

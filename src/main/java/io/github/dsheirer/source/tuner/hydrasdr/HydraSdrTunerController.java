@@ -497,29 +497,39 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 
 				if(gainMode == GAIN_MODE_CUSTOM)
 				{
-					/* Custom mode: apply individual gains */
-					setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, config.isLnaAgc() ? 1 : 0);
-					setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, config.isMixerAgc() ? 1 : 0);
+					/* Custom mode: apply only the gain controls supported by this device. */
+					if(hasCapability(HydraSdrNative.CAP_LNA_AGC))
+					{
+						setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, config.isLnaAgc() ? 1 : 0);
+					}
+					if(hasCapability(HydraSdrNative.CAP_MIXER_AGC))
+					{
+						setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, config.isMixerAgc() ? 1 : 0);
+					}
 
-					if(config.getLnaGain() >= 0)
+					if(hasCapability(HydraSdrNative.CAP_LNA_GAIN) && config.getLnaGain() >= 0)
 					{
 						setGain(HydraSdrNative.GAIN_TYPE_LNA, config.getLnaGain());
 					}
-					if(config.getMixerGain() >= 0)
+					if(hasCapability(HydraSdrNative.CAP_MIXER_GAIN) && config.getMixerGain() >= 0)
 					{
 						setGain(HydraSdrNative.GAIN_TYPE_MIXER, config.getMixerGain());
 					}
-					if(config.getVgaGain() >= 0)
+					if(hasCapability(HydraSdrNative.CAP_VGA_GAIN) && config.getVgaGain() >= 0)
 					{
 						setGain(HydraSdrNative.GAIN_TYPE_VGA, config.getVgaGain());
 					}
 				}
-				else if(gainMode == GAIN_MODE_SENSITIVITY && config.getSensitivityGain() > 0)
+				else if(gainMode == GAIN_MODE_SENSITIVITY)
 				{
-					/* Sensitivity mode: single preset value sets all gains */
-					setGain(HydraSdrNative.GAIN_TYPE_SENSITIVITY, config.getSensitivityGain());
+					if(hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN))
+					{
+						/* Sensitivity mode: single preset value sets all gains */
+						int sensitivity = config.getSensitivityGain();
+						setGain(HydraSdrNative.GAIN_TYPE_SENSITIVITY, sensitivity > 0 ? sensitivity : 10);
+					}
 				}
-				else
+				else if(hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN))
 				{
 					/* Linearity mode (default): single preset value sets all gains */
 					int lin = config.getLinearityGain();
@@ -686,6 +696,15 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			return 0;
 		}
 		return HydraSdrNative.getCapabilities(mDeviceHandle);
+	}
+
+	/**
+	 * Indicates whether this device supports a capability.
+	 */
+	public boolean hasCapability(int capability)
+	{
+		HydraSdrDeviceInfo deviceInfo = getDeviceInfo();
+		return deviceInfo != null && deviceInfo.hasCapability(capability);
 	}
 
 	/* ==================== RF Control ==================== */

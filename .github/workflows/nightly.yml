@@ -188,8 +188,8 @@ jobs:
 
             native_dir="../../native/$dir"
             if [ -d "$native_dir" ] && [ "$(ls -A $native_dir 2>/dev/null)" ]; then
-              # Extract top-level directory name from zip (robust: find first directory entry)
-              top_dir=$(unzip -l "$zip" | grep '/$' | head -1 | awk '{print $NF}' | cut -d/ -f1)
+              # Consume the full listing so bash pipefail cannot turn an expected early close into SIGPIPE.
+              top_dir=$(unzip -Z1 "$zip" | awk -F/ 'NF > 1 && !found { print $1; found = 1 }')
               if [ -z "$top_dir" ]; then
                 echo "  ERROR: Could not determine top-level dir in $zip"
                 continue

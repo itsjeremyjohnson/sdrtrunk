@@ -32,6 +32,7 @@ import io.github.dsheirer.util.JsonUtils;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
+import java.util.Locale;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -121,7 +122,7 @@ public class NetworkEventBroadcastModule extends Module implements IDecodeEventL
         String freqStr = "";
         if(descriptor != null && descriptor.getDownlinkFrequency() > 0)
         {
-            freqStr = String.format("%.6f", descriptor.getDownlinkFrequency() / 1_000_000.0);
+            freqStr = String.format(Locale.ROOT, "%.6f", descriptor.getDownlinkFrequency() / 1_000_000.0);
         }
         else
         {
@@ -129,7 +130,7 @@ public class NetworkEventBroadcastModule extends Module implements IDecodeEventL
                     .getIdentifier(IdentifierClass.CONFIGURATION, Form.CHANNEL_FREQUENCY, Role.ANY);
             if(freqId instanceof FrequencyConfigurationIdentifier fci)
             {
-                freqStr = String.format("%.6f", fci.getValue() / 1_000_000.0);
+                freqStr = String.format(Locale.ROOT, "%.6f", fci.getValue() / 1_000_000.0);
             }
         }
         appendField(sb, "frequency", freqStr, false);

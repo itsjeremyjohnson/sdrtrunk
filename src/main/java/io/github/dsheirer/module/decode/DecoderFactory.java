@@ -640,7 +640,11 @@ public class DecoderFactory
         NetworkStreamManager dmrStreamManager = loadNetworkStreamManager(userPreferences);
         if(dmrStreamManager != null)
         {
-            modules.add(new NetworkEventBroadcastModule(safeDmrSystem, dmrStreamManager));
+            //Traffic decode events are rebroadcast through the parent channel; attach the aggregate listener once.
+            if(channel.isStandardChannel())
+            {
+                modules.add(new NetworkEventBroadcastModule(safeDmrSystem, dmrStreamManager));
+            }
             final NetworkStreamManager dmrMgr = dmrStreamManager;
             state1.setRawStreamListener(msg ->
                     dmrMgr.broadcastRaw(formatDmrRawMessage(safeDmrSystem, DMRMessage.TIMESLOT_1, msg)));
@@ -944,7 +948,7 @@ public class DecoderFactory
     {
         String text = JsonUtils.escape(msg.toString());
         return "{\"pipe\":\"raw_cc\",\"system\":\"" + JsonUtils.escape(systemName)
-            + "\",\"timestamp\":\"" + formatTimestamp(System.currentTimeMillis())
+            + "\",\"timestamp\":\"" + formatTimestamp(msg.getTimestamp())
             + "\",\"message\":\"" + text + "\"}";
     }
 

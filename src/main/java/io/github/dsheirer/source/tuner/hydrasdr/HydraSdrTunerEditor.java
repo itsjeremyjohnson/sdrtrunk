@@ -20,6 +20,7 @@
 package io.github.dsheirer.source.tuner.hydrasdr;
 
 import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.source.SourceException;
 import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.manager.TunerStatus;
@@ -220,7 +221,8 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 					{
 						getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC,
 							mLnaAgcCheckBox.isSelected() ? 1 : 0);
-						getLnaGainSlider().setEnabled(!mLnaAgcCheckBox.isSelected());
+						getLnaGainSlider().setEnabled(!mLnaAgcCheckBox.isSelected() &&
+							getTuner().getController().hasCapability(HydraSdrNative.CAP_LNA_GAIN));
 						save();
 					}
 					catch(Exception e1)
@@ -247,7 +249,8 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 					{
 						getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC,
 							mMixerAgcCheckBox.isSelected() ? 1 : 0);
-						getMixerGainSlider().setEnabled(!mMixerAgcCheckBox.isSelected());
+						getMixerGainSlider().setEnabled(!mMixerAgcCheckBox.isSelected() &&
+							getTuner().getController().hasCapability(HydraSdrNative.CAP_MIXER_GAIN));
 						save();
 					}
 					catch(Exception e1)
@@ -496,39 +499,31 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 					/* Apply the mode change to the device */
 					try
 					{
+						HydraSdrTunerController controller = getTuner().getController();
 						if(mode == 0)
 						{
-							/* Linearity: disable AGCs, apply preset */
-							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, 0);
-							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, 0);
-							int value = getMasterGainSlider().getValue();
-							if(value < 1) value = 14;
-							getTuner().getController().setGain(
-								HydraSdrNative.GAIN_TYPE_LINEARITY, value);
+							/* Linearity: disable supported AGCs and apply the saved preset. */
+							disableSupportedAgc(controller);
+							if(controller.hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN))
+							{
+								int value = hasConfiguration() ? getConfiguration().getLinearityGain() : 14;
+								controller.setGain(HydraSdrNative.GAIN_TYPE_LINEARITY, value > 0 ? value : 14);
+							}
 						}
 						else if(mode == 1)
 						{
-							/* Sensitivity: disable AGCs, apply preset */
-							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, 0);
-							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, 0);
-							int value = getMasterGainSlider().getValue();
-							if(value < 1) value = 10;
-							getTuner().getController().setGain(
-								HydraSdrNative.GAIN_TYPE_SENSITIVITY, value);
+							/* Sensitivity: disable supported AGCs and apply the saved preset. */
+							disableSupportedAgc(controller);
+							if(controller.hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN))
+							{
+								int value = hasConfiguration() ? getConfiguration().getSensitivityGain() : 10;
+								controller.setGain(HydraSdrNative.GAIN_TYPE_SENSITIVITY, value > 0 ? value : 10);
+							}
 						}
 						else if(hasConfiguration())
 						{
-							/* Restore saved custom settings after preset modes disabled the AGCs. */
-							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC,
-								getConfiguration().isLnaAgc() ? 1 : 0);
-							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC,
-								getConfiguration().isMixerAgc() ? 1 : 0);
-							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_LNA,
-								getConfiguration().getLnaGain());
-							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_MIXER,
-								getConfiguration().getMixerGain());
-							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_VGA,
-								getConfiguration().getVgaGain());
+							/* Restore only the saved custom settings supported by this device. */
+							applySupportedCustomGains(controller);
 						}
 					}
 					catch(Exception ex)
@@ -550,6 +545,44 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			});
 		}
 		return mGainModeCombo;
+	}
+
+	private void disableSupportedAgc(HydraSdrTunerController controller) throws SourceException
+	{
+		if(controller.hasCapability(HydraSdrNative.CAP_LNA_AGC))
+		{
+			controller.setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, 0);
+		}
+		if(controller.hasCapability(HydraSdrNative.CAP_MIXER_AGC))
+		{
+			controller.setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, 0);
+		}
+	}
+
+	private void applySupportedCustomGains(HydraSdrTunerController controller) throws SourceException
+	{
+		if(controller.hasCapability(HydraSdrNative.CAP_LNA_AGC))
+		{
+			controller.setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC,
+				getConfiguration().isLnaAgc() ? 1 : 0);
+		}
+		if(controller.hasCapability(HydraSdrNative.CAP_MIXER_AGC))
+		{
+			controller.setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC,
+				getConfiguration().isMixerAgc() ? 1 : 0);
+		}
+		if(controller.hasCapability(HydraSdrNative.CAP_LNA_GAIN))
+		{
+			controller.setGain(HydraSdrNative.GAIN_TYPE_LNA, getConfiguration().getLnaGain());
+		}
+		if(controller.hasCapability(HydraSdrNative.CAP_MIXER_GAIN))
+		{
+			controller.setGain(HydraSdrNative.GAIN_TYPE_MIXER, getConfiguration().getMixerGain());
+		}
+		if(controller.hasCapability(HydraSdrNative.CAP_VGA_GAIN))
+		{
+			controller.setGain(HydraSdrNative.GAIN_TYPE_VGA, getConfiguration().getVgaGain());
+		}
 	}
 
 	private JComboBox<HydraSdrSampleRate> getSampleRateCombo()
@@ -627,18 +660,29 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 				isCustom = (mode == 2);
 			}
 
-			getMasterGainLabel().setEnabled(!isCustom);
-			getMasterGainSlider().setEnabled(!isCustom);
-			getMasterGainValueLabel().setEnabled(!isCustom);
-			getVgaGainLabel().setEnabled(isCustom);
-			getVgaGainSlider().setEnabled(isCustom);
-			getVgaGainValueLabel().setEnabled(isCustom);
-			getLnaAgcCheckBox().setEnabled(isCustom);
-			getLnaGainSlider().setEnabled(isCustom && !(hasConfiguration() && getConfiguration().isLnaAgc()));
-			getLnaGainValueLabel().setEnabled(isCustom);
-			getMixerAgcCheckBox().setEnabled(isCustom);
-			getMixerGainSlider().setEnabled(isCustom && !(hasConfiguration() && getConfiguration().isMixerAgc()));
-			getMixerGainValueLabel().setEnabled(isCustom);
+			HydraSdrTunerController controller = getTuner().getController();
+			boolean hasPresetGain = mode == 0 ? controller.hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN) :
+				controller.hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN);
+			boolean hasLnaAgc = controller.hasCapability(HydraSdrNative.CAP_LNA_AGC);
+			boolean hasMixerAgc = controller.hasCapability(HydraSdrNative.CAP_MIXER_AGC);
+			boolean hasLnaGain = controller.hasCapability(HydraSdrNative.CAP_LNA_GAIN);
+			boolean hasMixerGain = controller.hasCapability(HydraSdrNative.CAP_MIXER_GAIN);
+			boolean hasVgaGain = controller.hasCapability(HydraSdrNative.CAP_VGA_GAIN);
+
+			getMasterGainLabel().setEnabled(!isCustom && hasPresetGain);
+			getMasterGainSlider().setEnabled(!isCustom && hasPresetGain);
+			getMasterGainValueLabel().setEnabled(!isCustom && hasPresetGain);
+			getVgaGainLabel().setEnabled(isCustom && hasVgaGain);
+			getVgaGainSlider().setEnabled(isCustom && hasVgaGain);
+			getVgaGainValueLabel().setEnabled(isCustom && hasVgaGain);
+			getLnaAgcCheckBox().setEnabled(isCustom && hasLnaAgc);
+			getLnaGainSlider().setEnabled(isCustom && hasLnaGain &&
+				(!hasLnaAgc || !(hasConfiguration() && getConfiguration().isLnaAgc())));
+			getLnaGainValueLabel().setEnabled(isCustom && hasLnaGain);
+			getMixerAgcCheckBox().setEnabled(isCustom && hasMixerAgc);
+			getMixerGainSlider().setEnabled(isCustom && hasMixerGain &&
+				(!hasMixerAgc || !(hasConfiguration() && getConfiguration().isMixerAgc())));
+			getMixerGainValueLabel().setEnabled(isCustom && hasMixerGain);
 
 			if(hasConfiguration())
 			{
@@ -744,18 +788,14 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			if(mode == 0)
 			{
 				getConfiguration().setLinearityGain(getMasterGainSlider().getValue());
-				getConfiguration().setSensitivityGain(0);
 			}
 			else if(mode == 1)
 			{
 				getConfiguration().setSensitivityGain(getMasterGainSlider().getValue());
-				getConfiguration().setLinearityGain(0);
 			}
 			else
 			{
-				/* Custom mode: save individual gain values */
-				getConfiguration().setLinearityGain(0);
-				getConfiguration().setSensitivityGain(0);
+				/* Custom mode: save individual gain values while preserving both presets. */
 				getConfiguration().setVgaGain(getVgaGainSlider().getValue());
 				getConfiguration().setMixerGain(getMixerGainSlider().getValue());
 				getConfiguration().setLnaGain(getLnaGainSlider().getValue());
