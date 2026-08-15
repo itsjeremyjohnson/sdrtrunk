@@ -40,7 +40,7 @@ public class EventLogManager
 
     private UserPreferences mUserPreferences;
     private AliasModel mAliasModel;
-    private final ConcurrentHashMap<String, RollingSystemEventLogger> mSystemLoggers = new ConcurrentHashMap<>();
+    private final ConcurrentHashMap<SystemLoggerKey, RollingSystemEventLogger> mSystemLoggers = new ConcurrentHashMap<>();
 
     public EventLogManager(AliasModel aliasModel, UserPreferences userPreferences)
     {
@@ -97,10 +97,16 @@ public class EventLogManager
             systemName = channel.getName();
         }
         String safeSystemName = StringUtils.replaceIllegalCharacters(systemName.trim());
-        RollingSystemEventLogger logger = mSystemLoggers.computeIfAbsent(safeSystemName,
-            name -> new RollingSystemEventLogger(
-                mUserPreferences.getDirectoryPreference().getDirectoryEventLog(), name));
+        Path eventLogDirectory = mUserPreferences.getDirectoryPreference().getDirectoryEventLog()
+            .toAbsolutePath().normalize();
+        SystemLoggerKey key = new SystemLoggerKey(eventLogDirectory, safeSystemName);
+        RollingSystemEventLogger logger = mSystemLoggers.computeIfAbsent(key,
+            ignored -> new RollingSystemEventLogger(eventLogDirectory, safeSystemName));
         return new SystemEventLogModule(logger, mAliasModel);
+    }
+
+    private record SystemLoggerKey(Path directory, String systemName)
+    {
     }
 
     public EventLogger getLogger(EventLogType eventLogType, String prefix, long frequency)

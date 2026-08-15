@@ -26,6 +26,22 @@ class HydraSdrNativeBufferFactoryTest
 	}
 
 	@Test
+	void clearsResidualSamplesAtStreamAndSampleRateBoundaries()
+	{
+		HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(128_000);
+		float[] samples = new float[100];
+
+		assertEquals(0, factory.get(samples, samples, samples.length, 1_000).size());
+		factory.reset();
+		assertEquals(0, factory.get(samples, samples, samples.length, 2_000).size());
+		assertEquals(2_000, factory.get(samples, samples, samples.length, 3_000).get(0).getTimestamp());
+
+		factory.setSampleRate(256_000);
+		assertEquals(0, factory.get(samples, samples, samples.length, 4_000).size());
+		assertEquals(4_000, factory.get(samples, samples, samples.length, 5_000).get(0).getTimestamp());
+	}
+
+	@Test
 	void preservesTimestampAcrossResidualBuffers()
 	{
 		HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(128_000);

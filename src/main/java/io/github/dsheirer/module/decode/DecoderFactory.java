@@ -115,6 +115,7 @@ import io.github.dsheirer.module.decode.p25.phase1.NetworkStreamManager;
 import io.github.dsheirer.preference.network.HeartbeatEntry;
 import io.github.dsheirer.util.StringUtils;
 import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.source.SourceType;
 import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
 import io.github.dsheirer.source.tuner.channel.rotation.ChannelRotationMonitor;
@@ -266,7 +267,8 @@ public class DecoderFactory
 
         if(channel.isStandardChannel())
         {
-            attachTalkerAliasLogger(userPreferences, systemName, p25TrafficChannelManager.getTalkerAliasManager());
+            attachTalkerAliasLogger(userPreferences, systemName, Protocol.APCO25,
+                p25TrafficChannelManager.getTalkerAliasManager());
         }
 
         NetworkStreamManager streamManager = loadNetworkStreamManager(userPreferences);
@@ -320,7 +322,8 @@ public class DecoderFactory
             P25P1DecoderState p25DecoderState = new P25P1DecoderState(channel, primaryTCM);
             modules.add(p25DecoderState);
 
-            attachTalkerAliasLogger(userPreferences, safeSystemName, primaryTCM.getTalkerAliasManager());
+            attachTalkerAliasLogger(userPreferences, safeSystemName, Protocol.APCO25,
+                primaryTCM.getTalkerAliasManager());
 
             p25DecoderState.setHeartbeatMonitors(loadHeartbeatMonitors(userPreferences));
 
@@ -630,7 +633,7 @@ public class DecoderFactory
 
         if(channel.isStandardChannel())
         {
-            attachTalkerAliasLogger(userPreferences, safeDmrSystem,
+            attachTalkerAliasLogger(userPreferences, safeDmrSystem, Protocol.DMR,
                 dmrTrafficChannelManager.getTalkerAliasManager());
         }
 
@@ -903,10 +906,10 @@ public class DecoderFactory
     }
 
     private static void attachTalkerAliasLogger(UserPreferences userPreferences, String systemName,
-                                                TalkerAliasManager manager)
+                                                Protocol protocol, TalkerAliasManager manager)
     {
         Path eventLogDir = userPreferences.getDirectoryPreference().getDirectoryEventLog();
-        TalkerAliasLogger aliasLogger = new TalkerAliasLogger(eventLogDir, systemName);
+        TalkerAliasLogger aliasLogger = new TalkerAliasLogger(eventLogDir, systemName, protocol);
         manager.setChangeListener(aliasLogger::onAliasUpdate);
         aliasLogger.bootstrap(manager);
     }
@@ -940,7 +943,7 @@ public class DecoderFactory
     private static String formatRawMessage(String systemName, io.github.dsheirer.message.IMessage msg)
     {
         String text = JsonUtils.escape(msg.toString());
-        return "{\"pipe\":\"raw\",\"system\":\"" + JsonUtils.escape(systemName)
+        return "{\"pipe\":\"raw_cc\",\"system\":\"" + JsonUtils.escape(systemName)
             + "\",\"timestamp\":\"" + formatTimestamp(System.currentTimeMillis())
             + "\",\"message\":\"" + text + "\"}";
     }

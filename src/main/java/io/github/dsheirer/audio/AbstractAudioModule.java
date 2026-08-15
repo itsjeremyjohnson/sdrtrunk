@@ -103,6 +103,15 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
      */
     protected void closeAudioSegment()
     {
+        closeAudioSegment(true);
+    }
+
+    /**
+     * Closes the current bounded audio segment.
+     * @param endPcmCall true when this is also the end of the over-the-air call
+     */
+    private void closeAudioSegment(boolean endPcmCall)
+    {
         synchronized(this)
         {
             if(mAudioSegment != null)
@@ -113,32 +122,34 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                 mAudioSegment = null;
             }
 
-            // PCM stream: broadcast call_end when the segment closes.
-            // Wrapped in try-catch so any PCM failure cannot affect the existing audio pipeline.
-            try
+            if(endPcmCall)
             {
-                if(mPcmCallId != null)
+                // Wrapped in try-catch so any PCM failure cannot affect the existing audio pipeline.
+                try
                 {
-                    PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
-                    if(pcmMgr != null && pcmMgr.isRunning())
+                    if(mPcmCallId != null)
                     {
-                        pcmMgr.broadcastCallEnd(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
-                                mPcmCachedTalkgroup, mPcmFrameCount.get());
+                        PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
+                        if(pcmMgr != null && pcmMgr.isRunning())
+                        {
+                            pcmMgr.broadcastCallEnd(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
+                                    mPcmCachedTalkgroup, mPcmFrameCount.get());
+                        }
                     }
                 }
-            }
-            catch(Exception e)
-            {
-                mLog.warn("PCM call_end broadcast error: {}", e.getMessage());
-            }
-            finally
-            {
-                // Always clear PCM state regardless of broadcast success or failure
-                mPcmCallId = null;
-                mPcmCachedSystem = "";
-                mPcmCachedSite = "";
-                mPcmCachedTalkgroup = "";
-                mPcmCachedFrom = "";
+                catch(Exception e)
+                {
+                    mLog.warn("PCM call_end broadcast error: {}", e.getMessage());
+                }
+                finally
+                {
+                    // Always clear PCM state regardless of broadcast success or failure
+                    mPcmCallId = null;
+                    mPcmCachedSystem = "";
+                    mPcmCachedSite = "";
+                    mPcmCachedTalkgroup = "";
+                    mPcmCachedFrom = "";
+                }
             }
         }
     }
@@ -244,7 +255,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         if(mAudioSampleCount >= mMaxSegmentAudioSampleLength)
         {
             AudioSegment previous = getAudioSegment();
-            closeAudioSegment();
+            closeAudioSegment(false);
             audioSegment = getAudioSegment();
             audioSegment.linkTo(previous);
         }

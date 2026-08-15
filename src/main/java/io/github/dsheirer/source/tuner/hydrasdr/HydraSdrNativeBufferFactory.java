@@ -57,7 +57,26 @@ public class HydraSdrNativeBufferFactory
 	 */
 	public synchronized void setSampleRate(int sampleRate)
 	{
-		mSamplesPerMillisecond = sampleRate / 1000.0f;
+		float samplesPerMillisecond = sampleRate / 1000.0f;
+
+		if(mSamplesPerMillisecond != samplesPerMillisecond)
+		{
+			reset();
+			mSamplesPerMillisecond = samplesPerMillisecond;
+		}
+	}
+
+	/**
+	 * Clears samples and timing state retained from the current stream.
+	 */
+	public synchronized void reset()
+	{
+		mIResidual = new float[0];
+		mQResidual = new float[0];
+		mResidualTimestamp = 0;
+		mFractionalMsAccumulator = 0.0;
+		mIncomingBufferLength = 0;
+		mOptimalBufferLength = 128;
 	}
 
 	/**

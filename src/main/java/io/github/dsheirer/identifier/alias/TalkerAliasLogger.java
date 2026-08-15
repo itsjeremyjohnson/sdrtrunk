@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.identifier.alias;
 
+import io.github.dsheirer.protocol.Protocol;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
@@ -29,7 +30,10 @@ import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.function.Function;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
 import org.apache.commons.csv.CSVPrinter;
@@ -38,7 +42,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Persists observed P25 talker aliases to a CSV file and bootstraps them back on startup.
+ * Persists observed talker aliases to a CSV file and bootstraps them back on startup.
  */
 public class TalkerAliasLogger
 {
@@ -48,56 +52,186 @@ public class TalkerAliasLogger
         .setSkipHeaderRecord(false)
         .setRecordSeparator('\n')
         .get();
+    private static final Map<Path, AliasFileState> FILE_STATES = new ConcurrentHashMap<>();
 
-    private final Path mLogDirectory;
-    private final String mSystemName;
-    private String mLastWrittenContent = null;
+    private final Path mAliasFile;
+    private final Function<String, TalkerAliasIdentifier> mIdentifierFactory;
+    private final AliasFileState mFileState;
+    private final Object mSourceKey = new Object();
 
     /**
-     * Constructs an instance.
+     * Constructs a P25 logger for backward compatibility.
      * @param logDirectory where the alias CSV file is stored
      * @param systemName used as the filename prefix
      */
     public TalkerAliasLogger(Path logDirectory, String systemName)
     {
-        mLogDirectory = logDirectory;
-        mSystemName = systemName;
+        this(logDirectory, systemName, Protocol.APCO25);
     }
 
     /**
-     * Called whenever the alias map changes. Writes updated aliases to disk if the content has changed.
+     * Constructs an instance.
+     * @param logDirectory where the alias CSV file is stored
+     * @param systemName used as the filename prefix
+     * @param protocol protocol used to reconstruct persisted identifiers
+     */
+    public TalkerAliasLogger(Path logDirectory, String systemName, Protocol protocol)
+    {
+        mAliasFile = logDirectory.resolve(systemName + "_talker_aliases.csv").toAbsolutePath().normalize();
+        mIdentifierFactory = protocol == Protocol.DMR ? DmrTalkerAliasIdentifier::create :
+            P25TalkerAliasIdentifier::create;
+        mFileState = FILE_STATES.computeIfAbsent(mAliasFile, ignored -> new AliasFileState());
+    }
+
+    /**
+     * Called whenever the alias map changes. Writes the merged aliases from every manager using this system file.
      * @param aliases current alias map (radioId -> TalkerAliasIdentifier)
      */
-    public synchronized void onAliasUpdate(Map<Integer, TalkerAliasIdentifier> aliases)
+    public void onAliasUpdate(Map<Integer, TalkerAliasIdentifier> aliases)
     {
-        String content;
+        mFileState.update(mAliasFile, mSourceKey, aliases);
+    }
 
-        try(StringWriter writer = new StringWriter(); CSVPrinter printer = new CSVPrinter(writer, CSV_FORMAT))
+    /**
+     * Reads previously persisted aliases and preloads them into the alias manager.
+     * @param manager to preload
+     */
+    public void bootstrap(TalkerAliasManager manager)
+    {
+        Map<Integer, String> loaded = mFileState.bootstrap(mAliasFile, mSourceKey);
+        Map<Integer, TalkerAliasIdentifier> identifiers = new HashMap<>();
+        loaded.forEach((radioId, alias) -> identifiers.put(radioId, mIdentifierFactory.apply(alias)));
+
+        if(!identifiers.isEmpty())
         {
-            for(Map.Entry<Integer, TalkerAliasIdentifier> entry : aliases.entrySet().stream()
-                .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder())).toList())
+            manager.preload(identifiers);
+            mLog.info("Preloaded " + identifiers.size() + " talker aliases from [" + mAliasFile + "]");
+        }
+    }
+
+    /**
+     * Coordinates snapshots from all logger instances that target the same system file.
+     */
+    private static class AliasFileState
+    {
+        private final Map<Object, Map<Integer, String>> mSnapshots = new LinkedHashMap<>();
+        private boolean mLoaded;
+        private String mLastWrittenContent;
+
+        public synchronized Map<Integer, String> bootstrap(Path aliasFile, Object sourceKey)
+        {
+            ensureLoaded(aliasFile);
+            Map<Integer, String> merged = getMergedAliases();
+            mSnapshots.put(sourceKey, new HashMap<>(merged));
+            return merged;
+        }
+
+        public synchronized void update(Path aliasFile, Object sourceKey,
+                                        Map<Integer, TalkerAliasIdentifier> aliases)
+        {
+            ensureLoaded(aliasFile);
+            Map<Integer, String> snapshot = new HashMap<>();
+            aliases.forEach((radioId, alias) -> snapshot.put(radioId, alias.getValue()));
+
+            // Reinsert so the latest manager update wins if two managers report the same radio.
+            mSnapshots.remove(sourceKey);
+            mSnapshots.put(sourceKey, snapshot);
+            write(aliasFile, getMergedAliases());
+        }
+
+        private void ensureLoaded(Path aliasFile)
+        {
+            if(mLoaded)
             {
-                String aliasText = entry.getValue().getValue();
-                printer.printRecord(entry.getKey(), aliasText != null ? aliasText : "");
+                return;
             }
-            printer.flush();
-            content = writer.toString();
-        }
-        catch(IOException e)
-        {
-            mLog.error("Error formatting talker alias CSV", e);
-            return;
+
+            Map<Integer, String> loaded = read(aliasFile);
+            if(!loaded.isEmpty())
+            {
+                mSnapshots.put(new Object(), loaded);
+            }
+            mLoaded = true;
         }
 
-        if(!content.equals(mLastWrittenContent))
+        private Map<Integer, String> getMergedAliases()
         {
-            Path aliasFile = mLogDirectory.resolve(mSystemName + "_talker_aliases.csv");
+            Map<Integer, String> merged = new HashMap<>();
+            mSnapshots.values().forEach(merged::putAll);
+            return merged;
+        }
+
+        private Map<Integer, String> read(Path aliasFile)
+        {
+            Map<Integer, String> loaded = new HashMap<>();
+            CSVFormat readFormat = CSV_FORMAT.builder().setSkipHeaderRecord(true).get();
+
+            try(CSVParser parser = CSVParser.parse(aliasFile, StandardCharsets.UTF_8, readFormat))
+            {
+                for(CSVRecord record : parser)
+                {
+                    try
+                    {
+                        int radioId = Integer.parseInt(record.get("RADIO_ID").trim());
+                        String aliasText = record.get("TALKER_ALIAS");
+
+                        if(aliasText.startsWith("TA-"))
+                        {
+                            aliasText = aliasText.substring(3);
+                        }
+
+                        loaded.put(radioId, aliasText);
+                    }
+                    catch(NumberFormatException e)
+                    {
+                        mLog.debug("Skipping invalid talker alias record: " + record);
+                    }
+                }
+            }
+            catch(NoSuchFileException e)
+            {
+                // No persisted aliases yet.
+            }
+            catch(IOException | IllegalArgumentException e)
+            {
+                mLog.warn("Could not read talker alias bootstrap file [" + aliasFile + "]", e);
+            }
+
+            return loaded;
+        }
+
+        private void write(Path aliasFile, Map<Integer, String> aliases)
+        {
+            String content;
+
+            try(StringWriter writer = new StringWriter(); CSVPrinter printer = new CSVPrinter(writer, CSV_FORMAT))
+            {
+                for(Map.Entry<Integer, String> entry : aliases.entrySet().stream()
+                    .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder())).toList())
+                {
+                    printer.printRecord(entry.getKey(), entry.getValue() != null ? entry.getValue() : "");
+                }
+                printer.flush();
+                content = writer.toString();
+            }
+            catch(IOException e)
+            {
+                mLog.error("Error formatting talker alias CSV", e);
+                return;
+            }
+
+            if(content.equals(mLastWrittenContent))
+            {
+                return;
+            }
+
+            Path logDirectory = aliasFile.getParent();
             Path tempFile = null;
 
             try
             {
-                Files.createDirectories(mLogDirectory);
-                tempFile = Files.createTempFile(mLogDirectory, mSystemName + "_talker_aliases", ".tmp");
+                Files.createDirectories(logDirectory);
+                tempFile = Files.createTempFile(logDirectory, aliasFile.getFileName().toString(), ".tmp");
                 Files.writeString(tempFile, content, StandardOpenOption.TRUNCATE_EXISTING);
 
                 try
@@ -130,57 +264,6 @@ public class TalkerAliasLogger
                     }
                 }
             }
-        }
-    }
-
-    /**
-     * Reads previously persisted aliases and preloads them into the alias manager.
-     * @param manager to preload
-     */
-    public void bootstrap(TalkerAliasManager manager)
-    {
-        Path aliasFile = mLogDirectory.resolve(mSystemName + "_talker_aliases.csv");
-
-        Map<Integer, TalkerAliasIdentifier> loaded = new HashMap<>();
-        CSVFormat readFormat = CSV_FORMAT.builder().setSkipHeaderRecord(true).get();
-
-        try(CSVParser parser = CSVParser.parse(aliasFile, StandardCharsets.UTF_8, readFormat))
-        {
-            for(CSVRecord record : parser)
-            {
-                try
-                {
-                    int radioId = Integer.parseInt(record.get("RADIO_ID").trim());
-                    String aliasText = record.get("TALKER_ALIAS");
-
-                    // Strip "TA-" prefix for compatibility with older files.
-                    if(aliasText.startsWith("TA-"))
-                    {
-                        aliasText = aliasText.substring(3);
-                    }
-
-                    loaded.put(radioId, P25TalkerAliasIdentifier.create(aliasText));
-                }
-                catch(NumberFormatException e)
-                {
-                    mLog.debug("Skipping invalid talker alias record: " + record);
-                }
-            }
-        }
-        catch(NoSuchFileException e)
-        {
-            return;
-        }
-        catch(IOException | IllegalArgumentException e)
-        {
-            mLog.warn("Could not read talker alias bootstrap file [" + aliasFile + "]", e);
-            return;
-        }
-
-        if(!loaded.isEmpty())
-        {
-            manager.preload(loaded);
-            mLog.info("Preloaded " + loaded.size() + " talker aliases for system [" + mSystemName + "]");
         }
     }
 }

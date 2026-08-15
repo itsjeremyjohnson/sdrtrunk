@@ -55,8 +55,6 @@ typedef struct {
 	JavaVM *jvm;
 	jobject callback;
 	jmethodID onSamplesMethod;
-	JNIEnv *attached_env;
-	volatile int thread_attached;
 	volatile int stopping;         /* set by stopRx before hydrasdr_stop_rx */
 	/* Double-buffered pre-allocated Java arrays (global refs).
 	 * Two sets alternate so Java can consume one while native fills the other. */
@@ -156,8 +154,6 @@ static void cleanup_stream_ctx(JNIEnv *env, jni_stream_ctx_t *ctx)
 		(*env)->DeleteGlobalRef(env, ctx->callback);
 		ctx->callback = NULL;
 	}
-	ctx->thread_attached = 0;
-	ctx->attached_env = NULL;
 	ctx->stopping = 0;
 	ctx->active = 0;
 }
@@ -460,33 +456,39 @@ static void deinterleave_iq(const float *iq, float *i_out, float *q_out, int sam
 	}
 }
 
+/* Detaches a native callback thread when this callback attached it. */
+static int finish_stream_callback(jni_stream_ctx_t *ctx, int attached_here, int result)
+{
+	if (attached_here && ctx && ctx->jvm)
+		(*ctx->jvm)->DetachCurrentThread(ctx->jvm);
+
+	return result;
+}
+
 /*
  * Native streaming callback - called on libhydrasdr's USB thread.
  *
- * - Attaches to JVM once on first call
+ * - Attaches to the JVM for the duration of each callback
  * - De-interleaves IQ in native C (unrolled loop) into pre-split I/Q arrays
  * - Double-buffered arrays: no GC allocation per callback
- * - Detaches from JVM when streaming stops (preventing thread leak)
+ * - Detaches on every callback exit, including shutdown and error paths
  */
 static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 {
 	jni_stream_ctx_t *ctx = (jni_stream_ctx_t *)transfer->ctx;
 	if (!ctx || !ctx->callback || ctx->stopping)
-		goto detach_and_exit;
+		return -1;
 
-	JNIEnv *env = ctx->attached_env;
+	JNIEnv *env = NULL;
+	int attached_here = 0;
+	jint status = (*ctx->jvm)->GetEnv(ctx->jvm, (void **)&env, JNI_VERSION_1_6);
 
-	/* Attach streaming thread to JVM on first callback */
-	if (!ctx->thread_attached) {
-		jint status = (*ctx->jvm)->GetEnv(ctx->jvm, (void **)&env, JNI_VERSION_1_6);
-		if (status == JNI_EDETACHED) {
-			if ((*ctx->jvm)->AttachCurrentThread(ctx->jvm, (void **)&env, NULL) != 0)
-				return -1;
-		} else if (status != JNI_OK) {
+	if (status == JNI_EDETACHED) {
+		if ((*ctx->jvm)->AttachCurrentThread(ctx->jvm, (void **)&env, NULL) != 0)
 			return -1;
-		}
-		ctx->attached_env = env;
-		ctx->thread_attached = 1;
+		attached_here = 1;
+	} else if (status != JNI_OK) {
+		return -1;
 	}
 
 	int sample_count = transfer->sample_count;
@@ -494,7 +496,7 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 
 	/* Sanity check: reject absurd sample counts */
 	if (sample_count <= 0 || sample_count > MAX_SAMPLES_PER_CALLBACK)
-		return 0;
+		return finish_stream_callback(ctx, attached_here, 0);
 
 	/*
 	 * Double-buffer: reuse pre-allocated Java arrays when size matches.
@@ -510,7 +512,6 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 			if (!ji_local || !jq_local) {
 				if (ji_local) (*env)->DeleteLocalRef(env, ji_local);
 				if (jq_local) (*env)->DeleteLocalRef(env, jq_local);
-				/* Clean up any already-allocated buffers from previous iterations */
 				free_stream_buffers(env, ctx);
 				alloc_ok = 0;
 			} else {
@@ -519,7 +520,6 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 				(*env)->DeleteLocalRef(env, ji_local);
 				(*env)->DeleteLocalRef(env, jq_local);
 				if (!ctx->ji_buf[b] || !ctx->jq_buf[b]) {
-					/* Global ref pool exhausted */
 					if ((*env)->ExceptionCheck(env))
 						(*env)->ExceptionClear(env);
 					free_stream_buffers(env, ctx);
@@ -529,20 +529,15 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 		}
 
 		if (!alloc_ok)
-			return 0; /* OOM -- skip this buffer, try again next callback */
+			return finish_stream_callback(ctx, attached_here, 0);
 
 		ctx->buf_size = sample_count;
 		ctx->buf_index = 0;
 	}
 
-	/* Select current buffer pair and advance for next callback */
 	int idx = ctx->buf_index;
 	ctx->buf_index = 1 - idx;
 
-	/*
-	 * GetFloatArrayElements avoids nesting critical JNI regions while both
-	 * output arrays are populated.
-	 */
 	jfloat *i_ptr = (*env)->GetFloatArrayElements(env, ctx->ji_buf[idx], NULL);
 	jfloat *q_ptr = (*env)->GetFloatArrayElements(env, ctx->jq_buf[idx], NULL);
 
@@ -551,7 +546,7 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 		if (i_ptr) (*env)->ReleaseFloatArrayElements(env, ctx->ji_buf[idx], i_ptr, JNI_ABORT);
 		if ((*env)->ExceptionCheck(env))
 			(*env)->ExceptionClear(env);
-		return 0;
+		return finish_stream_callback(ctx, attached_here, 0);
 	}
 
 	deinterleave_iq(samples, i_ptr, q_ptr, sample_count);
@@ -565,19 +560,10 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 
 	if ((*env)->ExceptionCheck(env)) {
 		(*env)->ExceptionClear(env);
-		return -1;
+		return finish_stream_callback(ctx, attached_here, -1);
 	}
 
-	return 0;
-
-detach_and_exit:
-	/* Streaming is ending -- detach this thread from JVM before it exits */
-	if (ctx && ctx->thread_attached && ctx->jvm) {
-		(*ctx->jvm)->DetachCurrentThread(ctx->jvm);
-		ctx->thread_attached = 0;
-		ctx->attached_env = NULL;
-	}
-	return -1;
+	return finish_stream_callback(ctx, attached_here, 0);
 }
 
 JNIEXPORT jint JNICALL
@@ -642,14 +628,13 @@ Java_io_github_dsheirer_source_tuner_hydrasdr_HydraSdrNative_stopRx(
 		return HYDRASDR_SUCCESS;
 
 	/*
-	 * Signal the callback to detach its thread and stop processing.
+	 * Signal the callback to stop processing.
 	 *
 	 * CRITICAL CONTRACT: hydrasdr_stop_rx() MUST block until the streaming
-	 * thread has fully exited and will never call the callback again.
-	 * The callback checks 'stopping' and calls DetachCurrentThread before
-	 * the thread terminates. If hydrasdr_stop_rx() returned before the
-	 * thread exits, cleanup_stream_ctx() below would free resources still
-	 * in use by the callback — causing a use-after-free.
+	 * thread has fully exited and will never call the callback again. Each
+	 * callback detaches before returning. If hydrasdr_stop_rx() returned
+	 * before the thread exits, cleanup_stream_ctx() below would free resources
+	 * still in use by the callback — causing a use-after-free.
 	 */
 	ctx->stopping = 1;
 
@@ -731,11 +716,11 @@ Java_io_github_dsheirer_source_tuner_hydrasdr_HydraSdrNative_getDeviceInfo(
 	SET_STRING_FIELD(setBoardName, info.board_name);
 	SET_STRING_FIELD(setFirmwareVersion, info.firmware_version);
 
-	/* Format serial number - 64-bit like hydrasdr host tools: 0xMSB32LSB32 */
+	/* Preserve the legacy sdrtrunk unique ID format used by saved tuner configurations. */
 	char serial_str[64];
 	uint32_t sn_msb = info.part_serial.serial_no[2];
 	uint32_t sn_lsb = info.part_serial.serial_no[3];
-	snprintf(serial_str, sizeof(serial_str), "0x%08X%08X", sn_msb, sn_lsb);
+	snprintf(serial_str, sizeof(serial_str), "%08X-%08X", sn_msb, sn_lsb);
 	SET_STRING_FIELD(setSerialNumber, serial_str);
 
 	char part_str[32];

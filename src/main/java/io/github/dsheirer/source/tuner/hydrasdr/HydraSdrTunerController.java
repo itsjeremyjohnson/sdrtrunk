@@ -229,6 +229,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	{
 		if(!mStreaming && mDeviceHandle != 0)
 		{
+			mNativeBufferFactory.reset();
 			int result = HydraSdrNative.startRx(mDeviceHandle, this);
 			if(result == HydraSdrNative.SUCCESS)
 			{
@@ -263,6 +264,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				mLog.error("Failed to stop HydraSDR streaming: " + HydraSdrNative.errorName(result));
 			}
 			mStreaming = false;
+			mNativeBufferFactory.reset();
 		}
 	}
 

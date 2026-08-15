@@ -18,6 +18,13 @@
  */
 package io.github.dsheirer.identifier.alias;
 
+import io.github.dsheirer.identifier.Form;
+import io.github.dsheirer.identifier.Identifier;
+import io.github.dsheirer.identifier.IdentifierClass;
+import io.github.dsheirer.identifier.MutableIdentifierCollection;
+import io.github.dsheirer.identifier.Role;
+import io.github.dsheirer.module.decode.p25.identifier.radio.APCO25RadioIdentifier;
+import io.github.dsheirer.protocol.Protocol;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -57,5 +64,36 @@ public class TalkerAliasLoggerTest
         {
             assertEquals(0, files.filter(path -> path.getFileName().toString().endsWith(".tmp")).count());
         }
+    }
+
+    @Test
+    void mergesSnapshotsFromManagersForTheSameSystem(@TempDir Path logDirectory) throws IOException
+    {
+        TalkerAliasLogger firstLogger = new TalkerAliasLogger(logDirectory, "shared-system");
+        TalkerAliasLogger secondLogger = new TalkerAliasLogger(logDirectory, "shared-system");
+
+        firstLogger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("First")));
+        secondLogger.onAliasUpdate(Map.of(20, P25TalkerAliasIdentifier.create("Second")));
+
+        assertEquals("RADIO_ID,TALKER_ALIAS\n10,First\n20,Second\n",
+            Files.readString(logDirectory.resolve("shared-system_talker_aliases.csv")));
+    }
+
+    @Test
+    void bootstrapsDmrAliasesAsDmrIdentifiers(@TempDir Path logDirectory) throws IOException
+    {
+        Files.writeString(logDirectory.resolve("dmr-system_talker_aliases.csv"),
+            "RADIO_ID,TALKER_ALIAS\n10,Dispatch\n");
+        TalkerAliasLogger logger = new TalkerAliasLogger(logDirectory, "dmr-system", Protocol.DMR);
+        TalkerAliasManager manager = new TalkerAliasManager();
+        logger.bootstrap(manager);
+
+        MutableIdentifierCollection identifiers = new MutableIdentifierCollection();
+        identifiers.update(APCO25RadioIdentifier.createFrom(10));
+        manager.enrichMutable(identifiers);
+        Identifier alias = identifiers.getIdentifier(IdentifierClass.USER, Form.TALKER_ALIAS, Role.FROM);
+
+        assertTrue(alias instanceof DmrTalkerAliasIdentifier);
+        assertEquals(Protocol.DMR, alias.getProtocol());
     }
 }
