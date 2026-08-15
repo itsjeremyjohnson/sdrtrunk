@@ -148,10 +148,12 @@ public class FrequencyErrorCorrectionManager
         // This is a secondary defence against poorly-locked decoders reporting garbage PPM values
         // that would corrupt the correction for all channels on this tuner.
         // The primary fix is in each decoder (gate on carrier lock), but this catches any future cases.
-        if(!Double.isNaN(mBaselinePPM) && Math.abs(ppm - mBaselinePPM) > SANITY_CLAMP_PPM)
+        double proposedCorrection = mTunerController != null ? mTunerController.getFrequencyCorrection() - ppm : ppm;
+
+        if(!Double.isNaN(mBaselinePPM) && Math.abs(proposedCorrection - mBaselinePPM) > SANITY_CLAMP_PPM)
         {
-            mLog.debug("Rejecting PPM measurement [{} ppm] - deviates more than {} ppm from baseline [{} ppm]",
-                mDecimalFormat.format(ppm), SANITY_CLAMP_PPM, mDecimalFormat.format(mBaselinePPM));
+            mLog.debug("Rejecting proposed PPM correction [{} ppm] - deviates more than {} ppm from baseline [{} ppm]",
+                mDecimalFormat.format(proposedCorrection), SANITY_CLAMP_PPM, mDecimalFormat.format(mBaselinePPM));
             return;
         }
 

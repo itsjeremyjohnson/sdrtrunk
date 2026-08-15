@@ -425,16 +425,8 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
 
             if(allocated)
             {
-                //If filtering is enabled and the talkgroup is not aliased, tear down the already-allocated channel
-                if(!hasAlias(identifierCollection))
-                {
-                    Channel trafficChannel = mAllocatedChannelFrequencyMap.get(channel.getDownlinkFrequency());
-                    if(trafficChannel != null)
-                    {
-                        broadcast(new ChannelEvent(trafficChannel, Event.REQUEST_DISABLE));
-                    }
-                }
-                //Otherwise do nothing & let the channel maintain its own event state
+                //The allocated decoder may be carrying an allowed call on the other timeslot. Let it maintain
+                //its own per-timeslot event state rather than disabling the entire frequency.
             }
             else
             {

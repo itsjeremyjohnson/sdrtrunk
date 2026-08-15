@@ -690,31 +690,26 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
 
         if(tuner != null)
         {
-            // Determine the channel frequency to center on
+            // Prefer the live source frequency so rotated multi-frequency channels center correctly.
             long channelFrequency = 0;
+            ProcessingChain pc = mChannelProcessingManager.getProcessingChain(channel);
 
-            if(sourceConfig instanceof SourceConfigTuner)
+            if(pc != null && pc.getSource() instanceof TunerChannelSource)
+            {
+                channelFrequency = ((TunerChannelSource)pc.getSource()).getFrequency();
+            }
+
+            if(channelFrequency == 0 && sourceConfig instanceof SourceConfigTuner)
             {
                 channelFrequency = ((SourceConfigTuner)sourceConfig).getFrequency();
             }
-            else if(sourceConfig instanceof SourceConfigTunerMultipleFrequency)
+            else if(channelFrequency == 0 && sourceConfig instanceof SourceConfigTunerMultipleFrequency)
             {
                 List<Long> frequencies = ((SourceConfigTunerMultipleFrequency)sourceConfig).getFrequencies();
 
                 if(frequencies != null && !frequencies.isEmpty())
                 {
                     channelFrequency = frequencies.get(0);
-                }
-            }
-
-            // Fall back to the live tuner channel source frequency if config frequency is 0
-            if(channelFrequency == 0)
-            {
-                ProcessingChain pc = mChannelProcessingManager.getProcessingChain(channel);
-
-                if(pc != null && pc.getSource() instanceof TunerChannelSource)
-                {
-                    channelFrequency = ((TunerChannelSource)pc.getSource()).getFrequency();
                 }
             }
 
@@ -836,26 +831,25 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                 }
             }
 
-            //Re-apply mute state when new processing chains are created.
-            //Check both independent mute tracking (non-alias channels) and alias-based
-            //DO_NOT_MONITOR priority (persisted in playlist across restarts).
+            //Re-apply independent channel mute state, or a mute that matches the channel's current identifiers.
             boolean shouldMute = mMutedChannelIds.contains(channel.getChannelID());
 
             if(!shouldMute)
             {
-                //Check if any alias in the channel's alias list has DO_NOT_MONITOR priority
-                String aliasListName = channel.getAliasListName();
-
-                if(aliasListName != null && !aliasListName.isEmpty())
+                for(ChannelMetadata metadata : channelAndMetadata.getChannelMetadata())
                 {
-                    for(Alias alias : mPlaylistManager.getAliasModel().getAliases())
+                    List<Alias> activeAliases = metadata.getToIdentifierAliases();
+
+                    if(activeAliases == null || activeAliases.isEmpty())
                     {
-                        if(alias.hasList() && alias.getAliasListName().equalsIgnoreCase(aliasListName)
-                            && alias.getPlaybackPriority() == Priority.DO_NOT_MONITOR)
-                        {
-                            shouldMute = true;
-                            break;
-                        }
+                        activeAliases = metadata.getFromIdentifierAliases();
+                    }
+
+                    if(activeAliases != null && activeAliases.stream()
+                        .anyMatch(alias -> alias.getPlaybackPriority() == Priority.DO_NOT_MONITOR))
+                    {
+                        shouldMute = true;
+                        break;
                     }
                 }
             }

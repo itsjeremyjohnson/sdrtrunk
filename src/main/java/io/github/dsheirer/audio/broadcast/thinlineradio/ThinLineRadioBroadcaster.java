@@ -53,7 +53,6 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
-import java.util.concurrent.CompletionException;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -261,16 +260,14 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                             .whenComplete((fileResponse, throwable1) -> {
                                 if(throwable1 != null || fileResponse.statusCode() != 200)
                                 {
-                                    if(throwable1 instanceof IOException || throwable1 instanceof CompletionException)
+                                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+
+                                    if(throwable1 != null)
                                     {
-                                        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                        mLog.error("ThinLine Radio API file upload fail [" +
-                                            fileResponse.statusCode() + "] response [" +
-                                            fileResponse.body() + "]");
+                                        mLog.error("ThinLine Radio API file upload failed", throwable1);
                                     }
                                     else
                                     {
-                                        setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
                                         mLog.error("ThinLine Radio API file upload fail [" +
                                             fileResponse.statusCode() + "] response [" +
                                             fileResponse.body() + "]");
@@ -279,6 +276,7 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                                     incrementErrorAudioCount();
                                     broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
                                         BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                    audioRecording.removePendingReplay();
                                 }
                                 else
                                 {

@@ -54,6 +54,7 @@ import io.github.dsheirer.alias.id.tone.TonesID;
 import io.github.dsheirer.audio.broadcast.ConfiguredBroadcast;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.gui.control.IntegerFormatter;
+import io.github.dsheirer.gui.editor.AudioOutputDeviceEditor;
 import io.github.dsheirer.gui.playlist.Editor;
 import io.github.dsheirer.gui.playlist.alias.action.ActionEditor;
 import io.github.dsheirer.gui.playlist.alias.action.ActionEditorFactory;
@@ -158,6 +159,7 @@ public class AliasItemEditor extends Editor<Alias>
     private Button mDeleteActionButton;
     private VBox mActionEditorBox;
     private VBox mIdentifierEditorBox;
+    private AudioOutputDeviceEditor mAudioOutputDeviceEditor;
     private TextField mStreamAsTalkgroupField;
     private TextFormatter<Integer> mStreamAsIntegerTextFormatter = new IntegerFormatter(1,0xFFFF);
 
@@ -298,6 +300,8 @@ public class AliasItemEditor extends Editor<Alias>
         getAddActionButton().setDisable(disable);
 
         updateStreamViews();
+        getAudioOutputDeviceEditor().setAlias(alias);
+        getAudioOutputDeviceEditor().setDisable(disable);
 
         if(alias != null)
         {
@@ -905,13 +909,29 @@ public class AliasItemEditor extends Editor<Alias>
             streamAsHBox.setAlignment(Pos.CENTER_LEFT);
             streamAsHBox.setSpacing(10);
             streamAsHBox.getChildren().addAll(label, getStreamAsTalkgroupField());
-            vbox.getChildren().addAll(hbox, streamAsHBox);
+            vbox.getChildren().addAll(hbox, streamAsHBox, getAudioOutputDeviceEditor());
 
             mStreamPane = new TitledPane("Streaming", vbox);
             mStreamPane.setExpanded(false);
         }
 
         return mStreamPane;
+    }
+
+    private AudioOutputDeviceEditor getAudioOutputDeviceEditor()
+    {
+        if(mAudioOutputDeviceEditor == null)
+        {
+            mAudioOutputDeviceEditor = new AudioOutputDeviceEditor();
+            mAudioOutputDeviceEditor.modifiedProperty().addListener((observable, oldValue, modified) -> {
+                if(modified && !mSuppressModification)
+                {
+                    modifiedProperty().set(true);
+                }
+            });
+        }
+
+        return mAudioOutputDeviceEditor;
     }
 
     private void updateStreamViews()
@@ -963,7 +983,6 @@ public class AliasItemEditor extends Editor<Alias>
             finally
             {
                 mSuppressModification = false;
-                modifiedProperty().set(false);
             }
         });
     }

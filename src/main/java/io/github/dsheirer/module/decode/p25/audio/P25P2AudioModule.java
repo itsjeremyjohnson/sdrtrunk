@@ -22,6 +22,7 @@ package io.github.dsheirer.module.decode.p25.audio;
 import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.audio.codec.mbe.AmbeAudioModule;
 import io.github.dsheirer.dsp.filter.equalizer.GraphicEqualizer;
+import io.github.dsheirer.dsp.gain.NonClippingGain;
 import io.github.dsheirer.audio.squelch.SquelchState;
 import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.bits.BinaryMessage;
@@ -64,6 +65,7 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
     private boolean mEncryptedCallStateEstablished = false;
     private boolean mEncryptedCall = false;
     private Listener<IMessage> mMessageListener;
+    private NonClippingGain mLimiter = new NonClippingGain(1.0f, 0.95f);
     private volatile GraphicEqualizer mGraphicEQ;
 
     public P25P2AudioModule(UserPreferences userPreferences, int timeslot, AliasList aliasList)
@@ -217,6 +219,7 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                     if(eq != null && eq.isEnabled())
                     {
                         eq.process(audio);
+                        mLimiter.apply(audio);
                     }
 
                     addAudio(audio);

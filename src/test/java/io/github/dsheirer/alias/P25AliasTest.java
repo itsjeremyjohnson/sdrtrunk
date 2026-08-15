@@ -19,14 +19,18 @@
 
 package io.github.dsheirer.alias;
 
+import io.github.dsheirer.alias.id.ctcss.Ctcss;
+import io.github.dsheirer.alias.id.nac.Nac;
 import io.github.dsheirer.alias.id.radio.P25FullyQualifiedRadio;
 import io.github.dsheirer.alias.id.radio.Radio;
 import io.github.dsheirer.alias.id.radio.RadioRange;
 import io.github.dsheirer.alias.id.talkgroup.P25FullyQualifiedTalkgroup;
 import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.alias.id.talkgroup.TalkgroupRange;
+import io.github.dsheirer.identifier.ctcss.CTCSSIdentifier;
 import io.github.dsheirer.identifier.radio.RadioIdentifier;
 import io.github.dsheirer.identifier.talkgroup.TalkgroupIdentifier;
+import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import io.github.dsheirer.module.decode.p25.identifier.radio.APCO25FullyQualifiedRadioIdentifier;
 import io.github.dsheirer.module.decode.p25.identifier.radio.APCO25RadioIdentifier;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25FullyQualifiedTalkgroupIdentifier;
@@ -36,6 +40,8 @@ import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class P25AliasTest
 {
@@ -271,5 +277,69 @@ public class P25AliasTest
         List<Alias> aliases = aliasList.getAliases(p25FQTG1);
         assertEquals(1, aliases.size(), "Expected 1 matching alias");
         assertEquals(correctAliasName, aliases.getFirst().getName(), "Unexpected alias name");
+    }
+
+    @Test
+    void prefersLocalFullyQualifiedFallback()
+    {
+        AliasList aliasList = new AliasList("Test Alias List");
+
+        Alias localTalkgroup = new Alias("Local Talkgroup");
+        localTalkgroup.addAliasID(new Talkgroup(Protocol.APCO25, 1));
+        aliasList.addAlias(localTalkgroup);
+
+        Alias homeTalkgroup = new Alias("Home Talkgroup");
+        homeTalkgroup.addAliasID(new Talkgroup(Protocol.APCO25, 300));
+        aliasList.addAlias(homeTalkgroup);
+
+        List<Alias> talkgroupAliases = aliasList.getAliases(
+            APCO25FullyQualifiedTalkgroupIdentifier.createTo(1, 100, 200, 300));
+        assertEquals("Local Talkgroup", talkgroupAliases.getFirst().getName());
+
+        Alias localRadio = new Alias("Local Radio");
+        localRadio.addAliasID(new Radio(Protocol.APCO25, 2));
+        aliasList.addAlias(localRadio);
+
+        Alias homeRadio = new Alias("Home Radio");
+        homeRadio.addAliasID(new Radio(Protocol.APCO25, 400));
+        aliasList.addAlias(homeRadio);
+
+        List<Alias> radioAliases = aliasList.getAliases(
+            APCO25FullyQualifiedRadioIdentifier.createFrom(2, 100, 200, 400));
+        assertEquals("Local Radio", radioAliases.getFirst().getName());
+    }
+
+    @Test
+    void copiesCtcssAndNacAliasIdentifiers()
+    {
+        Ctcss ctcss = new Ctcss();
+        ctcss.setCTCSSCode(CTCSSCode.TONE_1Z);
+        Ctcss ctcssCopy = (Ctcss)AliasFactory.copyOf(ctcss);
+        assertNotSame(ctcss, ctcssCopy);
+        assertEquals(ctcss.getCTCSSCode(), ctcssCopy.getCTCSSCode());
+
+        Nac nac = new Nac();
+        nac.setNacValue(0);
+        assertTrue(nac.isValid());
+        Nac nacCopy = (Nac)AliasFactory.copyOf(nac);
+        assertNotSame(nac, nacCopy);
+        assertEquals(0, nacCopy.getNacValue());
+    }
+
+    @Test
+    void removesDeletedCtcssAliasFromLookup()
+    {
+        AliasList aliasList = new AliasList("Test Alias List");
+        Alias alias = new Alias("Tone Alias");
+        Ctcss ctcss = new Ctcss();
+        ctcss.setCTCSSCode(CTCSSCode.TONE_1Z);
+        alias.addAliasID(ctcss);
+        aliasList.addAlias(alias);
+
+        CTCSSIdentifier identifier = new CTCSSIdentifier(CTCSSCode.TONE_1Z);
+        assertEquals(1, aliasList.getAliases(identifier).size());
+
+        aliasList.removeAlias(alias);
+        assertTrue(aliasList.getAliases(identifier).isEmpty());
     }
 }

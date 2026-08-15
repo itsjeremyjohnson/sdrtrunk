@@ -44,6 +44,7 @@ public class P25P1AudioModule extends ImbeAudioModule
 
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
+    private NonClippingGain mLimiter = new NonClippingGain(1.0f, 0.95f);
     private volatile GraphicEqualizer mGraphicEQ;
     private List<LDUMessage> mCachedLDUMessages = new ArrayList<>();
 
@@ -170,6 +171,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                 if(eq != null && eq.isEnabled())
                 {
                     eq.process(audio);
+                    mLimiter.apply(audio);
                 }
 
                 addAudio(audio);

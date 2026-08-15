@@ -927,6 +927,12 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
             mStreamActive.set(false);
             mCurrentStreamId.set(-1);
 
+            // A close callback is expected after an intentional stop.
+            if(mStopped.get())
+            {
+                return null;
+            }
+
             // If kicked error already handled the reconnect, don't double-schedule
             if(mKicked.get())
             {

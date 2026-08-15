@@ -96,14 +96,7 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
             mBroadcastState.setValue(broadcastState);
         };
 
-        if(Platform.isFxApplicationThread())
-        {
-            update.run();
-        }
-        else
-        {
-            Platform.runLater(update);
-        }
+        runOnJavaFxThreadIfAvailable(update);
 
         broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_STATE_CHANGE));
     }
@@ -132,13 +125,28 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
      */
     public void setLastErrorDetail(String detail)
     {
+        runOnJavaFxThreadIfAvailable(() -> mLastErrorDetail.setValue(detail));
+    }
+
+    /**
+     * Runs an observable-property update on the JavaFX thread when the toolkit is available. Headless mode does not
+     * initialize JavaFX, so updates must remain usable without it.
+     */
+    private void runOnJavaFxThreadIfAvailable(Runnable update)
+    {
         if(Platform.isFxApplicationThread())
         {
-            mLastErrorDetail.setValue(detail);
+            update.run();
+            return;
         }
-        else
+
+        try
         {
-            Platform.runLater(() -> mLastErrorDetail.setValue(detail));
+            Platform.runLater(update);
+        }
+        catch(IllegalStateException e)
+        {
+            update.run();
         }
     }
 

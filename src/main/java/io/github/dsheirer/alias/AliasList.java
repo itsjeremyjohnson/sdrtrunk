@@ -329,6 +329,7 @@ public class AliasList
         mRadioProtocolMap.values().stream().forEach(radioAliasList -> radioAliasList.remove(alias));
 
         Collection<Alias> collection = Collections.singleton(alias);
+        mCTCSSCodeAliasMap.values().removeAll(collection);
         mNACValueAliasMap.values().removeAll(collection);
         mESNMap.values().removeAll(collection);
         mUnitStatusMap.values().removeAll(collection);
@@ -706,33 +707,32 @@ public class AliasList
                     return fqAlias;
                 }
 
-                //Fall through: try matching by the actual talkgroup ID from the home system
-                int talkgroupId = fqti.getTalkgroup();
-                Alias tgAlias = mTalkgroupAliasMap.get(talkgroupId);
+                //Fall through: prefer the transmitted local address before the home-system talkgroup ID.
+                int localAddress = fqti.getValue();
+                Alias localAlias = mTalkgroupAliasMap.get(localAddress);
 
-                if(tgAlias != null)
+                if(localAlias != null)
                 {
-                    return tgAlias;
+                    return localAlias;
                 }
 
-                //Also try the local address value if it differs from the home talkgroup ID
-                int localAddress = fqti.getValue();
+                int talkgroupId = fqti.getTalkgroup();
 
-                if(localAddress != talkgroupId)
+                if(talkgroupId != localAddress)
                 {
-                    Alias localAlias = mTalkgroupAliasMap.get(localAddress);
+                    Alias tgAlias = mTalkgroupAliasMap.get(talkgroupId);
 
-                    if(localAlias != null)
+                    if(tgAlias != null)
                     {
-                        return localAlias;
+                        return tgAlias;
                     }
                 }
 
-                //Try range matching against both the talkgroup ID and local address
+                //Try range matching against the local address first, then the home talkgroup ID.
                 for(Map.Entry<TalkgroupRange, Alias> entry : mTalkgroupRangeAliasMap.entrySet())
                 {
-                    if(entry.getKey().contains(talkgroupId) ||
-                       (localAddress != talkgroupId && entry.getKey().contains(localAddress)))
+                    if(entry.getKey().contains(localAddress) ||
+                       (talkgroupId != localAddress && entry.getKey().contains(talkgroupId)))
                     {
                         return entry.getValue();
                     }
@@ -865,33 +865,32 @@ public class AliasList
                     return fqAlias;
                 }
 
-                //Fall through: try matching by the actual radio ID from the home system
-                int radioId = fqri.getRadio();
-                Alias radioAlias = mRadioAliasMap.get(radioId);
+                //Fall through: prefer the transmitted local address before the home-system radio ID.
+                int localAddress = fqri.getValue();
+                Alias localAlias = mRadioAliasMap.get(localAddress);
 
-                if(radioAlias != null)
+                if(localAlias != null)
                 {
-                    return radioAlias;
+                    return localAlias;
                 }
 
-                //Also try the local address value if it differs from the home radio ID
-                int localAddress = fqri.getValue();
+                int radioId = fqri.getRadio();
 
-                if(localAddress != radioId)
+                if(radioId != localAddress)
                 {
-                    Alias localAlias = mRadioAliasMap.get(localAddress);
+                    Alias radioAlias = mRadioAliasMap.get(radioId);
 
-                    if(localAlias != null)
+                    if(radioAlias != null)
                     {
-                        return localAlias;
+                        return radioAlias;
                     }
                 }
 
-                //Try range matching against both the radio ID and local address
+                //Try range matching against the local address first, then the home radio ID.
                 for(Map.Entry<RadioRange, Alias> entry : mRadioRangeAliasMap.entrySet())
                 {
-                    if(entry.getKey().contains(radioId) ||
-                       (localAddress != radioId && entry.getKey().contains(localAddress)))
+                    if(entry.getKey().contains(localAddress) ||
+                       (radioId != localAddress && entry.getKey().contains(radioId)))
                     {
                         return entry.getValue();
                     }

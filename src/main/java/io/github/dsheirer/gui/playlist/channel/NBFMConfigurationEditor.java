@@ -834,7 +834,6 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
                 mSquelchThresholdSlider.setDisable(!val);
                 mSquelchReductionSlider.setDisable(!val);
                 mHoldTimeSlider.setDisable(!val);
-                mAnalyzeButton.setDisable(!val);
             }
         });
 
@@ -845,13 +844,13 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         analyzePane.setPadding(new Insets(5,0,10,0));
 
         mAnalyzeButton = new javafx.scene.control.Button("Analyze Audio & Suggest Settings");
-        mAnalyzeButton.setTooltip(new Tooltip("Listen to audio for 5-10 seconds and suggest optimal threshold\nMake sure transmissions are active!"));
+        mAnalyzeButton.setTooltip(new Tooltip("Audio analysis is not yet connected to decoder audio."));
         mAnalyzeButton.setStyle("-fx-font-weight: bold;");
-        mAnalyzeButton.setOnAction(e -> handleAnalyzeClick());
+        mAnalyzeButton.setDisable(true);
         GridPane.setConstraints(mAnalyzeButton, 0, 0);
         analyzePane.getChildren().add(mAnalyzeButton);
 
-        mAnalyzeStatusLabel = new Label("Click 'Analyze' while transmissions are active");
+        mAnalyzeStatusLabel = new Label("Audio analysis is not yet available");
         mAnalyzeStatusLabel.setStyle("-fx-text-fill: #666;");
         GridPane.setConstraints(mAnalyzeStatusLabel, 1, 0);
         analyzePane.getChildren().add(mAnalyzeStatusLabel);

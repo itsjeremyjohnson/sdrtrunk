@@ -215,13 +215,14 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         // Update the message framer with the timestamp from the incoming sample buffer.
         mMessageFramer.setTimestamp(samples.timestamp());
 
-        // Step 1: IQ imbalance correction — applied first, before decimation, so all downstream
-        // processing benefits from the corrected samples. Modifies I and Q arrays in-place.
-        samples.correct(mIQImbalanceCorrector);
+        // Step 1: Copy the shared broadcast arrays before applying in-place correction and blanking.
+        float[] correctedI = samples.i().clone();
+        float[] correctedQ = samples.q().clone();
+        mIQImbalanceCorrector.correct(correctedI, correctedQ);
 
         // Step 2: Noise blanking — detect and zero impulse spikes before decimation filters
         // can smear them across multiple samples. Operates on corrected full-rate samples.
-        mNoiseBlanker.process(samples.i(), samples.q());
+        mNoiseBlanker.process(correctedI, correctedQ);
 
         // Periodically log corrector and blanker diagnostics at DEBUG level
         if(LOGGER.isDebugEnabled() && IQ_DIAGNOSTIC_LOG_INTERVAL > 0)
@@ -235,8 +236,8 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         }
 
         // Step 3: Decimation
-        float[] i = mDecimationFilterI.decimateReal(samples.i());
-        float[] q = mDecimationFilterQ.decimateReal(samples.q());
+        float[] i = mDecimationFilterI.decimateReal(correctedI);
+        float[] q = mDecimationFilterQ.decimateReal(correctedQ);
 
         // Step 4: Channel power measurement
         mPowerMonitor.process(i, q);

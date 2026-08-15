@@ -79,7 +79,7 @@ public class Nac extends AliasID implements Comparable<Nac>
     @Override
     public boolean isValid()
     {
-        return mNacValue > 0 && mNacValue <= 0xFFF;
+        return mNacValue >= 0 && mNacValue <= 0xFFF;
     }
 
     @Override
