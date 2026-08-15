@@ -68,14 +68,31 @@ import org.w3c.dom.NodeList;
  */
 public class DecodeQualityTest
 {
+    record DecoderTuning(int maxImbeErrors, boolean ignoreEncryptionState, float cmaAcquisitionMu,
+                         float cmaTrackingMu, int cmaGearShiftMs, float gardnerBandwidth, float afcAlpha,
+                         boolean adaptiveThresholds, boolean dfeEnabled, float dfeMu)
+    {
+        static DecoderTuning defaults()
+        {
+            return new DecoderTuning(0, false, 0.0f, 0.0f, 0, 0.01f, 0.01f, false, false, 0.005f);
+        }
+    }
+
     record ChannelConfig(String name, String system, String site, long frequency, String modulation, int nac,
-                         String preferredTuner, int maxBchErrors)
+                         String preferredTuner, int maxBchErrors, DecoderTuning tuning)
     {
         ChannelConfig(String name, String system, String site, long frequency, String modulation, int nac,
                       String preferredTuner)
         {
             this(name, system, site, frequency, modulation, nac, preferredTuner,
-                    DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT);
+                    DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT, DecoderTuning.defaults());
+        }
+
+        ChannelConfig(String name, String system, String site, long frequency, String modulation, int nac,
+                      String preferredTuner, int maxBchErrors)
+        {
+            this(name, system, site, frequency, modulation, nac, preferredTuner, maxBchErrors,
+                    DecoderTuning.defaults());
         }
     }
     record DecodeResult(int lduCount, int validMessages, int totalMessages, int syncBlockedCount, int bitErrors, int syncLosses, double signalSeconds, double totalFileSeconds, IMBEDiagSummary diagSummary) {}
@@ -104,13 +121,13 @@ public class DecodeQualityTest
         int forceNac = -1;
         boolean diagEnabled = false;
         int maxBchErrorsOverride = -1; // Use each channel's production playlist setting unless explicitly overridden
-        int maxImbeErrors = -1; // Default: no quality gate (-1 = disabled)
+        int maxImbeErrorsOverride = -1;
         int segmentGapMs = 500; // Default: segment on 500ms gaps
         float silenceThreshold = 0.01f; // RMS threshold for decode-failure silence
         int silenceMinMs = 100; // Minimum silence region duration in ms
-        float cmaAcqMu = 0.0f; // CMA acquisition mu (0 = system property fallback)
-        float cmaTrkMu = 0.0f; // CMA tracking mu (0 = system property fallback)
-        int cmaShiftMs = 0;    // CMA gear-shift timing in ms (0 = system property fallback)
+        float cmaAcqMuOverride = Float.NaN;
+        float cmaTrkMuOverride = Float.NaN;
+        int cmaShiftMsOverride = -1;
         boolean verbose = false; // Print every message with full toString()
 
         for(int i = 0; i < args.length; i++)
@@ -127,13 +144,13 @@ public class DecodeQualityTest
                 case "--diag" -> diagEnabled = true;
                 case "--verbose" -> verbose = true;
                 case "--max-bch-errors" -> maxBchErrorsOverride = Integer.parseInt(args[++i]);
-                case "--max-imbe-errors" -> maxImbeErrors = Integer.parseInt(args[++i]);
+                case "--max-imbe-errors" -> maxImbeErrorsOverride = Integer.parseInt(args[++i]);
                 case "--segment-gap" -> segmentGapMs = Integer.parseInt(args[++i]);
                 case "--silence-threshold" -> silenceThreshold = Float.parseFloat(args[++i]);
                 case "--silence-min-ms" -> silenceMinMs = Integer.parseInt(args[++i]);
-                case "--cma-acq-mu" -> cmaAcqMu = Float.parseFloat(args[++i]);
-                case "--cma-trk-mu" -> cmaTrkMu = Float.parseFloat(args[++i]);
-                case "--cma-shift-ms" -> cmaShiftMs = Integer.parseInt(args[++i]);
+                case "--cma-acq-mu" -> cmaAcqMuOverride = Float.parseFloat(args[++i]);
+                case "--cma-trk-mu" -> cmaTrkMuOverride = Float.parseFloat(args[++i]);
+                case "--cma-shift-ms" -> cmaShiftMsOverride = Integer.parseInt(args[++i]);
             }
         }
 
@@ -189,6 +206,8 @@ public class DecodeQualityTest
             String modulation = forceMod != null ? forceMod : (config != null ? config.modulation() : "C4FM");
             int nac = forceNac >= 0 ? forceNac : (config != null ? config.nac() : -1);
             int maxBchErrors = effectiveMaxBchErrors(maxBchErrorsOverride, config);
+            DecoderTuning tuning = effectiveDecoderTuning(config, maxImbeErrorsOverride, cmaAcqMuOverride,
+                    cmaTrkMuOverride, cmaShiftMsOverride);
             String sampleId = sampleIdentifier(Paths.get(samplesDir), bbFile.toPath());
             String tuner = config != null ? config.preferredTuner() : "N/A";
             String system = config != null ? config.system() : "";
@@ -199,7 +218,8 @@ public class DecodeQualityTest
             System.out.printf("  Channel: %s | Mod: %s | NAC: %d | Tuner: %s%n", channelName, modulation, nac, tuner);
 
             String[] framerDiagHolder = diagnosticMode ? new String[]{""} : null;
-            DecodeResult result = runDecode(bbFile, modulation, nac, diagEnabled || diagnosticMode, maxBchErrors, cmaAcqMu, cmaTrkMu, cmaShiftMs, framerDiagHolder, verbose);
+            DecodeResult result = runDecode(bbFile, modulation, nac, diagEnabled || diagnosticMode, maxBchErrors,
+                    tuning, framerDiagHolder, verbose);
 
             int audioSegments = 0;
             double audioSeconds = 0;
@@ -216,7 +236,8 @@ public class DecodeQualityTest
             {
                 Path audioDir = outPath.resolve(audioDirectoryKey(sampleId));
                 try { Files.createDirectories(audioDir); } catch(IOException e) { /* ignore */ }
-                AudioResult ar = decodeAudio(bbFile, modulation, nac, codec, audioDir, maxBchErrors, maxImbeErrors, segmentGapMs, silenceThreshold, silenceMinMs, cmaAcqMu, cmaTrkMu, cmaShiftMs);
+                AudioResult ar = decodeAudio(bbFile, modulation, nac, codec, audioDir, maxBchErrors, tuning,
+                        segmentGapMs, silenceThreshold, silenceMinMs);
                 audioSegments = ar.segmentCount;
                 audioSeconds = ar.totalSeconds;
                 silenceSeconds = ar.silenceSeconds;
@@ -339,7 +360,21 @@ public class DecodeQualityTest
         }
     }
 
-    private static DecoderWrapper createDecoder(String modulation, int nac, int maxBchErrors, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
+    static void configureLsmV2Decoder(P25P1DecoderLSMv2 decoder, DecoderTuning tuning)
+    {
+        decoder.setCMAConfig(tuning.cmaAcquisitionMu(), tuning.cmaTrackingMu(), tuning.cmaGearShiftMs());
+    }
+
+    static void configureC4fmV2Decoder(P25P1DecoderC4FMv2 decoder, DecoderTuning tuning)
+    {
+        decoder.setGardnerBandwidth(tuning.gardnerBandwidth());
+        decoder.setAfcAlpha(tuning.afcAlpha());
+        decoder.setAdaptiveThresholdsEnabled(tuning.adaptiveThresholds());
+        decoder.setDfeEnabled(tuning.dfeEnabled());
+        decoder.setDfeMu(tuning.dfeMu());
+    }
+
+    private static DecoderWrapper createDecoder(String modulation, int nac, int maxBchErrors, DecoderTuning tuning)
     {
         return switch(modulation.toUpperCase())
         {
@@ -361,7 +396,7 @@ public class DecodeQualityTest
             {
                 P25P1DecoderLSMv2 d = new P25P1DecoderLSMv2();
                 configureDecoder(d, nac, maxBchErrors);
-                if(cmaAcqMu > 0 || cmaTrkMu > 0 || cmaShiftMs > 0) d.setCMAConfig(cmaAcqMu, cmaTrkMu, cmaShiftMs);
+                configureLsmV2Decoder(d, tuning);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
@@ -376,6 +411,7 @@ public class DecodeQualityTest
             {
                 P25P1DecoderC4FMv2 d = new P25P1DecoderC4FMv2();
                 configureDecoder(d, nac, maxBchErrors);
+                configureC4fmV2Decoder(d, tuning);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
@@ -407,12 +443,19 @@ public class DecodeQualityTest
         };
     }
 
-    static DecodeResult runDecode(File file, String modulation, int nac, boolean diagEnabled, int maxBchErrors, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
+    static DecodeResult runDecode(File file, String modulation, int nac, boolean diagEnabled, int maxBchErrors,
+                                  float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
     {
-        return runDecode(file, modulation, nac, diagEnabled, maxBchErrors, cmaAcqMu, cmaTrkMu, cmaShiftMs, null, false);
+        DecoderTuning defaults = DecoderTuning.defaults();
+        DecoderTuning tuning = new DecoderTuning(defaults.maxImbeErrors(), defaults.ignoreEncryptionState(),
+                cmaAcqMu, cmaTrkMu, cmaShiftMs, defaults.gardnerBandwidth(), defaults.afcAlpha(),
+                defaults.adaptiveThresholds(), defaults.dfeEnabled(), defaults.dfeMu());
+        return runDecode(file, modulation, nac, diagEnabled, maxBchErrors, tuning, null, false);
     }
 
-    private static DecodeResult runDecode(File file, String modulation, int nac, boolean diagEnabled, int maxBchErrors, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs, String[] framerDiagHolder, boolean verbose)
+    private static DecodeResult runDecode(File file, String modulation, int nac, boolean diagEnabled,
+                                          int maxBchErrors, DecoderTuning tuning, String[] framerDiagHolder,
+                                          boolean verbose)
     {
         int[] ldu = {0}, valid = {0}, total = {0}, bitErr = {0}, syncLoss = {0};
         double[] signalSeconds = {0}, totalFileSeconds = {0};
@@ -506,7 +549,7 @@ public class DecodeQualityTest
             List<Float> bufferRmsValues = new ArrayList<>();
             List<Integer> bufferSizes = new ArrayList<>();
 
-            DecoderWrapper decoder = createDecoder(modulation, nac, maxBchErrors, cmaAcqMu, cmaTrkMu, cmaShiftMs);
+            DecoderWrapper decoder = createDecoder(modulation, nac, maxBchErrors, tuning);
             decoder.setMessageListener(listener);
             decoder.start();
             source.setListener(buf -> {
@@ -656,17 +699,29 @@ public class DecodeQualityTest
     static class ScoringEncryptionState
     {
         private final int mConfirmationThreshold;
+        private final boolean mIgnoreEncryptionState;
         private int mConsecutiveEncryptedLdu2;
         private boolean mEstablished;
         private boolean mEncrypted;
 
         ScoringEncryptionState(int confirmationThreshold)
         {
+            this(confirmationThreshold, false);
+        }
+
+        ScoringEncryptionState(int confirmationThreshold, boolean ignoreEncryptionState)
+        {
             mConfirmationThreshold = confirmationThreshold;
+            mIgnoreEncryptionState = ignoreEncryptionState;
+            reset();
         }
 
         void updateFromHdu(boolean encrypted)
         {
+            if(mIgnoreEncryptionState)
+            {
+                return;
+            }
             mEstablished = true;
             mEncrypted = encrypted;
             mConsecutiveEncryptedLdu2 = encrypted ? mConfirmationThreshold : 0;
@@ -674,6 +729,10 @@ public class DecodeQualityTest
 
         void updateFromLdu2(boolean encrypted)
         {
+            if(mIgnoreEncryptionState)
+            {
+                return;
+            }
             if(encrypted)
             {
                 mConsecutiveEncryptedLdu2++;
@@ -704,7 +763,7 @@ public class DecodeQualityTest
         void reset()
         {
             mConsecutiveEncryptedLdu2 = 0;
-            mEstablished = false;
+            mEstablished = mIgnoreEncryptionState;
             mEncrypted = false;
         }
     }
@@ -770,6 +829,29 @@ public class DecodeQualityTest
         return config != null ? config.maxBchErrors() : DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT;
     }
 
+    static DecoderTuning effectiveDecoderTuning(ChannelConfig config, int maxImbeErrorsOverride,
+                                                float cmaAcquisitionMuOverride, float cmaTrackingMuOverride,
+                                                int cmaGearShiftMsOverride)
+    {
+        DecoderTuning configured = config != null ? config.tuning() : DecoderTuning.defaults();
+        int maxImbeErrors = maxImbeErrorsOverride >= 0 ?
+                Math.max(DecodeConfigP25Phase1.MAX_IMBE_ERRORS_MINIMUM,
+                        Math.min(DecodeConfigP25Phase1.MAX_IMBE_ERRORS_MAXIMUM, maxImbeErrorsOverride)) :
+                configured.maxImbeErrors();
+        float cmaAcquisitionMu = Float.isNaN(cmaAcquisitionMuOverride) ? configured.cmaAcquisitionMu() :
+                Math.max(DecodeConfigP25Phase1.CMA_MU_MINIMUM,
+                        Math.min(DecodeConfigP25Phase1.CMA_MU_MAXIMUM, cmaAcquisitionMuOverride));
+        float cmaTrackingMu = Float.isNaN(cmaTrackingMuOverride) ? configured.cmaTrackingMu() :
+                Math.max(DecodeConfigP25Phase1.CMA_MU_MINIMUM,
+                        Math.min(DecodeConfigP25Phase1.CMA_MU_MAXIMUM, cmaTrackingMuOverride));
+        int cmaGearShiftMs = cmaGearShiftMsOverride < 0 ? configured.cmaGearShiftMs() :
+                Math.max(DecodeConfigP25Phase1.CMA_GEAR_SHIFT_MS_MINIMUM,
+                        Math.min(DecodeConfigP25Phase1.CMA_GEAR_SHIFT_MS_MAXIMUM, cmaGearShiftMsOverride));
+        return new DecoderTuning(maxImbeErrors, configured.ignoreEncryptionState(), cmaAcquisitionMu,
+                cmaTrackingMu, cmaGearShiftMs, configured.gardnerBandwidth(), configured.afcAlpha(),
+                configured.adaptiveThresholds(), configured.dfeEnabled(), configured.dfeMu());
+    }
+
     static boolean isCallEndingTerminator(String modulation, P25P1DataUnitID duid)
     {
         boolean terminator = duid == P25P1DataUnitID.TERMINATOR_DATA_UNIT ||
@@ -777,8 +859,24 @@ public class DecodeQualityTest
         return terminator && ("C4FM".equals(modulation) || "C4FM_V2".equals(modulation));
     }
 
-    static AudioResult decodeAudio(File file, String modulation, int nac, TestJmbeCodecLoader codec, Path audioDir, int maxBchErrors, int maxImbeErrors, int segmentGapMs, float silenceThreshold, int silenceMinMs, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
+    static AudioResult decodeAudio(File file, String modulation, int nac, TestJmbeCodecLoader codec,
+                                   Path audioDir, int maxBchErrors, int maxImbeErrors, int segmentGapMs,
+                                   float silenceThreshold, int silenceMinMs, float cmaAcqMu, float cmaTrkMu,
+                                   int cmaShiftMs)
     {
+        DecoderTuning defaults = DecoderTuning.defaults();
+        DecoderTuning tuning = new DecoderTuning(maxImbeErrors, defaults.ignoreEncryptionState(), cmaAcqMu,
+                cmaTrkMu, cmaShiftMs, defaults.gardnerBandwidth(), defaults.afcAlpha(),
+                defaults.adaptiveThresholds(), defaults.dfeEnabled(), defaults.dfeMu());
+        return decodeAudio(file, modulation, nac, codec, audioDir, maxBchErrors, tuning, segmentGapMs,
+                silenceThreshold, silenceMinMs);
+    }
+
+    static AudioResult decodeAudio(File file, String modulation, int nac, TestJmbeCodecLoader codec,
+                                   Path audioDir, int maxBchErrors, DecoderTuning tuning, int segmentGapMs,
+                                   float silenceThreshold, int silenceMinMs)
+    {
+        int maxImbeErrors = tuning.maxImbeErrors();
         List<float[]> audioBuffers = new ArrayList<>();
         List<Long> lduTimestamps = new ArrayList<>();
         List<Boolean> lduSegmentStarts = new ArrayList<>();
@@ -793,7 +891,7 @@ public class DecodeQualityTest
         int[] adaptivePass = {0};
         boolean[] adaptiveDisabled = {false};
         ScoringEncryptionState encryptionState = new ScoringEncryptionState(
-                Integer.parseInt(System.getProperty("p25.encrypt.confirm", "2")));
+                Integer.parseInt(System.getProperty("p25.encrypt.confirm", "2")), tuning.ignoreEncryptionState());
         boolean[] explicitSegmentBoundary = {false};
         long[] lastDecodedLduTimestamp = {0};
         int unresolvedLduLimit = Integer.parseInt(System.getProperty("p25.cache.fallback", "4"));
@@ -954,7 +1052,7 @@ public class DecodeQualityTest
 
         try(TestComplexWaveSource source = new TestComplexWaveSource(file))
         {
-            DecoderWrapper decoder = createDecoder(modulation, nac, maxBchErrors, cmaAcqMu, cmaTrkMu, cmaShiftMs);
+            DecoderWrapper decoder = createDecoder(modulation, nac, maxBchErrors, tuning);
             decoder.setMessageListener(listener);
             decoder.start();
             source.setListener(buf -> { var it = buf.iterator(); while(it.hasNext()) decoder.receive(it.next()); });
@@ -1314,6 +1412,37 @@ public class DecodeQualityTest
                 catch(NumberFormatException e) {}
             }
 
+            DecodeConfigP25Phase1 productionConfig = new DecodeConfigP25Phase1();
+            try { productionConfig.setMaxImbeErrors(Integer.parseInt(dc.getAttribute("maxImbeErrors"))); }
+            catch(NumberFormatException e) {}
+            productionConfig.setIgnoreEncryptionState(Boolean.parseBoolean(dc.getAttribute("ignoreEncryptionState")));
+            try { productionConfig.setCmaAcquisitionMu(Float.parseFloat(dc.getAttribute("cmaAcquisitionMu"))); }
+            catch(NumberFormatException e) {}
+            try { productionConfig.setCmaTrackingMu(Float.parseFloat(dc.getAttribute("cmaTrackingMu"))); }
+            catch(NumberFormatException e) {}
+            try { productionConfig.setCmaGearShiftMs(Integer.parseInt(dc.getAttribute("cmaGearShiftMs"))); }
+            catch(NumberFormatException e) {}
+            try { productionConfig.setGardnerBandwidth(Float.parseFloat(dc.getAttribute("gardnerBandwidth"))); }
+            catch(NumberFormatException e) {}
+            try { productionConfig.setAfcAlpha(Float.parseFloat(dc.getAttribute("afcAlpha"))); }
+            catch(NumberFormatException e) {}
+            if(dc.hasAttribute("adaptiveThresholds"))
+            {
+                productionConfig.setAdaptiveThresholds(Boolean.parseBoolean(dc.getAttribute("adaptiveThresholds")));
+            }
+            if(dc.hasAttribute("dfeEnabled"))
+            {
+                productionConfig.setDfeEnabled(Boolean.parseBoolean(dc.getAttribute("dfeEnabled")));
+            }
+            try { productionConfig.setDfeMu(Float.parseFloat(dc.getAttribute("dfeMu"))); }
+            catch(NumberFormatException e) {}
+            DecoderTuning tuning = new DecoderTuning(productionConfig.getMaxImbeErrors(),
+                    productionConfig.isIgnoreEncryptionState(), productionConfig.getCmaAcquisitionMu(),
+                    productionConfig.getCmaTrackingMu(), productionConfig.getCmaGearShiftMs(),
+                    productionConfig.getGardnerBandwidth(), productionConfig.getAfcAlpha(),
+                    productionConfig.isAdaptiveThresholds(), productionConfig.isDfeEnabled(),
+                    productionConfig.getDfeMu());
+
             NodeList sourceConfigs = ch.getElementsByTagName("source_configuration");
             if(sourceConfigs.getLength() == 0 || modulation == null || modulation.isEmpty()) continue;
 
@@ -1344,7 +1473,7 @@ public class DecodeQualityTest
             for(long frequency : frequencies)
             {
                 configs.add(new ChannelConfig(name, system, site, frequency, modulation, nac, preferredTuner,
-                        maxBchErrors));
+                        maxBchErrors, tuning));
             }
         }
 

@@ -211,6 +211,24 @@ public class ConfigRoundTripTest
     }
 
     @Test
+    void unknownAttributeAndChildElementRetainXmlShape() throws Exception
+    {
+        XmlMapper mapper = createMapper();
+        String xml = """
+                <decode_configuration type="decodeConfigP25Phase1" modulation="C4FM" futureOption="value">
+                    <futureChild>child-value</futureChild>
+                </decode_configuration>
+                """;
+
+        DecodeConfiguration config = mapper.readValue(xml, DecodeConfiguration.class);
+        String output = mapper.writeValueAsString(config);
+
+        assertTrue(output.contains("futureOption=\"value\""), output);
+        assertFalse(output.contains("<futureOption>"), output);
+        assertTrue(output.contains("<futureChild>child-value</futureChild>"), output);
+    }
+
+    @Test
     void testUnknownPropertiesPreserved() throws Exception
     {
         XmlMapper mapper = createMapper();

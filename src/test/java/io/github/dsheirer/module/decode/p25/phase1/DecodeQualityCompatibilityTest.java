@@ -107,6 +107,82 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void scoringUsesPlaylistImbeEncryptionAndV2TuningUnlessOverridden() throws Exception
+    {
+        String xml = """
+                <playlist>
+                  <channel name="Configured" system="System" site="Site">
+                    <decode_configuration type="decodeConfigP25Phase1" modulation="C4FM_V2"
+                      maxImbeErrors="7" ignoreEncryptionState="true"
+                      cmaAcquisitionMu="0.006" cmaTrackingMu="0.001" cmaGearShiftMs="200"
+                      gardnerBandwidth="0.02" afcAlpha="0.03" adaptiveThresholds="true"
+                      dfeEnabled="true" dfeMu="0.009"/>
+                    <source_configuration type="sourceConfigTuner" frequency="155000000"/>
+                  </channel>
+                </playlist>
+                """;
+        var document = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(new InputSource(new StringReader(xml)));
+        DecodeQualityTest.ChannelConfig config = DecodeQualityTest.parsePlaylist(document).getFirst();
+        DecodeQualityTest.DecoderTuning configured = DecodeQualityTest.effectiveDecoderTuning(config, -1,
+                Float.NaN, Float.NaN, -1);
+        DecodeQualityTest.DecoderTuning overridden = DecodeQualityTest.effectiveDecoderTuning(config, 3,
+                0.004f, 0.002f, 100);
+
+        assertEquals(7, configured.maxImbeErrors());
+        assertTrue(configured.ignoreEncryptionState());
+        assertEquals(0.006f, configured.cmaAcquisitionMu());
+        assertEquals(0.001f, configured.cmaTrackingMu());
+        assertEquals(200, configured.cmaGearShiftMs());
+        assertEquals(0.02f, configured.gardnerBandwidth());
+        assertEquals(0.03f, configured.afcAlpha());
+        assertTrue(configured.adaptiveThresholds());
+        assertTrue(configured.dfeEnabled());
+        assertEquals(0.009f, configured.dfeMu());
+        assertEquals(3, overridden.maxImbeErrors());
+        assertEquals(0.004f, overridden.cmaAcquisitionMu());
+        assertEquals(0.002f, overridden.cmaTrackingMu());
+        assertEquals(100, overridden.cmaGearShiftMs());
+    }
+
+    @Test
+    void scoringEncryptionBypassStaysClearAndEstablished()
+    {
+        DecodeQualityTest.ScoringEncryptionState state = new DecodeQualityTest.ScoringEncryptionState(2, true);
+
+        assertTrue(state.isEstablished());
+        assertTrue(state.shouldDecodeAudio());
+        state.updateFromHdu(true);
+        state.updateFromLdu2(true);
+        state.updateFromLdu2(true);
+        assertTrue(state.shouldDecodeAudio());
+        state.reset();
+        assertTrue(state.isEstablished());
+        assertTrue(state.shouldDecodeAudio());
+    }
+
+    @Test
+    void scoringAppliesV2TuningToProductionDecoders()
+    {
+        DecodeQualityTest.DecoderTuning tuning = new DecodeQualityTest.DecoderTuning(0, false, 0.006f,
+                0.001f, 200, 0.02f, 0.03f, true, true, 0.009f);
+        P25P1DecoderLSMv2 lsm = new P25P1DecoderLSMv2();
+        DecodeQualityTest.configureLsmV2Decoder(lsm, tuning);
+        assertEquals(0.006f, lsm.getEqualizer().getAcquisitionMu());
+        assertEquals(0.001f, lsm.getEqualizer().getTrackingMu());
+        assertEquals(5000, lsm.getEqualizer().getGearShiftSamples());
+
+        P25P1DecoderC4FMv2 c4fm = new P25P1DecoderC4FMv2();
+        double defaultGardnerAlpha = c4fm.getDemodulator().getGardnerAlpha();
+        DecodeQualityTest.configureC4fmV2Decoder(c4fm, tuning);
+        assertNotEquals(defaultGardnerAlpha, c4fm.getDemodulator().getGardnerAlpha());
+        assertEquals(0.03f, c4fm.getDemodulator().getAfcAlpha());
+        assertTrue(c4fm.getDemodulator().isAdaptiveThresholdsEnabled());
+        assertTrue(c4fm.getDemodulator().isDfeEnabled());
+        assertEquals(0.009f, c4fm.getDemodulator().getDfeMu());
+    }
+
+    @Test
     void fullScoringIgnoresFalseCqpskTerminators()
     {
         assertFalse(DecodeQualityTest.isCallEndingTerminator("CQPSK", P25P1DataUnitID.TERMINATOR_DATA_UNIT));

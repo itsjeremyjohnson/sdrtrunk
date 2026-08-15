@@ -63,6 +63,7 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     private final Path mRecordingBaseDir;
     private final Dispatcher<QueuedSamples> mBufferProcessor =
             new Dispatcher<>("sdrtrunk activity wave recorder", 250);
+    private final Listener<SourceEvent> mSourceEventListener = this::processSourceEvent;
 
     private float mSampleRate;
     private AudioFormat mAudioFormat;
@@ -390,33 +391,32 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     @Override
     public Listener<SourceEvent> getSourceEventListener()
     {
-        return sourceEvent ->
-        {
-            synchronized(ActivityTriggeredWaveRecorder.this)
-            {
-                if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_SAMPLE_RATE_CHANGE)
-                {
-                    float newRate = sourceEvent.getValue().floatValue();
+        return mSourceEventListener;
+    }
 
-                    if(newRate != mSampleRate)
-                    {
-                        mSampleRate = newRate;
-                        mAudioFormat = new AudioFormat(newRate, 16, 2, true, false);
-                        resetForSourceChange();
-                        initCircularBuffer();
-                    }
-                }
-                else if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_FREQUENCY_CHANGE ||
-                        sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_FREQUENCY_ROTATION_SUCCESS)
-                {
-                    long newFrequency = sourceEvent.getValue().longValue();
-                    if(newFrequency != mChannelFrequency)
-                    {
-                        mChannelFrequency = newFrequency;
-                        resetForSourceChange();
-                    }
-                }
+    private synchronized void processSourceEvent(SourceEvent sourceEvent)
+    {
+        if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_SAMPLE_RATE_CHANGE)
+        {
+            float newRate = sourceEvent.getValue().floatValue();
+
+            if(newRate != mSampleRate)
+            {
+                mSampleRate = newRate;
+                mAudioFormat = new AudioFormat(newRate, 16, 2, true, false);
+                resetForSourceChange();
+                initCircularBuffer();
             }
-        };
+        }
+        else if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_FREQUENCY_CHANGE ||
+                sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_FREQUENCY_ROTATION_SUCCESS)
+        {
+            long newFrequency = sourceEvent.getValue().longValue();
+            if(newFrequency != mChannelFrequency)
+            {
+                mChannelFrequency = newFrequency;
+                resetForSourceChange();
+            }
+        }
     }
 }

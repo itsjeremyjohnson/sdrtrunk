@@ -183,6 +183,31 @@ public class P25P1DemodulatorC4FMv2
         return mAfcEnabled;
     }
 
+    double getGardnerAlpha()
+    {
+        return mGardnerAlpha;
+    }
+
+    float getAfcAlpha()
+    {
+        return mAfcAlpha;
+    }
+
+    boolean isAdaptiveThresholdsEnabled()
+    {
+        return mAdaptiveThresholdsEnabled;
+    }
+
+    boolean isDfeEnabled()
+    {
+        return mDfeEnabled;
+    }
+
+    float getDfeMu()
+    {
+        return mDfeMu;
+    }
+
     /**
      * Sets whether adaptive decision thresholds are enabled.
      */

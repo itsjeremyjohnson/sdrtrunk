@@ -26,6 +26,7 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ActivityTriggeredWaveRecorderTest
@@ -122,6 +123,13 @@ class ActivityTriggeredWaveRecorderTest
         recorder.stop();
 
         assertEquals(2, findRecordings().size());
+    }
+
+    @Test
+    void reusesSourceEventListenerForRegistrationAndRemoval()
+    {
+        ActivityTriggeredWaveRecorder recorder = createRecorder();
+        assertSame(recorder.getSourceEventListener(), recorder.getSourceEventListener());
     }
 
     @Test
