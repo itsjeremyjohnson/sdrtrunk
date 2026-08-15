@@ -119,6 +119,38 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void duplicateFrequencyPreservesUnderscoresInFilenameMetadata()
+    {
+        List<DecodeQualityTest.ChannelConfig> channels = List.of(
+                new DecodeQualityTest.ChannelConfig("Dispatch_One", "County_System", "North_Site", 155000000,
+                        "C4FM", 1, "N/A"),
+                new DecodeQualityTest.ChannelConfig("Dispatch_Two", "County_System", "South_Site", 155000000,
+                        "CQPSK", 2, "N/A"));
+
+        DecodeQualityTest.ChannelConfig match = DecodeQualityTest.findChannel(channels, 155000000,
+                "20260815_120000_155000000_County_System_South_Site_Dispatch_Two_17_baseband.wav");
+
+        assertEquals("Dispatch_Two", match.name());
+    }
+
+    @Test
+    void duplicateFrequencyPreservesUnderscoresInActivityParentMetadata()
+    {
+        List<DecodeQualityTest.ChannelConfig> channels = List.of(
+                new DecodeQualityTest.ChannelConfig("Dispatch_One", "County_System", "North_Site", 155000000,
+                        "C4FM", 1, "N/A"),
+                new DecodeQualityTest.ChannelConfig("Dispatch_Two", "County_System", "South_Site", 155000000,
+                        "CQPSK", 2, "N/A"));
+        File activityRecording = new File("County_System_South_Site_Dispatch_Two_17",
+                "20260815_120000_155000000_12345678_baseband.wav");
+
+        DecodeQualityTest.ChannelConfig match = DecodeQualityTest.findChannel(channels, 155000000,
+                activityRecording);
+
+        assertEquals("Dispatch_Two", match.name());
+    }
+
+    @Test
     void scoringJsonUsesLocaleIndependentDecimals()
     {
         Locale original = Locale.getDefault();

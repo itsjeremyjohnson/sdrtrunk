@@ -1140,7 +1140,10 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             mLastValidLDUTimestamp = 0;
             mHoldoverActive = false;
             stopPeriodicHoldoverCheck();
-            resetEncryptionConfirmation();
+            if(isTDUCallEnd())
+            {
+                resetEncryptionConfirmation();
+            }
 
             mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDU:" + message);
 
@@ -1174,7 +1177,10 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 mLastValidLDUTimestamp = 0;
                 mHoldoverActive = false;
                 stopPeriodicHoldoverCheck();
-                resetEncryptionConfirmation();
+                if(isTDUCallEnd())
+                {
+                    resetEncryptionConfirmation();
+                }
 
                 mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDULC:" + message);
                 broadcastTDUStateEvent();
@@ -1188,11 +1194,15 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
      * Broadcasts the appropriate decoder state event for a TDU/TDULC.
      * Fix D: For C4FM, TDU triggers FADE (end of transmission). For CQPSK, TDU keeps ACTIVE.
      */
-    private void broadcastTDUStateEvent()
+    boolean isTDUCallEnd()
     {
         boolean tduFadeC4FM = Boolean.parseBoolean(System.getProperty("p25.tdu.fade.c4fm", "true"));
+        return tduFadeC4FM && (mModulation == Modulation.C4FM || mModulation == Modulation.C4FM_V2);
+    }
 
-        if(tduFadeC4FM && (mModulation == Modulation.C4FM || mModulation == Modulation.C4FM_V2))
+    private void broadcastTDUStateEvent()
+    {
+        if(isTDUCallEnd())
         {
             if(P25PipelineDiagnostics.isEnabled(P25PipelineDiagnostics.keyFor(mChannel)))
             {

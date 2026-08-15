@@ -55,6 +55,7 @@ public class P25P1MessageFramer
     private static final float SYNC_INITIAL_THRESHOLD = 38;       // Strategy 4: Initial acquisition for weak preambles
     private static final float SYNC_ULTRA_INITIAL_THRESHOLD = 34; // Strategy 4: Ultra-low for very first 50ms
     private static final int RECOVERY_WINDOW_SYMBOLS = 240;       // Strategy 2: 50ms recovery window (first HDU sync)
+    private static final int FADE_RECOVERY_WINDOW_SYMBOLS = 240;  // Strategy 3: 50ms after end-of-carrier fade
     private static final int INITIAL_ACQUISITION_WINDOW_SYMBOLS = 960;  // Strategy 4: 200ms at 4800 symbols/sec
     private final BCH_63_16_23_P25 mBCHDecoder = new BCH_63_16_23_P25();
     private int mMaxBchErrors = 11; // Default: full T=11 capability (no filtering)
@@ -103,8 +104,9 @@ public class P25P1MessageFramer
     private int mRecoverySymbolCount = 0;
     private int mRecoverySyncCount = 0;
 
-    // Strategy 3: Fade recovery - lower threshold when signal is fading
+    // Strategy 3: Fade recovery - lower threshold briefly when signal is fading
     private boolean mFadeRecoveryActive = false;
+    private int mFadeRecoverySymbolCount = 0;
     private int mFadeRecoverySyncCount = 0;
 
     // Strategy 4: Initial acquisition - lower threshold for weak preambles
@@ -145,6 +147,16 @@ public class P25P1MessageFramer
             if(mRecoverySymbolCount >= RECOVERY_WINDOW_SYMBOLS)
             {
                 mBoundaryRecoveryActive = false;
+            }
+        }
+
+        // Fade recovery is a short one-shot opportunity after an end-of-carrier fade, not a persistent threshold mode.
+        if(mFadeRecoveryActive)
+        {
+            mFadeRecoverySymbolCount++;
+            if(mFadeRecoverySymbolCount >= FADE_RECOVERY_WINDOW_SYMBOLS)
+            {
+                mFadeRecoveryActive = false;
             }
         }
 
@@ -1087,6 +1099,8 @@ public class P25P1MessageFramer
         mFlywheelActive = false;
         mFlywheelConsecutiveMisses = 0;
         mFlywheelAssembly = false;
+        mFadeRecoveryActive = false;
+        mFadeRecoverySymbolCount = 0;
         mConsecutiveDuidCorrections = 0;
         mMessageAssembler = null;
         mMessageAssemblyRequired = false;
@@ -1123,6 +1137,12 @@ public class P25P1MessageFramer
     public void setFadeRecoveryActive(boolean active)
     {
         mFadeRecoveryActive = active;
+        mFadeRecoverySymbolCount = 0;
+    }
+
+    boolean isFadeRecoveryActive()
+    {
+        return mFadeRecoveryActive;
     }
 
     /**

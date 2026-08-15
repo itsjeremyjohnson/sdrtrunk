@@ -31,6 +31,7 @@ import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.sample.complex.ComplexSamples;
+import io.github.dsheirer.util.StringUtils;
 import org.jtransforms.fft.FloatFFT_1D;
 import java.io.File;
 import java.io.FileOutputStream;
@@ -1347,46 +1348,72 @@ public class DecodeQualityTest
             return matches.isEmpty() ? null : matches.getFirst();
         }
 
-        String[] filenameParts = filename != null ? filename.split("_") : new String[0];
-        String[] parentParts = parentDirectory != null ? parentDirectory.split("_") : new String[0];
-        String system = filenameParts.length >= 6 ? filenameParts[3] : parentParts.length >= 3 ? parentParts[0] : "";
-        String site = filenameParts.length >= 6 ? filenameParts[4] : parentParts.length >= 3 ? parentParts[1] : "";
-        String name = filenameParts.length >= 6 ? filenameParts[5] : parentParts.length >= 3 ? parentParts[2] : "";
-        ChannelConfig bestMatch = null;
-        int bestScore = 0;
-        boolean tied = false;
+        String filenameMetadata = extractChannelMetadata(filename, null, frequency);
+        String parentMetadata = extractChannelMetadata(null, parentDirectory, frequency);
+        List<ChannelConfig> metadataMatches = matches.stream().filter(channel -> {
+            String channelMetadata = serializedChannelMetadata(channel);
+            return channelMetadata.equals(filenameMetadata) || channelMetadata.equals(parentMetadata);
+        }).toList();
 
-        for(ChannelConfig match : matches)
+        if(metadataMatches.size() == 1)
         {
-            int score = 0;
-            if(normalizeChannelField(match.system()).equals(normalizeChannelField(system))) score += 4;
-            if(normalizeChannelField(match.site()).equals(normalizeChannelField(site))) score += 2;
-            if(normalizeChannelField(match.name()).equals(normalizeChannelField(name))) score += 1;
-
-            if(score > bestScore)
-            {
-                bestMatch = match;
-                bestScore = score;
-                tied = false;
-            }
-            else if(score == bestScore && score > 0)
-            {
-                tied = true;
-            }
-        }
-
-        if(bestScore > 0 && !tied)
-        {
-            return bestMatch;
+            return metadataMatches.getFirst();
         }
 
         throw new IllegalArgumentException("Multiple playlist channels match frequency " + frequency +
                 " and recording metadata did not identify one uniquely: " + filename);
     }
 
-    private static String normalizeChannelField(String value)
+    static String extractChannelMetadata(String filename, String parentDirectory, long frequency)
     {
-        return value == null ? "" : value.replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
+        String parentMetadata = stripTrailingChannelId(parentDirectory);
+        if(parentMetadata != null)
+        {
+            return parentMetadata;
+        }
+
+        if(filename != null)
+        {
+            String frequencyMarker = "_" + frequency + "_";
+            int marker = filename.indexOf(frequencyMarker);
+            if(marker >= 0)
+            {
+                String suffix = filename.substring(marker + frequencyMarker.length());
+                if(suffix.endsWith("_baseband.wav"))
+                {
+                    suffix = suffix.substring(0, suffix.length() - "_baseband.wav".length());
+                }
+                return stripTrailingChannelId(suffix);
+            }
+        }
+
+        return null;
+    }
+
+    private static String stripTrailingChannelId(String value)
+    {
+        if(value == null)
+        {
+            return null;
+        }
+
+        int separator = value.lastIndexOf('_');
+        if(separator > 0)
+        {
+            try
+            {
+                Integer.parseInt(value.substring(separator + 1));
+                return value.substring(0, separator);
+            }
+            catch(NumberFormatException e) {}
+        }
+
+        return null;
+    }
+
+    private static String serializedChannelMetadata(ChannelConfig channel)
+    {
+        return StringUtils.replaceIllegalCharacters(channel.system() + "_" + channel.site() + "_" + channel.name());
     }
 
     static List<File> findBasebandFiles(File dir)

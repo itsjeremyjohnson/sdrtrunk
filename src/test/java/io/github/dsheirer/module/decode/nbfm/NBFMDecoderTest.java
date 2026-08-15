@@ -12,4 +12,13 @@ class NBFMDecoderTest
         assertFalse(NBFMDecoder.shouldProcessCTCSS(true));
         assertTrue(NBFMDecoder.shouldProcessCTCSS(false));
     }
+
+    @Test
+    void squelchOverrideBypassesConfiguredCtcssGate()
+    {
+        assertFalse(NBFMDecoder.shouldPassCTCSS(true, false, false));
+        assertTrue(NBFMDecoder.shouldPassCTCSS(true, false, true));
+        assertTrue(NBFMDecoder.shouldPassCTCSS(true, true, false));
+        assertTrue(NBFMDecoder.shouldPassCTCSS(false, false, false));
+    }
 }

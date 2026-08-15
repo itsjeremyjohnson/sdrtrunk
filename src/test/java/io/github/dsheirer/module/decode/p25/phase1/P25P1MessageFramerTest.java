@@ -122,6 +122,31 @@ class P25P1MessageFramerTest
         assertFlywheelMessageIsCreated(0x000);
     }
 
+    @Test
+    void fadeRecoveryExpiresWithoutSync()
+    {
+        P25P1MessageFramer framer = new P25P1MessageFramer();
+        framer.setFadeRecoveryActive(true);
+
+        for(int x = 0; x < 240; x++)
+        {
+            framer.processWithSoftSyncDetect(0.0f, Dibit.D00_PLUS_1);
+        }
+
+        assertFalse(framer.isFadeRecoveryActive());
+    }
+
+    @Test
+    void coldStartClearsFadeRecovery()
+    {
+        P25P1MessageFramer framer = new P25P1MessageFramer();
+        framer.setFadeRecoveryActive(true);
+
+        framer.coldStartReset();
+
+        assertFalse(framer.isFadeRecoveryActive());
+    }
+
     private void assertFlywheelMessageIsCreated(int nac)
     {
         List<P25P1Message> messages = new ArrayList<>();

@@ -220,6 +220,23 @@ class P25P1DecoderStateTest
     }
 
     @Test
+    void ignoredCqpskTduPreservesEncryptedCall() throws Exception
+    {
+        List<DecoderStateEvent> events = new ArrayList<>();
+        P25P1DecoderState state = createState(events, Modulation.CQPSK);
+        confirmEncryptedCall(state);
+        UnknownP25Message tdu = new UnknownP25Message(new CorrectedBinaryMessage(1), 0,
+                System.currentTimeMillis(), P25P1DataUnitID.TERMINATOR_DATA_UNIT);
+
+        invokeProcessTdu(state, tdu);
+
+        assertFalse(state.isTDUCallEnd());
+        assertTrue(state.updateEncryptionState(true));
+        assertEquals(State.ACTIVE, events.getLast().getState());
+        state.stop();
+    }
+
+    @Test
     void endedCallIsNotReopenedAfterCarrierCheck() throws Exception
     {
         List<DecoderStateEvent> events = new ArrayList<>();
@@ -241,8 +258,15 @@ class P25P1DecoderStateTest
 
     private P25P1DecoderState createState(List<DecoderStateEvent> events)
     {
+        return createState(events, Modulation.C4FM);
+    }
+
+    private P25P1DecoderState createState(List<DecoderStateEvent> events, Modulation modulation)
+    {
         Channel channel = new Channel("Holdover Test");
-        channel.setDecodeConfiguration(new DecodeConfigP25Phase1());
+        DecodeConfigP25Phase1 configuration = new DecodeConfigP25Phase1();
+        configuration.setModulation(modulation);
+        channel.setDecodeConfiguration(configuration);
         P25P1DecoderState state = new P25P1DecoderState(channel);
         state.setDecoderStateListener(events::add);
         return state;
@@ -259,6 +283,13 @@ class P25P1DecoderStateTest
     private void invokeProcessLdu(P25P1DecoderState state, P25P1Message message) throws Exception
     {
         Method method = P25P1DecoderState.class.getDeclaredMethod("processLDU", P25P1Message.class);
+        method.setAccessible(true);
+        method.invoke(state, message);
+    }
+
+    private void invokeProcessTdu(P25P1DecoderState state, P25P1Message message) throws Exception
+    {
+        Method method = P25P1DecoderState.class.getDeclaredMethod("processTDU", P25P1Message.class);
         method.setAccessible(true);
         method.invoke(state, message);
     }
