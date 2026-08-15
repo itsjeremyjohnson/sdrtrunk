@@ -133,6 +133,12 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void continuousReplayUsesSampleTimeForPacing()
+    {
+        assertEquals(50_000_000L, PipelineReplayTest.replayDurationNanos(2500, 50_000.0));
+    }
+
+    @Test
     void codecResetBoundaryUsesConfiguredTransmissionGap()
     {
         assertEquals(false, DecodeQualityTest.isSegmentBoundary(1000, 1500, 500));
@@ -140,6 +146,14 @@ class DecodeQualityCompatibilityTest
         assertEquals(false, DecodeQualityTest.isSegmentBoundary(0, 5000, 500));
         assertEquals(true, DecodeQualityTest.startsAudioSegment(true, 1000, 1100, 500));
         assertEquals(false, DecodeQualityTest.startsAudioSegment(false, 1000, 1100, 500));
+    }
+
+    @Test
+    void fullScoringSuppressesOnlyInactiveSignalDuidCorrections()
+    {
+        assertEquals(true, DecodeQualityTest.shouldSuppressCorrectedLdu(true, false));
+        assertEquals(false, DecodeQualityTest.shouldSuppressCorrectedLdu(true, true));
+        assertEquals(false, DecodeQualityTest.shouldSuppressCorrectedLdu(false, false));
     }
 
     @Test

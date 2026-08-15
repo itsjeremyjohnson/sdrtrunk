@@ -25,6 +25,7 @@ import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.record.RecorderType;
 import io.github.dsheirer.record.config.RecordConfiguration;
+import io.github.dsheirer.settings.FileSetting;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -44,6 +45,17 @@ public class ConfigRoundTripTest
         mapper.configure(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_USING_DEFAULT_VALUE, true);
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
         return mapper;
+    }
+
+    @Test
+    void repeatedUnknownSettingPropertiesAccumulate()
+    {
+        FileSetting setting = new FileSetting();
+
+        setting.setUnknownProperty("futureChild", "first");
+        setting.setUnknownProperty("futureChild", "second");
+
+        assertEquals(java.util.List.of("first", "second"), setting.getUnknownProperties().get("futureChild"));
     }
 
     @Test

@@ -640,6 +640,11 @@ public class DecodeQualityTest
         return encryptionStateEstablished && !encryptedCall;
     }
 
+    static boolean shouldSuppressCorrectedLdu(boolean duidCorrected, boolean correctedDuringActiveSignal)
+    {
+        return duidCorrected && !correctedDuringActiveSignal;
+    }
+
     static boolean isFireDepartmentChannel(String channelName)
     {
         if(channelName == null)
@@ -707,6 +712,8 @@ public class DecodeQualityTest
 
             if(msg instanceof LDUMessage ldu && shouldDecodeAudio(encryptionStateEstablished[0], encryptedCall[0]))
             {
+                boolean suppressCorrectedLdu = shouldSuppressCorrectedLdu(ldu.isDuidCorrected(),
+                        ldu.isDuidCorrectedDuringActiveSignal());
                 long timestamp = p25Message.getTimestamp();
                 boolean startsSegment = startsAudioSegment(explicitSegmentBoundary[0],
                         lastDecodedLduTimestamp[0], timestamp, segmentGapMs);
@@ -722,6 +729,28 @@ public class DecodeQualityTest
                 lduSegmentStarts.add(startsSegment);
                 for(byte[] frame : ldu.getIMBEFrames())
                 {
+                    if(suppressCorrectedLdu)
+                    {
+                        gatedFrames[0]++;
+                        consecutiveGated[0]++;
+
+                        if(lastGoodFrame[0] != null && consecutiveGated[0] <= 2)
+                        {
+                            float[] faded = lastGoodFrame[0].clone();
+                            float fade = 1.0f - (float)consecutiveGated[0] / 2.0f;
+                            for(int sample = 0; sample < faded.length; sample++)
+                            {
+                                faded[sample] *= fade;
+                            }
+                            audioBuffers.add(faded);
+                        }
+                        else
+                        {
+                            audioBuffers.add(new float[160]);
+                        }
+                        continue;
+                    }
+
                     // Pre-codec quality gate with adaptive disable
                     if(shouldGateImbeFrames(maxImbeErrors))
                     {

@@ -89,6 +89,11 @@ public class TestComplexSource extends ComplexSource implements AutoCloseable
         return mSampleRate;
     }
 
+    public long getSampleCount()
+    {
+        return mSampleCount;
+    }
+
     @Override
     public long getFrequency()
     {

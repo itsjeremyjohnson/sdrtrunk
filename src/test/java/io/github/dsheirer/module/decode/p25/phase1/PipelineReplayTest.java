@@ -50,6 +50,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.locks.LockSupport;
 
 /**
  * Full pipeline replay diagnostic. Feeds baseband WAV files through the complete
@@ -336,7 +337,8 @@ public class PipelineReplayTest
      * In the live system, the decoder continuously processes noise between calls,
      * which can corrupt framer state (flywheel, DUID prediction, sync detectors).
      */
-    private static void injectNoise(Listener<ComplexSamples> listener, int totalSamples, float amplitude)
+    private static void injectNoise(Listener<ComplexSamples> listener, int totalSamples, float amplitude,
+                                    ReplayPacer replayPacer, TestComplexSource source)
     {
         java.util.Random rng = new java.util.Random(42);
         int chunkSize = 2048;
@@ -353,7 +355,36 @@ public class PipelineReplayTest
                 qSamples[i] = (float)(rng.nextGaussian() * amplitude);
             }
             listener.receive(new ComplexSamples(iSamples, qSamples, timestamp));
+            replayPacer.advance(len, 50000.0);
+            source.getHeartbeatManager().broadcast();
             timestamp += (long)(len / 50.0); // ~50kHz sample rate
+        }
+    }
+
+    static long replayDurationNanos(long sampleCount, double sampleRate)
+    {
+        return sampleRate > 0 ? Math.round(sampleCount * 1_000_000_000.0 / sampleRate) : 0;
+    }
+
+    static class ReplayPacer
+    {
+        private final long mStartNanos = System.nanoTime();
+        private long mReplayNanos;
+
+        void advance(long sampleCount, double sampleRate)
+        {
+            mReplayNanos += replayDurationNanos(sampleCount, sampleRate);
+            long remaining = mStartNanos + mReplayNanos - System.nanoTime();
+            while(remaining > 0)
+            {
+                LockSupport.parkNanos(remaining);
+                if(Thread.interrupted())
+                {
+                    Thread.currentThread().interrupt();
+                    throw new IllegalStateException("Continuous replay pacing interrupted");
+                }
+                remaining = mStartNanos + mReplayNanos - System.nanoTime();
+            }
         }
     }
 
@@ -427,6 +458,7 @@ public class PipelineReplayTest
         processingChain.start();
         // Don't feed first source yet — we'll handle all files uniformly below.
         // But the chain is now started with the correct sample rate and frequency.
+        ReplayPacer replayPacer = new ReplayPacer();
 
         int filesWithAudio = 0;
 
@@ -439,24 +471,27 @@ public class PipelineReplayTest
             // Inject noise between files to simulate inter-call noise floor (like the live system)
             if(f > 0)
             {
-                injectNoise(chainBroadcaster, 50000, 0.001f); // ~1 second at 50kHz, low amplitude noise
+                injectNoise(chainBroadcaster, 50000, 0.001f, replayPacer, firstSource); // ~1 second at 50kHz
             }
 
             try(TestComplexSource fileSource = new TestComplexSource(files[f], frequency))
             {
                 fileSource.setListener(chainBroadcaster);
-                while(fileSource.next(2048))
+                while(true)
                 {
-                    // Simulate heartbeat every ~50ms worth of samples (2500 samples at 50kHz)
-                    // This triggers checkState() which enforces fade timeouts like the live system
+                    long samplesBefore = fileSource.getSampleCount();
+                    if(!fileSource.next(2048))
+                    {
+                        break;
+                    }
+
+                    replayPacer.advance(fileSource.getSampleCount() - samplesBefore, fileSource.getSampleRate());
+                    // Advance wall-clock state-machine deadlines at the recording's sample-time rate.
                     firstSource.getHeartbeatManager().broadcast();
                 }
             }
             // Final heartbeat after file ends
             firstSource.getHeartbeatManager().broadcast();
-
-            // Small delay to let events settle
-            Thread.sleep(50);
 
             int segmentsThisFile = totalAudioSegments.get() - segmentsBefore;
             boolean hasAudio = segmentsThisFile > 0;

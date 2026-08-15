@@ -123,7 +123,8 @@ def analyze_audio_directory(audio_dir, enable_stt=False, stt_model="tiny"):
         # Speech-to-text word count (only if enabled and model loaded)
         if stt_model_obj is not None:
             word_count = _run_stt_with_model(stt_model_obj, mp3_files)
-            audio_metrics['word_count'] = word_count
+            if word_count is not None:
+                audio_metrics['word_count'] = word_count
 
         results[subdir] = audio_metrics
 
@@ -139,8 +140,10 @@ def _run_stt_with_model(model, mp3_files):
             text = result.get("text", "").strip()
             if text:
                 total_words += len(text.split())
-        except Exception:
-            continue
+        except Exception as error:
+            print(f"  WARNING: transcription failed for {mp3_path}, word count unavailable: {error}",
+                  file=sys.stderr)
+            return None
     return total_words
 
 

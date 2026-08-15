@@ -64,6 +64,7 @@ public class NBFMDecoderState extends AnalogDecoderState
         if(event.getEvent() == DecoderStateEvent.Event.DECODE && mCTCSSFrequency != null &&
                 mCTCSSFrequency != CTCSSFrequency.NONE)
         {
+            getIdentifierCollection().update(mTalkgroupIdentifier);
             DecodeEvent toneEvent = DecodeEvent.builder(DecodeEventType.TONE_DETECT, System.currentTimeMillis())
                     .details("CTCSS " + mCTCSSFrequency.toString())
                     .identifiers(new IdentifierCollection(getIdentifierCollection().getIdentifiers()))

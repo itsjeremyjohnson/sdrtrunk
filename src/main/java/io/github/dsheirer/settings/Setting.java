@@ -25,7 +25,9 @@ import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
 import io.github.dsheirer.map.DefaultIcon;
 import io.github.dsheirer.map.MapIcon;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include= JsonTypeInfo.As.PROPERTY, property="type")
@@ -73,7 +75,24 @@ public abstract class Setting
         {
             mUnknownProperties = new LinkedHashMap<>();
         }
-        mUnknownProperties.put(key, value);
+        Object existing = mUnknownProperties.get(key);
+        if(existing == null)
+        {
+            mUnknownProperties.put(key, value);
+        }
+        else if(existing instanceof List<?> list)
+        {
+            List<Object> values = new ArrayList<>(list);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
+        else
+        {
+            List<Object> values = new ArrayList<>();
+            values.add(existing);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
     }
 
     @JsonAnyGetter
