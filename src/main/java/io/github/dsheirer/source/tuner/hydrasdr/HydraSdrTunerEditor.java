@@ -708,6 +708,7 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 				getConfiguration().setSampleRate(rate.getRate());
 			}
 
+			int previousMode = getConfiguration().getGainMode();
 			int mode = getGainModeCombo().getSelectedIndex();
 			if(mode < 0)
 			{
@@ -727,14 +728,18 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			}
 			else
 			{
-				/* Custom mode: save individual gain values */
 				getConfiguration().setLinearityGain(0);
 				getConfiguration().setSensitivityGain(0);
-				getConfiguration().setVgaGain(getVgaGainSlider().getValue());
-				getConfiguration().setMixerGain(getMixerGainSlider().getValue());
-				getConfiguration().setLnaGain(getLnaGainSlider().getValue());
-				getConfiguration().setMixerAgc(getMixerAgcCheckBox().isSelected());
-				getConfiguration().setLnaAgc(getLnaAgcCheckBox().isSelected());
+
+				/* Preserve saved custom values when first switching from a preset mode. */
+				if(previousMode == 2)
+				{
+					getConfiguration().setVgaGain(getVgaGainSlider().getValue());
+					getConfiguration().setMixerGain(getMixerGainSlider().getValue());
+					getConfiguration().setLnaGain(getLnaGainSlider().getValue());
+					getConfiguration().setMixerAgc(getMixerAgcCheckBox().isSelected());
+					getConfiguration().setLnaAgc(getLnaAgcCheckBox().isSelected());
+				}
 			}
 			getConfiguration().setBiasT(getBiasTCheckBox().isSelected());
 			saveConfiguration();

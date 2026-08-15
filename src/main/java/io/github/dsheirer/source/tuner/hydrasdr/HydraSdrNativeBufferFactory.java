@@ -61,6 +61,19 @@ public class HydraSdrNativeBufferFactory
 	}
 
 	/**
+	 * Clears samples and timestamp state retained between callbacks.
+	 */
+	synchronized void reset()
+	{
+		mIResidual = new float[0];
+		mQResidual = new float[0];
+		mResidualTimestamp = System.currentTimeMillis();
+		mFractionalMsAccumulator = 0.0;
+		mIncomingBufferLength = 0;
+		mOptimalBufferLength = 128;
+	}
+
+	/**
 	 * Repackages pre-split I/Q sample arrays into optimal-length native buffers.
 	 * @param iSamples in-phase float samples
 	 * @param qSamples quadrature float samples

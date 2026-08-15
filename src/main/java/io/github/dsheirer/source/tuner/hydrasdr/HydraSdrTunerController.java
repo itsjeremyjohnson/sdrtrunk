@@ -278,6 +278,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				mLog.error("Failed to stop HydraSDR streaming: " + HydraSdrNative.errorName(result));
 			}
 			mStreaming = false;
+			mNativeBufferFactory.reset();
 		}
 	}
 
@@ -489,6 +490,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				if(rate != null)
 				{
 					setSampleRate(rate);
+					config.setSampleRate(rate.getRate());
 				}
 				else
 				{
@@ -502,7 +504,11 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 
 			try
 			{
-				setBiasT(config.isBiasT());
+				HydraSdrDeviceInfo deviceInfo = getDeviceInfo();
+				if(deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_BIAS_TEE))
+				{
+					setBiasT(config.isBiasT());
+				}
 
 				int gainMode = config.getGainMode();
 
