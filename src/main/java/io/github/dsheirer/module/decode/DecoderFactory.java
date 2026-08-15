@@ -108,6 +108,7 @@ import io.github.dsheirer.module.decode.tait.Tait1200MessageFilter;
 import io.github.dsheirer.module.decode.traffic.TrafficChannelManager;
 import io.github.dsheirer.module.demodulate.fm.FMDemodulatorModule;
 import io.github.dsheirer.identifier.alias.TalkerAliasLogger;
+import io.github.dsheirer.identifier.alias.TalkerAliasManager;
 import io.github.dsheirer.module.decode.p25.phase1.ControlChannelHeartbeat;
 import io.github.dsheirer.module.decode.p25.phase1.NetworkEventBroadcastModule;
 import io.github.dsheirer.module.decode.p25.phase1.NetworkStreamManager;
@@ -261,6 +262,19 @@ public class DecoderFactory
         modules.add(new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_1, aliasList));
         modules.add(new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_2, aliasList));
 
+        String systemName = getSafeSystemName(channel);
+
+        if(channel.isStandardChannel())
+        {
+            attachTalkerAliasLogger(userPreferences, systemName, p25TrafficChannelManager.getTalkerAliasManager());
+        }
+
+        NetworkStreamManager streamManager = loadNetworkStreamManager(userPreferences);
+        if(streamManager != null)
+        {
+            modules.add(new NetworkEventBroadcastModule(systemName, streamManager));
+        }
+
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
         if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
                 sctmf.hasMultipleFrequencies())
@@ -299,19 +313,14 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            String systemName = channel.getSystem();
-            if(systemName == null || systemName.trim().isEmpty()) { systemName = channel.getName(); }
-            final String safeSystemName = StringUtils.replaceIllegalCharacters(systemName.trim());
-            Path eventLogDir = userPreferences.getDirectoryPreference().getDirectoryEventLog();
+            final String safeSystemName = getSafeSystemName(channel);
 
             P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel);
             modules.add(primaryTCM);
             P25P1DecoderState p25DecoderState = new P25P1DecoderState(channel, primaryTCM);
             modules.add(p25DecoderState);
 
-            TalkerAliasLogger aliasLogger = new TalkerAliasLogger(eventLogDir, safeSystemName);
-            primaryTCM.getTalkerAliasManager().setChangeListener(aliasLogger::onAliasUpdate);
-            aliasLogger.bootstrap(primaryTCM.getTalkerAliasManager());
+            attachTalkerAliasLogger(userPreferences, safeSystemName, primaryTCM.getTalkerAliasManager());
 
             p25DecoderState.setHeartbeatMonitors(loadHeartbeatMonitors(userPreferences));
 
@@ -617,9 +626,14 @@ public class DecoderFactory
             modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
         }
 
-        String dmrSystem = channel.getSystem();
-        if(dmrSystem == null || dmrSystem.trim().isEmpty()) { dmrSystem = channel.getName(); }
-        final String safeDmrSystem = StringUtils.replaceIllegalCharacters(dmrSystem.trim());
+        final String safeDmrSystem = getSafeSystemName(channel);
+
+        if(channel.isStandardChannel())
+        {
+            attachTalkerAliasLogger(userPreferences, safeDmrSystem,
+                dmrTrafficChannelManager.getTalkerAliasManager());
+        }
+
         NetworkStreamManager dmrStreamManager = loadNetworkStreamManager(userPreferences);
         if(dmrStreamManager != null)
         {
@@ -878,6 +892,25 @@ public class DecoderFactory
         return PcmStreamManager.getInstance(port);
     }
 
+    private static String getSafeSystemName(Channel channel)
+    {
+        String systemName = channel.getSystem();
+        if(systemName == null || systemName.trim().isEmpty())
+        {
+            systemName = channel.getName();
+        }
+        return StringUtils.replaceIllegalCharacters(systemName.trim());
+    }
+
+    private static void attachTalkerAliasLogger(UserPreferences userPreferences, String systemName,
+                                                TalkerAliasManager manager)
+    {
+        Path eventLogDir = userPreferences.getDirectoryPreference().getDirectoryEventLog();
+        TalkerAliasLogger aliasLogger = new TalkerAliasLogger(eventLogDir, systemName);
+        manager.setChangeListener(aliasLogger::onAliasUpdate);
+        aliasLogger.bootstrap(manager);
+    }
+
     private static NetworkStreamManager loadNetworkStreamManager(UserPreferences userPreferences)
     {
         if(!userPreferences.getNetworkStreamPreference().isEnabled())
@@ -908,8 +941,7 @@ public class DecoderFactory
     {
         String text = JsonUtils.escape(msg.toString());
         return "{\"pipe\":\"raw\",\"system\":\"" + JsonUtils.escape(systemName)
-            + "\",\"timestamp\":\"" + java.time.LocalDateTime.now().format(
-                java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            + "\",\"timestamp\":\"" + formatTimestamp(System.currentTimeMillis())
             + "\",\"message\":\"" + text + "\"}";
     }
 
@@ -918,8 +950,14 @@ public class DecoderFactory
         String text = JsonUtils.escape(msg.toString());
         return "{\"pipe\":\"raw\",\"protocol\":\"DMR\",\"system\":\"" + JsonUtils.escape(systemName)
             + "\",\"timeslot\":" + timeslot
-            + ",\"timestamp\":" + msg.getTimestamp()
+            + ",\"timestamp\":\"" + formatTimestamp(msg.getTimestamp()) + "\""
             + ",\"message\":\"" + text + "\"}";
+    }
+
+    private static String formatTimestamp(long timestamp)
+    {
+        return java.time.Instant.ofEpochMilli(timestamp).atZone(java.time.ZoneId.systemDefault()).toLocalDateTime()
+            .format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"));
     }
 
 

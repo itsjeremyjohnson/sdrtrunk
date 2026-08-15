@@ -27,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TalkerAliasLoggerTest
 {
@@ -36,12 +37,16 @@ public class TalkerAliasLoggerTest
         TalkerAliasLogger logger = new TalkerAliasLogger(logDirectory, "test-system");
         Map<Integer, TalkerAliasIdentifier> aliases = new HashMap<>();
         aliases.put(20, P25TalkerAliasIdentifier.create("Second"));
-        aliases.put(10, P25TalkerAliasIdentifier.create("First, Alias"));
+        aliases.put(10, P25TalkerAliasIdentifier.create("First,\nAlias"));
 
         logger.onAliasUpdate(aliases);
 
         Path aliasFile = logDirectory.resolve("test-system_talker_aliases.csv");
-        assertEquals("RADIO_ID,TALKER_ALIAS\n10,First Alias\n20,Second\n", Files.readString(aliasFile));
+        assertEquals("RADIO_ID,TALKER_ALIAS\n10,\"First,\nAlias\"\n20,Second\n", Files.readString(aliasFile));
+
+        TalkerAliasManager manager = new TalkerAliasManager();
+        logger.bootstrap(manager);
+        assertTrue(manager.getAliasSummary().contains("TA-First,\nAlias"));
 
         aliases.clear();
         aliases.put(30, P25TalkerAliasIdentifier.create("Latest"));

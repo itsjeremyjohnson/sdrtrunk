@@ -516,7 +516,20 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 							getTuner().getController().setGain(
 								HydraSdrNative.GAIN_TYPE_SENSITIVITY, value);
 						}
-						/* Custom mode: no immediate device changes, user adjusts sliders */
+						else if(hasConfiguration())
+						{
+							/* Restore saved custom settings after preset modes disabled the AGCs. */
+							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC,
+								getConfiguration().isLnaAgc() ? 1 : 0);
+							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC,
+								getConfiguration().isMixerAgc() ? 1 : 0);
+							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_LNA,
+								getConfiguration().getLnaGain());
+							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_MIXER,
+								getConfiguration().getMixerGain());
+							getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_VGA,
+								getConfiguration().getVgaGain());
+						}
 					}
 					catch(Exception ex)
 					{

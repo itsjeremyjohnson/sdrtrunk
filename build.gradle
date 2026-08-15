@@ -372,14 +372,30 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
     //Ensure native JNI libs are built before packaging
     rt.dependsOn 'buildHydraSdrJni'
 
-    //Copy HydraSDR native JNI libraries into runtime image before it is archived.
+    //Copy only target-compatible HydraSDR libraries into each runtime image before it is archived.
     rt.doFirst {
-        def nativeDir = hydraSdrJniDir
-        if(nativeDir.exists()) {
-            file("${buildDir}/image").eachDir { imageDir ->
-                if(imageDir.name.startsWith('sdr-trunk-')) {
-                    def targetDir = file("${imageDir}/lib/native")
-                    targetDir.mkdirs()
+        def arch = System.getProperty('os.arch').toLowerCase()
+        def currentTarget = os.isWindows() ? 'windows-x86_64' :
+            (os.isMacOsX() ? (arch.contains('aarch64') || arch.contains('arm64') ? 'osx-aarch64' : 'osx-x86_64') :
+                (arch.contains('aarch64') || arch.contains('arm64') ? 'linux-aarch64' : 'linux-x86_64'))
+        def targets = ['linux-aarch64', 'linux-x86_64', 'osx-aarch64', 'osx-x86_64', 'windows-x86_64']
+
+        file("${buildDir}/image").eachDir { imageDir ->
+            if(imageDir.name.startsWith('sdr-trunk-')) {
+                def target = targets.find { imageDir.name.contains(it) }
+                def downloadedDir = target != null ? file("${projectDir}/native/${target}") : null
+                def downloadedLibs = downloadedDir != null ? fileTree(downloadedDir).matching {
+                    include '*.dll'; include '*.so'; include '*.dylib'
+                }.files : []
+                def nativeDir = !downloadedLibs.isEmpty() ? downloadedDir : (target == currentTarget ? hydraSdrJniDir : null)
+                def targetDir = file("${imageDir}/lib/native")
+                targetDir.mkdirs()
+
+                delete fileTree(targetDir) {
+                    include '*.dll'; include '*.so'; include '*.dylib'
+                }
+
+                if(nativeDir != null && nativeDir.exists()) {
                     copy {
                         from(nativeDir) {
                             include '*.dll'
@@ -388,7 +404,9 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
                         }
                         into targetDir
                     }
-                    logger.lifecycle("Copied HydraSDR native libs to ${targetDir}")
+                    logger.lifecycle("Copied HydraSDR ${target} native libs to ${targetDir}")
+                } else {
+                    logger.warn("HydraSDR native libs for ${target} were not provided; omitting host-incompatible libraries")
                 }
             }
         }

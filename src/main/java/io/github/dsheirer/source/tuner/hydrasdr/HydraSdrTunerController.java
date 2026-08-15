@@ -652,7 +652,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		int result = HydraSdrNative.setGain(mDeviceHandle, gainType, value);
 		if(result != HydraSdrNative.SUCCESS)
 		{
-			mLog.warn("Failed to set gain type " + gainType + " to " + value + ": " +
+			throw new SourceException("Failed to set gain type " + gainType + " to " + value + ": " +
 				HydraSdrNative.errorName(result));
 		}
 	}
@@ -698,7 +698,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		int result = HydraSdrNative.setBiasT(mDeviceHandle, enabled);
 		if(result != HydraSdrNative.SUCCESS)
 		{
-			mLog.warn("Failed to set Bias-T: " + HydraSdrNative.errorName(result));
+			throw new SourceException("Failed to set Bias-T: " + HydraSdrNative.errorName(result));
 		}
 	}
 
@@ -728,7 +728,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		int result = HydraSdrNative.setBandwidth(mDeviceHandle, bandwidthHz);
 		if(result != HydraSdrNative.SUCCESS)
 		{
-			mLog.warn("Failed to set bandwidth: " + HydraSdrNative.errorName(result));
+			throw new SourceException("Failed to set bandwidth: " + HydraSdrNative.errorName(result));
 		}
 	}
 
@@ -745,7 +745,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		int result = HydraSdrNative.setDecimationMode(mDeviceHandle, mode);
 		if(result != HydraSdrNative.SUCCESS)
 		{
-			mLog.warn("Failed to set decimation mode: " + HydraSdrNative.errorName(result));
+			throw new SourceException("Failed to set decimation mode: " + HydraSdrNative.errorName(result));
 		}
 	}
 

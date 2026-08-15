@@ -19,6 +19,8 @@
  */
 package io.github.dsheirer.source.tuner.hydrasdr;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.source.tuner.TunerType;
 import io.github.dsheirer.source.tuner.configuration.TunerConfiguration;
@@ -75,12 +77,68 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 		mSampleRate = sampleRate;
 	}
 
+	/**
+	 * Migrates the legacy preset gain enum (for example LINEARITY_14 or SENSITIVITY_10).
+	 */
+	@JsonProperty("gain")
+	@JacksonXmlProperty(isAttribute = true, localName = "gain")
+	public void setLegacyGain(String gain)
+	{
+		if(gain == null)
+		{
+			return;
+		}
+
+		if("CUSTOM".equals(gain))
+		{
+			mGainMode = 2;
+			return;
+		}
+
+		int separator = gain.lastIndexOf('_');
+		if(separator < 0 || separator == gain.length() - 1)
+		{
+			return;
+		}
+
+		try
+		{
+			int value = Integer.parseInt(gain.substring(separator + 1));
+			if(gain.startsWith("LINEARITY_"))
+			{
+				mGainMode = 0;
+				mLinearityGain = value;
+			}
+			else if(gain.startsWith("SENSITIVITY_"))
+			{
+				mGainMode = 1;
+				mSensitivityGain = value;
+			}
+		}
+		catch(NumberFormatException e)
+		{
+			// Ignore invalid legacy values and retain the current defaults.
+		}
+	}
+
+	/**
+	 * Migrates the legacy IF gain into the unified VGA gain value.
+	 */
+	@JsonProperty("IFGain")
+	@JsonAlias("if_gain")
+	@JacksonXmlProperty(isAttribute = true, localName = "if_gain")
+	public void setLegacyIfGain(int gain)
+	{
+		mVgaGain = gain;
+	}
+
 	@JacksonXmlProperty(isAttribute = true, localName = "lna_gain")
 	public int getLnaGain()
 	{
 		return mLnaGain;
 	}
 
+	@JsonAlias("LNAGain")
 	public void setLnaGain(int gain)
 	{
 		mLnaGain = gain;
@@ -136,6 +194,7 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 		return mLnaAgc;
 	}
 
+	@JsonAlias("LNAAGC")
 	public void setLnaAgc(boolean enabled)
 	{
 		mLnaAgc = enabled;
@@ -147,6 +206,7 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 		return mMixerAgc;
 	}
 
+	@JsonAlias("mixerAGC")
 	public void setMixerAgc(boolean enabled)
 	{
 		mMixerAgc = enabled;
