@@ -80,9 +80,22 @@ public class TalkerAliasLoggerTest
     }
 
     @Test
+    void separatesAliasFilesByProtocol(@TempDir Path logDirectory) throws IOException
+    {
+        TalkerAliasLogger p25Logger = new TalkerAliasLogger(logDirectory, "shared-name", Protocol.APCO25);
+        TalkerAliasLogger dmrLogger = new TalkerAliasLogger(logDirectory, "shared-name", Protocol.DMR);
+
+        p25Logger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("P25 Alias")));
+        dmrLogger.onAliasUpdate(Map.of(10, DmrTalkerAliasIdentifier.create("DMR Alias")));
+
+        assertTrue(Files.readString(logDirectory.resolve("shared-name_talker_aliases.csv")).contains("P25 Alias"));
+        assertTrue(Files.readString(logDirectory.resolve("shared-name_dmr_talker_aliases.csv")).contains("DMR Alias"));
+    }
+
+    @Test
     void bootstrapsDmrAliasesAsDmrIdentifiers(@TempDir Path logDirectory) throws IOException
     {
-        Files.writeString(logDirectory.resolve("dmr-system_talker_aliases.csv"),
+        Files.writeString(logDirectory.resolve("dmr-system_dmr_talker_aliases.csv"),
             "RADIO_ID,TALKER_ALIAS\n10,Dispatch\n");
         TalkerAliasLogger logger = new TalkerAliasLogger(logDirectory, "dmr-system", Protocol.DMR);
         TalkerAliasManager manager = new TalkerAliasManager();

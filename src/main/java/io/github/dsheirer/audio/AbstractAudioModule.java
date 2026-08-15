@@ -174,6 +174,39 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         return "";
     }
 
+    /** Starts PCM streaming for the current call once the asynchronously-started server is ready. */
+    private synchronized void startPcmCallIfReady()
+    {
+        try
+        {
+            PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
+            if(pcmMgr != null && pcmMgr.isRunning() && mPcmCallId == null)
+            {
+                mPcmCallId = UUID.randomUUID().toString();
+                mPcmFrameSeq.set(0);
+                mPcmFrameCount.set(0);
+                mPcmCachedSystem = pcmGetSystem();
+                mPcmCachedSite = pcmGetSite();
+                mPcmCachedTalkgroup = mIdentifierCollection.getToIdentifier() != null
+                        ? mIdentifierCollection.getToIdentifier().toString() : "";
+                mPcmCachedFrom = mIdentifierCollection.getFromIdentifier() != null
+                        ? mIdentifierCollection.getFromIdentifier().toString() : "";
+                pcmMgr.broadcastCallStart(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
+                        mPcmCachedTalkgroup, mPcmCachedFrom,
+                        LocalDateTime.now().format(PCM_TIMESTAMP_FMT));
+            }
+        }
+        catch(Exception e)
+        {
+            mLog.warn("PCM call_start broadcast error: {}", e.getMessage());
+            mPcmCallId = null;
+            mPcmCachedSystem = "";
+            mPcmCachedSite = "";
+            mPcmCachedTalkgroup = "";
+            mPcmCachedFrom = "";
+        }
+    }
+
     @Override
     public void stop()
     {
@@ -208,38 +241,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
 
                 mAudioSampleCount = 0;
 
-                // PCM stream: broadcast call_start for the new segment.
-                // Wrapped in try-catch so any PCM failure cannot affect the existing audio pipeline.
-                try
-                {
-                    PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
-                    if(pcmMgr != null && pcmMgr.isRunning() && mPcmCallId == null)
-                    {
-                        mPcmCallId = UUID.randomUUID().toString();
-                        mPcmFrameSeq.set(0);
-                        mPcmFrameCount.set(0);
-                        // Cache metadata once at call_start — reused on every addAudio() frame
-                        mPcmCachedSystem = pcmGetSystem();
-                        mPcmCachedSite = pcmGetSite();
-                        mPcmCachedTalkgroup = mIdentifierCollection.getToIdentifier() != null
-                                ? mIdentifierCollection.getToIdentifier().toString() : "";
-                        mPcmCachedFrom = mIdentifierCollection.getFromIdentifier() != null
-                                ? mIdentifierCollection.getFromIdentifier().toString() : "";
-                        pcmMgr.broadcastCallStart(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
-                                mPcmCachedTalkgroup, mPcmCachedFrom,
-                                LocalDateTime.now().format(PCM_TIMESTAMP_FMT));
-                    }
-                }
-                catch(Exception e)
-                {
-                    mLog.warn("PCM call_start broadcast error: {}", e.getMessage());
-                    // Reset PCM state so the next call gets a clean slate
-                    mPcmCallId = null;
-                    mPcmCachedSystem = "";
-                    mPcmCachedSite = "";
-                    mPcmCachedTalkgroup = "";
-                    mPcmCachedFrom = "";
-                }
+                startPcmCallIfReady();
             }
 
             return mAudioSegment;
@@ -259,6 +261,9 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
             audioSegment = getAudioSegment();
             audioSegment.linkTo(previous);
         }
+
+        // Retry call initialization here in case the asynchronous PCM server was not ready when the segment was created.
+        startPcmCallIfReady();
 
         // PCM stream: broadcast decoded audio to connected TCP clients.
         // Wrapped in try-catch so any PCM failure cannot affect the existing audio pipeline.

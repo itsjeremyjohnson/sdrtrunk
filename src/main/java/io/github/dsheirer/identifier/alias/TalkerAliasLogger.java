@@ -77,7 +77,9 @@ public class TalkerAliasLogger
      */
     public TalkerAliasLogger(Path logDirectory, String systemName, Protocol protocol)
     {
-        mAliasFile = logDirectory.resolve(systemName + "_talker_aliases.csv").toAbsolutePath().normalize();
+        String protocolSuffix = protocol == Protocol.DMR ? "_dmr" : "";
+        mAliasFile = logDirectory.resolve(systemName + protocolSuffix + "_talker_aliases.csv")
+            .toAbsolutePath().normalize();
         mIdentifierFactory = protocol == Protocol.DMR ? DmrTalkerAliasIdentifier::create :
             P25TalkerAliasIdentifier::create;
         mFileState = FILE_STATES.computeIfAbsent(mAliasFile, ignored -> new AliasFileState());

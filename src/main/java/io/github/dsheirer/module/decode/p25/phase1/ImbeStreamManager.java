@@ -106,13 +106,16 @@ public class ImbeStreamManager
                         {
                             try
                             {
-                                int read = socket.getInputStream().read();
-                                if (read == -1)
+                                while (socket.getInputStream().read() != -1)
                                 {
-                                    writer.close();
+                                    // Drain client input until disconnect.
                                 }
                             }
                             catch (IOException e)
+                            {
+                                // Socket failure also indicates disconnect.
+                            }
+                            finally
                             {
                                 writer.close();
                             }

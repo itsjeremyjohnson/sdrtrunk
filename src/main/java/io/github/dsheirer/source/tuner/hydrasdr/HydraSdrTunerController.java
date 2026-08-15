@@ -241,7 +241,10 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			}
 			else
 			{
-				mLog.error("Failed to start HydraSDR streaming: " + HydraSdrNative.errorName(result));
+				String errorMessage = "Failed to start HydraSDR streaming: " +
+					HydraSdrNative.errorName(result);
+				mLog.error(errorMessage);
+				setErrorMessage(errorMessage);
 			}
 		}
 	}
