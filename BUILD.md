@@ -106,12 +106,13 @@ Run: `bin/sdr-trunk` (Windows: `bin\sdr-trunk.bat`)
   `jni/build_<name>/` for native libs, `build_<name>/` for Gradle output.
   MINGW64 and VS2022 builds coexist without conflicts. Without this flag,
   the defaults `jni/build/` and `build/` are used (CI default).
-- Gradle automatically runs cmake + ninja if native libs are not already
-  present. CMake auto-clones [libhydrasdr](https://github.com/hydrasdr/hydrasdr-host)
-  from GitHub via FetchContent.
-- If cmake, ninja, or a C compiler are not available, the native build
-  is skipped with a warning. The Java application still builds but
-  HydraSDR tuner support will not be available.
-- CI/CD (`.github/workflows/nightly.yml`) pre-builds native libs on 5
-  platforms in parallel, then packages with Gradle. The `buildHydraSdrJni`
-  task detects pre-built libs and skips.
+- Gradle runs the incremental CMake build whenever `buildHydraSdrJni` is
+  requested. New build directories use Ninja; existing CMake build directories
+  retain their configured generator. CMake fetches the pinned libhydrasdr
+  revision from GitHub when a local installation is unavailable.
+- If cmake, the required generator, or a C compiler are not available, the
+  native build is skipped with a warning. The Java application still builds,
+  but HydraSDR tuner support will not be available.
+- CI/CD (`.github/workflows/nightly.yml`) pre-builds native libraries on five
+  platforms in parallel, then Gradle invokes CMake incrementally before
+  packaging the local-platform JNI library.

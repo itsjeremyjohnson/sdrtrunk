@@ -73,6 +73,12 @@ public class HydraSdrNativeBufferFactory
 	{
 		updateBufferLength(sampleCount);
 
+		if(mIResidual.length == 0)
+		{
+			mResidualTimestamp = timestamp;
+			mFractionalMsAccumulator = 0.0;
+		}
+
 		/*
 		 * Fast path: no residual and incoming buffer is exactly the optimal size.
 		 * Copy I/Q arrays since the JNI layer reuses the underlying array objects
@@ -80,7 +86,6 @@ public class HydraSdrNativeBufferFactory
 		 */
 		if(mIResidual.length == 0 && sampleCount == mOptimalBufferLength)
 		{
-			mResidualTimestamp = timestamp;
 			return Collections.singletonList(new HydraSdrNativeBuffer(
 				Arrays.copyOf(iSamples, sampleCount),
 				Arrays.copyOf(qSamples, sampleCount),
@@ -125,7 +130,6 @@ public class HydraSdrNativeBufferFactory
 
 		mIResidual = iCombined;
 		mQResidual = qCombined;
-		mResidualTimestamp = timestamp;
 
 		return buffers;
 	}

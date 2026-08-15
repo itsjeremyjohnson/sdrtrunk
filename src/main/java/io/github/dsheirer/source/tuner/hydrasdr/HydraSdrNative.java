@@ -19,6 +19,12 @@
 package io.github.dsheirer.source.tuner.hydrasdr;
 
 import java.io.File;
+import java.net.URISyntaxException;
+import java.security.CodeSource;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -127,70 +133,106 @@ public class HydraSdrNative
 		}
 	}
 
+	private static List<File> getBundledLibraryDirectories()
+	{
+		try
+		{
+			CodeSource codeSource = HydraSdrNative.class.getProtectionDomain().getCodeSource();
+			if(codeSource != null && codeSource.getLocation() != null)
+			{
+				return getBundledLibraryDirectories(new File(codeSource.getLocation().toURI()));
+			}
+		}
+		catch(URISyntaxException | SecurityException e)
+		{
+			mLog.debug("Unable to resolve HydraSDR library location from application classes", e);
+		}
+
+		return new ArrayList<>();
+	}
+
+	/**
+	 * Resolves packaged native library directories relative to the application classes or jar.
+	 */
+	static List<File> getBundledLibraryDirectories(File codeLocation)
+	{
+		Set<File> directories = new LinkedHashSet<>();
+		File base = codeLocation.isFile() ? codeLocation.getParentFile() : codeLocation;
+
+		if(base != null)
+		{
+			directories.add(new File(base, "native"));
+			directories.add(new File(base, "lib/native"));
+
+			File parent = base.getParentFile();
+			if(parent != null)
+			{
+				directories.add(new File(parent, "native"));
+				directories.add(new File(parent, "lib/native"));
+			}
+		}
+
+		return new ArrayList<>(directories);
+	}
+
 	private static boolean loadFromPlatformPath()
 	{
 		String os = System.getProperty("os.name", "").toLowerCase();
 		String arch = System.getProperty("os.arch", "").toLowerCase();
-		String[][] searchDirs;
+		File userDir = new File(System.getProperty("user.dir", "."));
+		List<File> searchDirs = new ArrayList<>(getBundledLibraryDirectories());
 		String jniName;
 		String[] depNames;
 
 		if(os.contains("win"))
 		{
 			String programFiles = System.getenv("ProgramFiles");
-			String userDir = System.getProperty("user.dir");
 			jniName = "hydrasdr_jni.dll";
 			/* Both names listed: MinGW builds the libhydrasdr core as
 			 * libhydrasdr.dll (with the lib prefix), MSVC builds it as
 			 * hydrasdr.dll (no prefix). The loop tolerates missing files
 			 * via depFile.exists(), so listing both is safe on both toolchains. */
 			depNames = new String[] {"libusb-1.0.dll", "libhydrasdr.dll", "hydrasdr.dll"};
-			searchDirs = new String[][] {
-				{userDir + "\\jni\\build"},
-				{userDir + "\\lib\\native"},
-				{userDir + "\\..\\lib\\native"},
-				{userDir},
-				{programFiles + "\\HydraSDR"},
-				{programFiles + "\\HydraSDR\\bin"},
-			};
+			searchDirs.add(new File(userDir, "jni/build"));
+			searchDirs.add(new File(userDir, "lib/native"));
+			searchDirs.add(new File(userDir, "../lib/native"));
+			searchDirs.add(userDir);
+			if(programFiles != null)
+			{
+				searchDirs.add(new File(programFiles, "HydraSDR"));
+				searchDirs.add(new File(programFiles, "HydraSDR/bin"));
+			}
 		}
 		else if(os.contains("linux"))
 		{
-			String userDir = System.getProperty("user.dir");
 			jniName = "libhydrasdr_jni.so";
 			depNames = new String[] {"libusb-1.0.so", "libhydrasdr.so"};
-			searchDirs = new String[][] {
-				{userDir + "/jni/build"},
-				{userDir + "/lib/native"},
-				{userDir + "/../lib/native"},
-				{"/usr/local/lib"},
-				{"/usr/lib"},
-				{"/usr/lib/" + arch + "-linux-gnu"},
-			};
+			searchDirs.add(new File(userDir, "jni/build"));
+			searchDirs.add(new File(userDir, "lib/native"));
+			searchDirs.add(new File(userDir, "../lib/native"));
+			searchDirs.add(new File("/usr/local/lib"));
+			searchDirs.add(new File("/usr/lib"));
+			searchDirs.add(new File("/usr/lib/" + arch + "-linux-gnu"));
 		}
 		else if(os.contains("mac"))
 		{
-			String userDir = System.getProperty("user.dir");
 			jniName = "libhydrasdr_jni.dylib";
 			depNames = new String[] {"libusb-1.0.dylib", "libhydrasdr.dylib"};
-			searchDirs = new String[][] {
-				{userDir + "/jni/build"},
-				{userDir + "/lib/native"},
-				{userDir + "/../lib/native"},
-				{"/usr/local/lib"},
-				{"/opt/homebrew/lib"},
-			};
+			searchDirs.add(new File(userDir, "jni/build"));
+			searchDirs.add(new File(userDir, "lib/native"));
+			searchDirs.add(new File(userDir, "../lib/native"));
+			searchDirs.add(new File("/usr/local/lib"));
+			searchDirs.add(new File("/opt/homebrew/lib"));
 		}
 		else
 		{
-			searchDirs = new String[0][];
+			searchDirs.clear();
 			jniName = "";
 			depNames = new String[0];
 		}
 
-		for(String[] dirEntry : searchDirs)
+		for(File dir : searchDirs)
 		{
-			String dir = dirEntry[0];
 			File jniFile = new File(dir, jniName);
 			if(jniFile.exists())
 			{

@@ -19,6 +19,8 @@
  */
 package io.github.dsheirer.source.tuner.hydrasdr;
 
+import com.fasterxml.jackson.annotation.JsonAlias;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.source.tuner.TunerType;
 import io.github.dsheirer.source.tuner.configuration.TunerConfiguration;
@@ -81,6 +83,7 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 		return mLnaGain;
 	}
 
+	@JsonAlias("lnagain")
 	public void setLnaGain(int gain)
 	{
 		mLnaGain = gain;
@@ -106,6 +109,58 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 	public void setVgaGain(int gain)
 	{
 		mVgaGain = gain;
+	}
+
+	/**
+	 * Migrates the legacy HydraSDR IF gain to the equivalent unified VGA gain.
+	 */
+	@JsonProperty(value = "ifGain", access = JsonProperty.Access.WRITE_ONLY)
+	@JsonAlias({"if_gain", "ifgain"})
+	@JacksonXmlProperty(isAttribute = true, localName = "if_gain")
+	public void setLegacyIfGain(int gain)
+	{
+		mVgaGain = gain;
+	}
+
+	/**
+	 * Migrates the legacy gain preset enum representation.
+	 */
+	@JsonProperty(value = "gain", access = JsonProperty.Access.WRITE_ONLY)
+	@JacksonXmlProperty(isAttribute = true, localName = "gain")
+	public void setLegacyGain(String gain)
+	{
+		if(gain == null)
+		{
+			return;
+		}
+
+		if(gain.startsWith("LINEARITY_"))
+		{
+			mGainMode = 0;
+			mLinearityGain = parseLegacyGainValue(gain, "LINEARITY_", 14);
+		}
+		else if(gain.startsWith("SENSITIVITY_"))
+		{
+			mGainMode = 1;
+			mSensitivityGain = parseLegacyGainValue(gain, "SENSITIVITY_", 10);
+		}
+		else if("CUSTOM".equals(gain))
+		{
+			mGainMode = 2;
+		}
+	}
+
+	private int parseLegacyGainValue(String gain, String prefix, int fallback)
+	{
+		try
+		{
+			int value = Integer.parseInt(gain.substring(prefix.length()));
+			return value >= 1 && value <= 22 ? value : fallback;
+		}
+		catch(NumberFormatException e)
+		{
+			return fallback;
+		}
 	}
 
 	@JacksonXmlProperty(isAttribute = true, localName = "linearity_gain")
@@ -136,6 +191,7 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 		return mLnaAgc;
 	}
 
+	@JsonAlias("lnaagc")
 	public void setLnaAgc(boolean enabled)
 	{
 		mLnaAgc = enabled;
@@ -147,6 +203,7 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 		return mMixerAgc;
 	}
 
+	@JsonAlias("mixerAGC")
 	public void setMixerAgc(boolean enabled)
 	{
 		mMixerAgc = enabled;

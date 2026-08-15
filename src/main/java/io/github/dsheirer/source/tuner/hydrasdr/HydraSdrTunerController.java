@@ -28,10 +28,13 @@ import io.github.dsheirer.source.tuner.TunerType;
 import io.github.dsheirer.source.tuner.configuration.TunerConfiguration;
 import io.github.dsheirer.util.ThreadPool;
 import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -139,81 +142,104 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 
 		mLog.info("Opened HydraSDR device, handle=0x" + Long.toHexString(mDeviceHandle));
 
-		/* Query device info and update frequency limits */
-		mDeviceInfo = HydraSdrNative.getDeviceInfo(mDeviceHandle);
-		if(mDeviceInfo != null)
+		try
 		{
-			mLog.info("HydraSDR device: " + mDeviceInfo.getBoardName() +
-				" serial=" + mDeviceInfo.getSerialNumber() +
-				" fw=" + mDeviceInfo.getFirmwareVersion() +
-				" freq=" + mDeviceInfo.getMinFrequency() + "-" + mDeviceInfo.getMaxFrequency() + " Hz" +
-				" caps=0x" + Integer.toHexString(mDeviceInfo.getCapabilities()));
-
-			if(mDeviceInfo.getMinFrequency() > 0)
+			/* Query device info and update frequency limits */
+			mDeviceInfo = HydraSdrNative.getDeviceInfo(mDeviceHandle);
+			if(mDeviceInfo != null)
 			{
-				setMinimumFrequency(mDeviceInfo.getMinFrequency());
+				mLog.info("HydraSDR device: " + mDeviceInfo.getBoardName() +
+					" serial=" + mDeviceInfo.getSerialNumber() +
+					" fw=" + mDeviceInfo.getFirmwareVersion() +
+					" freq=" + mDeviceInfo.getMinFrequency() + "-" + mDeviceInfo.getMaxFrequency() + " Hz" +
+					" caps=0x" + Integer.toHexString(mDeviceInfo.getCapabilities()));
+
+				if(mDeviceInfo.getMinFrequency() > 0)
+				{
+					setMinimumFrequency(mDeviceInfo.getMinFrequency());
+				}
+				if(mDeviceInfo.getMaxFrequency() > 0)
+				{
+					setMaximumFrequency(mDeviceInfo.getMaxFrequency());
+				}
 			}
-			if(mDeviceInfo.getMaxFrequency() > 0)
+			else
 			{
-				setMaximumFrequency(mDeviceInfo.getMaxFrequency());
+				mLog.warn("Failed to query HydraSDR device info");
+			}
+
+			/* Request float32 IQ samples from the library. The streaming callback path
+			 * (JNI deinterleave + onSamples float[]) assumes FLOAT32_IQ — any other
+			 * sample type would deliver garbage to downstream DSP. Fail fast. */
+			int result = HydraSdrNative.setSampleType(mDeviceHandle, HydraSdrNative.SAMPLE_FLOAT32_IQ);
+			if(result != HydraSdrNative.SUCCESS)
+			{
+				throw new SourceException("HydraSDR rejected FLOAT32_IQ sample type: " +
+					HydraSdrNative.errorName(result));
+			}
+
+			/* Query available sample rates */
+			determineAvailableSampleRates();
+
+			/* Set default frequency */
+			setFrequency(FREQUENCY_DEFAULT);
+
+			/* Set default sample rate */
+			if(!mSampleRates.isEmpty())
+			{
+				setSampleRate(mSampleRates.get(0));
+			}
+			else
+			{
+				setSampleRateHz(DEFAULT_SAMPLE_RATE);
 			}
 		}
-		else
+		catch(SourceException e)
 		{
-			mLog.warn("Failed to query HydraSDR device info");
+			closeDevice();
+			throw e;
 		}
-
-		/* Request float32 IQ samples from the library. The streaming callback path
-		 * (JNI deinterleave + onSamples float[]) assumes FLOAT32_IQ — any other
-		 * sample type would deliver garbage to downstream DSP. Fail fast. */
-		int result = HydraSdrNative.setSampleType(mDeviceHandle, HydraSdrNative.SAMPLE_FLOAT32_IQ);
-		if(result != HydraSdrNative.SUCCESS)
+		catch(RuntimeException e)
 		{
-			HydraSdrNative.close(mDeviceHandle);
-			mDeviceHandle = 0;
-			throw new SourceException("HydraSDR rejected FLOAT32_IQ sample type: " +
-				HydraSdrNative.errorName(result));
-		}
-
-		/* Query available sample rates */
-		determineAvailableSampleRates();
-
-		/* Set default frequency */
-		setFrequency(FREQUENCY_DEFAULT);
-
-		/* Set default sample rate */
-		if(!mSampleRates.isEmpty())
-		{
-			setSampleRate(mSampleRates.get(0));
-		}
-		else
-		{
-			setSampleRateHz(DEFAULT_SAMPLE_RATE);
+			closeDevice();
+			throw new SourceException("Error initializing HydraSDR device", e);
 		}
 	}
 
 	@Override
 	public void stop()
 	{
-		if(mStreaming)
-		{
-			stopStreaming();
-		}
+		stopStreaming();
+		closeDevice();
+	}
 
+	/**
+	 * Closes the native device handle and clears device-specific state.
+	 */
+	private void closeDevice()
+	{
 		if(mDeviceHandle != 0)
 		{
-			HydraSdrNative.close(mDeviceHandle);
-			mLog.info("Closed HydraSDR device");
+			long deviceHandle = mDeviceHandle;
 			mDeviceHandle = 0;
+			mDeviceInfo = null;
+			HydraSdrNative.close(deviceHandle);
+			mLog.info("Closed HydraSDR device");
 		}
 	}
 
 	/**
 	 * Starts streaming. Called when the first buffer listener is added.
+	 * @return true if streaming is active
 	 */
-	private void startStreaming()
+	private synchronized boolean startStreaming()
 	{
-		if(!mStreaming && mDeviceHandle != 0)
+		if(mStreaming)
+		{
+			return true;
+		}
+
+		if(mDeviceHandle != 0)
 		{
 			int result = HydraSdrNative.startRx(mDeviceHandle, this);
 			if(result == HydraSdrNative.SUCCESS)
@@ -223,18 +249,21 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				resetPerformanceStats();
 				startWatchdog();
 				mLog.info("HydraSDR streaming started");
+				return true;
 			}
-			else
-			{
-				mLog.error("Failed to start HydraSDR streaming: " + HydraSdrNative.errorName(result));
-			}
+
+			String errorMessage = "Failed to start HydraSDR streaming: " + HydraSdrNative.errorName(result);
+			mLog.error(errorMessage);
+			setErrorMessage(errorMessage);
 		}
+
+		return false;
 	}
 
 	/**
 	 * Stops streaming. Called when the last buffer listener is removed.
 	 */
-	private void stopStreaming()
+	private synchronized void stopStreaming()
 	{
 		stopWatchdog();
 		if(mStreaming && mDeviceHandle != 0)
@@ -300,10 +329,11 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		{
 			if(mStreaming && (System.currentTimeMillis() - mLastCallbackTime) > WATCHDOG_TIMEOUT_MS)
 			{
-				mLog.error("HydraSDR streaming stopped unexpectedly (device error or USB disconnect)");
-				mStreaming = false;
-				stopWatchdog();
-				setErrorMessage("HydraSDR streaming stopped unexpectedly (device error or USB disconnect)");
+				String errorMessage =
+					"HydraSDR streaming stopped unexpectedly (device error or USB disconnect)";
+				mLog.error(errorMessage);
+				stopStreaming();
+				setErrorMessage(errorMessage);
 			}
 		}, WATCHDOG_TIMEOUT_MS, WATCHDOG_TIMEOUT_MS, TimeUnit.MILLISECONDS);
 	}
@@ -379,11 +409,10 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		getLock().lock();
 		try
 		{
-			if(!hasBufferListeners())
+			if(hasBufferListeners() || startStreaming())
 			{
-				startStreaming();
+				super.addBufferListener(listener);
 			}
-			super.addBufferListener(listener);
 		}
 		finally
 		{
@@ -771,58 +800,73 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		return serials != null ? serials : new long[0];
 	}
 
-	/* Track which serial numbers have been assigned to controllers */
-	private static final AtomicInteger sNextDeviceIndex = new AtomicInteger(0);
+	/* Stable USB bus/port to serial assignments for the current device set. */
+	private static final Map<String, Long> sDeviceAssignments = new HashMap<>();
 
 	/**
 	 * Finds the serial number for a HydraSDR device at the given USB bus/port.
 	 *
-	 * Since libhydrasdr enumerates devices via libusb internally, the discovery
-	 * order matches the USB enumeration order. Multiple HydraSDR devices are
-	 * assigned serial numbers in the order they are discovered by TunerManager.
+	 * libhydrasdr does not expose USB location details, so new locations are paired
+	 * with unassigned serials in native enumeration order. Existing locations keep
+	 * their assignment across repeated discovery calls, while removed serials are
+	 * discarded so hotplug replacement devices can be assigned.
 	 *
 	 * @param bus USB bus number (from sdrtrunk discovery)
 	 * @param portAddress USB port address (from sdrtrunk discovery)
 	 * @return serial number for this device, or 0 to open first available
 	 */
-	public static long findSerialForUsbPort(int bus, String portAddress)
+	public static synchronized long findSerialForUsbPort(int bus, String portAddress)
 	{
-		long[] serials = listDevices();
+		return assignSerialForUsbPort(bus, portAddress, listDevices());
+	}
 
-		if(serials.length == 0)
+	/**
+	 * Assigns an available native serial to a USB location.
+	 */
+	static synchronized long assignSerialForUsbPort(int bus, String portAddress, long[] serials)
+	{
+		if(serials == null || serials.length == 0)
 		{
+			sDeviceAssignments.clear();
 			return 0;
 		}
 
-		/* Single device: return its serial directly */
-		if(serials.length == 1)
+		Set<Long> availableSerials = new HashSet<>();
+		for(long serial : serials)
 		{
-			return serials[0];
+			availableSerials.add(serial);
+		}
+		sDeviceAssignments.entrySet().removeIf(entry -> !availableSerials.contains(entry.getValue()));
+
+		String usbLocation = bus + ":" + portAddress;
+		Long assignedSerial = sDeviceAssignments.get(usbLocation);
+		if(assignedSerial != null)
+		{
+			return assignedSerial;
 		}
 
-		/* Multiple devices: assign by discovery order.
-		 * Both sdrtrunk USB enum and libhydrasdr libusb enum iterate in the
-		 * same bus/port order, so index N in sdrtrunk maps to index N here. */
-		int idx = sNextDeviceIndex.getAndIncrement();
-		if(idx < serials.length)
+		Set<Long> assignedSerials = new HashSet<>(sDeviceAssignments.values());
+		for(long serial : serials)
 		{
-			mLog.info("Multi-device: assigned serial 0x" + Long.toHexString(serials[idx]) +
-				" to USB Bus " + bus + " Port " + portAddress +
-				" (device " + (idx + 1) + "/" + serials.length + ")");
-			return serials[idx];
+			if(!assignedSerials.contains(serial))
+			{
+				sDeviceAssignments.put(usbLocation, serial);
+				mLog.info("Assigned HydraSDR serial 0x" + Long.toHexString(serial) +
+					" to USB Bus " + bus + " Port " + portAddress);
+				return serial;
+			}
 		}
 
-		/* Fallback: more sdrtrunk discoveries than native devices */
 		mLog.warn("More HydraSDR USB devices discovered than native library reports");
 		return 0;
 	}
 
 	/**
-	 * Resets the device assignment counter. Called at the start of USB enumeration.
+	 * Clears device assignments. Called at the start of USB enumeration.
 	 */
-	public static void resetDeviceAssignment()
+	public static synchronized void resetDeviceAssignment()
 	{
-		sNextDeviceIndex.set(0);
+		sDeviceAssignments.clear();
 	}
 
 	/**

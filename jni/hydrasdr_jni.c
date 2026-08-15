@@ -726,11 +726,11 @@ Java_io_github_dsheirer_source_tuner_hydrasdr_HydraSdrNative_getDeviceInfo(
 	SET_STRING_FIELD(setBoardName, info.board_name);
 	SET_STRING_FIELD(setFirmwareVersion, info.firmware_version);
 
-	/* Format serial number - 64-bit like hydrasdr host tools: 0xMSB32LSB32 */
+	/* Preserve the previous Java implementation's MSB32-LSB32 format. */
 	char serial_str[64];
 	uint32_t sn_msb = info.part_serial.serial_no[2];
 	uint32_t sn_lsb = info.part_serial.serial_no[3];
-	snprintf(serial_str, sizeof(serial_str), "0x%08X%08X", sn_msb, sn_lsb);
+	snprintf(serial_str, sizeof(serial_str), "%08X-%08X", sn_msb, sn_lsb);
 	SET_STRING_FIELD(setSerialNumber, serial_str);
 
 	char part_str[32];

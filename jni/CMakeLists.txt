@@ -80,15 +80,20 @@ if(NOT HydraSDR_FOUND AND NOT HYDRASDR_USE_LOCAL)
 	set(HYDRASDR_USE_FETCH ON)
 	message(STATUS "libhydrasdr not found locally - cloning from GitHub...")
 
-	# Git tag/branch to checkout (override with -DHYDRASDR_GIT_TAG=xxx)
-	set(HYDRASDR_GIT_TAG "main" CACHE STRING
-		"Git tag/branch/commit of hydrasdr-host to checkout")
+	# Immutable libhydrasdr v1.1.1 commit (override for local testing only).
+	set(HYDRASDR_GIT_TAG "d2812bd001f55ebee4c5d629fe47744cdd64aeec" CACHE STRING
+		"Git commit of hydrasdr-host to checkout")
+	if(HYDRASDR_GIT_TAG STREQUAL "main")
+		# Migrate build directories configured with the former moving default.
+		set(HYDRASDR_GIT_TAG "d2812bd001f55ebee4c5d629fe47744cdd64aeec" CACHE STRING
+			"Git commit of hydrasdr-host to checkout" FORCE)
+	endif()
 
 	FetchContent_Declare(
 		hydrasdr
 		GIT_REPOSITORY https://github.com/hydrasdr/hydrasdr-host.git
 		GIT_TAG        ${HYDRASDR_GIT_TAG}
-		GIT_SHALLOW    ON
+		GIT_SHALLOW    OFF
 	)
 
 	# Build shared library, don't build the tools
