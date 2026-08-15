@@ -283,14 +283,14 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
         float[] demodulated = mDemodulator.demodulate(filteredI, filteredQ);
 
-        //Feed demodulated audio to CTCSS detector before noise squelch (tone is sub-audible and would be
-        //removed by the noise squelch's high-pass filter)
-        if(mCTCSSDetector != null)
+        mNoiseSquelch.process(demodulated);
+
+        //Only learn CTCSS state while carrier squelch is open. The detector still receives the original
+        //demodulated audio because the squelch audio path removes the sub-audible tone.
+        if(mCTCSSDetector != null && shouldProcessCTCSS(mNoiseSquelch.isSquelched()))
         {
             mCTCSSDetector.process(demodulated);
         }
-
-        mNoiseSquelch.process(demodulated);
 
         //Once we process the sample buffer, if the ending state is squelch closed, update the decoder state that we
         // are idle.
@@ -298,6 +298,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             notifyIdle();
         }
+    }
+
+    static boolean shouldProcessCTCSS(boolean squelched)
+    {
+        return !squelched;
     }
 
     /**

@@ -12,8 +12,12 @@ import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.map.ChannelMapModel;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.DecoderFactory;
+import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.dsp.squelch.CTCSSFrequency;
+import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
+import io.github.dsheirer.module.log.EventLogType;
+import io.github.dsheirer.module.log.config.EventLogConfiguration;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.protocol.Protocol;
@@ -139,6 +143,48 @@ public class ConfigRoundTripTest
         assertTrue(output.contains("FUTURE_RECORDER"));
         assertTrue(output.contains("DEMODULATED_BIT_STREAM"));
         assertFalse(output.contains("BASEBAND"));
+    }
+
+    @Test
+    void unknownAuxDecoderIsOmittedAtRuntimeAndPreservedOnSave() throws Exception
+    {
+        String xml = """
+            <aux_decode_configuration>
+                <aux_decoder>FUTURE_AUX_DECODER</aux_decoder>
+                <aux_decoder>MDC1200</aux_decoder>
+            </aux_decode_configuration>
+            """;
+
+        AuxDecodeConfiguration config = createMapper().readValue(xml, AuxDecodeConfiguration.class);
+        assertEquals(java.util.List.of(DecoderType.MDC1200), config.getAuxDecoders());
+        config.clearAuxDecoders();
+        config.addAuxDecoder(DecoderType.DCS);
+
+        String output = createMapper().writeValueAsString(config);
+        assertTrue(output.contains("FUTURE_AUX_DECODER"));
+        assertTrue(output.contains("DCS"));
+        assertFalse(output.contains("MDC1200"));
+    }
+
+    @Test
+    void unknownEventLoggerIsOmittedAtRuntimeAndPreservedOnSave() throws Exception
+    {
+        String xml = """
+            <event_log_configuration>
+                <logger>FUTURE_EVENT_LOGGER</logger>
+                <logger>CALL_EVENT</logger>
+            </event_log_configuration>
+            """;
+
+        EventLogConfiguration config = createMapper().readValue(xml, EventLogConfiguration.class);
+        assertEquals(java.util.List.of(EventLogType.CALL_EVENT), config.getLoggers());
+        config.clear();
+        config.addLogger(EventLogType.DECODED_MESSAGE);
+
+        String output = createMapper().writeValueAsString(config);
+        assertTrue(output.contains("FUTURE_EVENT_LOGGER"));
+        assertTrue(output.contains("DECODED_MESSAGE"));
+        assertFalse(output.contains("CALL_EVENT"));
     }
 
     @Test

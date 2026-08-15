@@ -73,6 +73,36 @@ class P25P1DecoderLSMv2Test
     }
 
     @Test
+    void partialCmaOverrideSurvivesBoundaryReset()
+    {
+        String previousAcquisitionMu = System.getProperty("cma.acq.mu");
+        String previousTrackingMu = System.getProperty("cma.trk.mu");
+        String previousShiftMs = System.getProperty("cma.shift.ms");
+
+        try
+        {
+            System.setProperty("cma.acq.mu", "0.004");
+            System.setProperty("cma.trk.mu", "0.001");
+            System.setProperty("cma.shift.ms", "200");
+            P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
+
+            decoder.setCMAConfig(0.006f, 0.0f, 0);
+            decoder.getEqualizer().reset();
+
+            assertEquals(0.006f, decoder.getEqualizer().getMu());
+            assertEquals(0.006f, decoder.getEqualizer().getAcquisitionMu());
+            assertEquals(0.001f, decoder.getEqualizer().getTrackingMu());
+            assertEquals(5000, decoder.getEqualizer().getGearShiftSamples());
+        }
+        finally
+        {
+            restoreProperty("cma.acq.mu", previousAcquisitionMu);
+            restoreProperty("cma.trk.mu", previousTrackingMu);
+            restoreProperty("cma.shift.ms", previousShiftMs);
+        }
+    }
+
+    @Test
     void weakerCarrierRemainsPresentAfterLsmBoundaryReset()
     {
         P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
@@ -102,6 +132,18 @@ class P25P1DecoderLSMv2Test
         detector.detect(samples(20000, 0.10f), samples(20000, 0.0f));
 
         assertTrue(signalPresence.isPresent());
+    }
+
+    private void restoreProperty(String name, String value)
+    {
+        if(value == null)
+        {
+            System.clearProperty(name);
+        }
+        else
+        {
+            System.setProperty(name, value);
+        }
     }
 
     private float[] samples(int length, float value)

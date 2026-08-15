@@ -21,6 +21,9 @@
  */
 package io.github.dsheirer.module.decode.config;
 
+import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.controller.config.Configuration;
@@ -32,35 +35,87 @@ import java.util.List;
 @JsonSubTypes.Type(value = AuxDecodeConfiguration.class, name = "auxDecodeConfiguration")
 public class AuxDecodeConfiguration extends Configuration
 {
-    private List<DecoderType> mAuxDecoders = new ArrayList<DecoderType>();
+    private List<DecoderType> mAuxDecoders = new ArrayList<>();
+    private List<String> mAuxDecoderValues = new ArrayList<>();
 
     public AuxDecodeConfiguration()
     {
     }
 
-    @JacksonXmlProperty(isAttribute = false, localName = "aux_decoder")
+    @JsonIgnore
     public List<DecoderType> getAuxDecoders()
     {
         return mAuxDecoders;
     }
 
+    @JsonIgnore
     public void setAuxDecoders(List<DecoderType> decoders)
     {
-        mAuxDecoders = decoders;
+        mAuxDecoders = decoders == null ? new ArrayList<>() : new ArrayList<>(decoders);
+        mAuxDecoderValues = new ArrayList<>(mAuxDecoders.stream().map(DecoderType::name).toList());
+    }
+
+    @JacksonXmlProperty(isAttribute = false, localName = "aux_decoder")
+    @JsonGetter("aux_decoder")
+    public List<String> getAuxDecoderValues()
+    {
+        return mAuxDecoderValues;
+    }
+
+    @JsonSetter("aux_decoder")
+    public void setAuxDecoderValues(List<String> values)
+    {
+        mAuxDecoderValues = values == null ? new ArrayList<>() : new ArrayList<>(values);
+        mAuxDecoders = new ArrayList<>();
+
+        for(String value : mAuxDecoderValues)
+        {
+            if(value == null)
+            {
+                continue;
+            }
+
+            try
+            {
+                mAuxDecoders.add(DecoderType.valueOf(value));
+            }
+            catch(IllegalArgumentException ignored)
+            {
+                // Preserve future decoder values for round-trip, but omit unsupported runtime decoders.
+            }
+        }
     }
 
     public void addAuxDecoder(DecoderType decoder)
     {
         mAuxDecoders.add(decoder);
+        mAuxDecoderValues.add(decoder.name());
     }
 
     public void removeAuxDecoder(DecoderType decoder)
     {
         mAuxDecoders.remove(decoder);
+        mAuxDecoderValues.remove(decoder.name());
     }
 
     public void clearAuxDecoders()
     {
         mAuxDecoders.clear();
+        mAuxDecoderValues.removeIf(value -> {
+            if(value == null)
+            {
+                return true;
+            }
+
+            try
+            {
+                DecoderType.valueOf(value);
+                return true;
+            }
+            catch(IllegalArgumentException ignored)
+            {
+                return false;
+            }
+        });
     }
 }

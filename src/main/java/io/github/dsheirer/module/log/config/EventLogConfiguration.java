@@ -17,6 +17,9 @@
  ******************************************************************************/
 package io.github.dsheirer.module.log.config;
 
+import com.fasterxml.jackson.annotation.JsonGetter;
+import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
@@ -30,30 +33,81 @@ import java.util.List;
 @JacksonXmlRootElement(localName = "event_log_configuration")
 public class EventLogConfiguration extends Configuration
 {
-    protected List<EventLogType> mLoggers = new ArrayList<EventLogType>();
+    protected List<EventLogType> mLoggers = new ArrayList<>();
+    private List<String> mLoggerValues = new ArrayList<>();
 
     public EventLogConfiguration()
     {
     }
 
-    @JacksonXmlProperty(isAttribute = false, localName = "logger")
+    @JsonIgnore
     public List<EventLogType> getLoggers()
     {
         return mLoggers;
     }
 
-    public void setLoggers(ArrayList<EventLogType> loggers)
+    @JsonIgnore
+    public void setLoggers(List<EventLogType> loggers)
     {
-        mLoggers = loggers;
+        mLoggers = loggers == null ? new ArrayList<>() : new ArrayList<>(loggers);
+        mLoggerValues = new ArrayList<>(mLoggers.stream().map(EventLogType::name).toList());
+    }
+
+    @JacksonXmlProperty(isAttribute = false, localName = "logger")
+    @JsonGetter("logger")
+    public List<String> getLoggerValues()
+    {
+        return mLoggerValues;
+    }
+
+    @JsonSetter("logger")
+    public void setLoggerValues(List<String> values)
+    {
+        mLoggerValues = values == null ? new ArrayList<>() : new ArrayList<>(values);
+        mLoggers = new ArrayList<>();
+
+        for(String value : mLoggerValues)
+        {
+            if(value == null)
+            {
+                continue;
+            }
+
+            try
+            {
+                mLoggers.add(EventLogType.valueOf(value));
+            }
+            catch(IllegalArgumentException ignored)
+            {
+                // Preserve future logger values for round-trip, but omit unsupported runtime loggers.
+            }
+        }
     }
 
     public void addLogger(EventLogType logger)
     {
         mLoggers.add(logger);
+        mLoggerValues.add(logger.name());
     }
 
     public void clear()
     {
         mLoggers.clear();
+        mLoggerValues.removeIf(value -> {
+            if(value == null)
+            {
+                return true;
+            }
+
+            try
+            {
+                EventLogType.valueOf(value);
+                return true;
+            }
+            catch(IllegalArgumentException ignored)
+            {
+                return false;
+            }
+        });
     }
 }

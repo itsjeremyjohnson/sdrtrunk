@@ -131,6 +131,21 @@ public class CMAEqualizer
         return mMu;
     }
 
+    public float getAcquisitionMu()
+    {
+        return mAcquisitionMu;
+    }
+
+    public float getTrackingMu()
+    {
+        return mTrackingMu;
+    }
+
+    public int getGearShiftSamples()
+    {
+        return mGearShiftSamples;
+    }
+
     /**
      * Configures gear-shifting: start with acquisitionMu for fast convergence after reset,
      * then reduce to trackingMu after the specified number of samples for low-distortion tracking.

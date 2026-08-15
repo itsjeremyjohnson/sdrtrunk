@@ -525,23 +525,22 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
      */
     public void setCMAConfig(float acquisitionMu, float trackingMu, int gearShiftMs)
     {
-        if(acquisitionMu > 0 && trackingMu > 0 && gearShiftMs > 0)
+        int configuredShiftSamples = mEqualizer.getGearShiftSamples();
+
+        if(configuredShiftSamples > 0 || gearShiftMs > 0)
         {
-            // Convert ms to samples at ~25kHz decimated rate
-            int shiftSamples = (int)(gearShiftMs * 25.0f);
-            mEqualizer.setGearShift(acquisitionMu, trackingMu, shiftSamples);
+            float effectiveAcquisitionMu = acquisitionMu > 0 ? acquisitionMu : mEqualizer.getAcquisitionMu();
+            float effectiveTrackingMu = trackingMu > 0 ? trackingMu : mEqualizer.getTrackingMu();
+            int effectiveShiftSamples = gearShiftMs > 0 ? (int)(gearShiftMs * 25.0f) : configuredShiftSamples;
+            mEqualizer.setGearShift(effectiveAcquisitionMu, effectiveTrackingMu, effectiveShiftSamples);
         }
-        else if(acquisitionMu > 0 || trackingMu > 0)
+        else if(acquisitionMu > 0)
         {
-            // If only mu values set without gear-shift, use acquisition mu as fixed mu
-            if(acquisitionMu > 0)
-            {
-                mEqualizer.setMu(acquisitionMu);
-            }
-            else if(trackingMu > 0)
-            {
-                mEqualizer.setMu(trackingMu);
-            }
+            mEqualizer.setMu(acquisitionMu);
+        }
+        else if(trackingMu > 0)
+        {
+            mEqualizer.setMu(trackingMu);
         }
     }
 

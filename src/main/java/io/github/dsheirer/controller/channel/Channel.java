@@ -139,10 +139,7 @@ public class Channel extends Configuration implements Listener<SourceEvent>
 
         if(getAuxDecodeConfiguration() != null)
         {
-            for(DecoderType auxType : getAuxDecodeConfiguration().getAuxDecoders())
-            {
-                auxCopy.addAuxDecoder(auxType);
-            }
+            auxCopy.setAuxDecoderValues(getAuxDecodeConfiguration().getAuxDecoderValues());
         }
 
         auxCopy.copyUnknownPropertiesFrom(getAuxDecodeConfiguration());
@@ -159,10 +156,7 @@ public class Channel extends Configuration implements Listener<SourceEvent>
 
         if(mEventLogConfiguration != null)
         {
-            for(EventLogType logType : mEventLogConfiguration.getLoggers())
-            {
-                logCopy.addLogger(logType);
-            }
+            logCopy.setLoggerValues(mEventLogConfiguration.getLoggerValues());
         }
 
         logCopy.copyUnknownPropertiesFrom(mEventLogConfiguration);

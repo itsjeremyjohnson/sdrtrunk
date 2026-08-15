@@ -54,7 +54,6 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     private static final int PRE_BUFFER_DURATION_MS = 2000;
     private static final int HOLD_DURATION_MS = 10000;
     private static final float POWER_ALPHA = 0.1f;
-    private static final int POWER_LOG_INTERVAL = 100;
 
     private enum RecordingState { IDLE, RECORDING, HOLDING }
 
@@ -77,7 +76,6 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     private boolean mErrorState;
     private EventBus mEventBus;
     private Path mRecordingDirectory;
-    private int mPowerLogCounter;
     private volatile long mSourceGeneration;
 
     private record QueuedSamples(ComplexSamples samples, long generation) {}
@@ -192,14 +190,6 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
         }
 
         boolean active = mSmoothedPowerDb > mSquelchThresholdDb;
-
-        if(++mPowerLogCounter >= POWER_LOG_INTERVAL)
-        {
-            mPowerLogCounter = 0;
-            mLog.info("Activity recorder [{}] power={} dB  threshold={} dB  state={}  active={}",
-                    mChannelName, String.format("%.1f", mSmoothedPowerDb),
-                    String.format("%.1f", mSquelchThresholdDb), mRecordingState, active);
-        }
 
         switch(mRecordingState)
         {
