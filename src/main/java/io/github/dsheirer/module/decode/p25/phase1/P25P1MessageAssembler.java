@@ -46,6 +46,7 @@ public class P25P1MessageAssembler implements Listener<Dibit>
     private CorrectedBinaryMessage mMessage;
     private P25P1DataUnitID mDataUnitID;
     private int mNac;
+    private boolean mDuidCorrected;
 
     /**
      * Constructs an instance
@@ -247,6 +248,16 @@ public class P25P1MessageAssembler implements Listener<Dibit>
     public P25P1DataUnitID getDataUnitID()
     {
         return mDataUnitID;
+    }
+
+    public void setDuidCorrected(boolean duidCorrected)
+    {
+        mDuidCorrected = duidCorrected;
+    }
+
+    public boolean isDuidCorrected()
+    {
+        return mDuidCorrected;
     }
 
     /**

@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import io.github.dsheirer.controller.channel.Channel;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.io.PrintWriter;
@@ -46,6 +47,11 @@ public class P25PipelineDiagnostics
     private static final DateTimeFormatter TIME_FMT = DateTimeFormatter.ofPattern("HH:mm:ss.SSS")
         .withZone(ZoneId.systemDefault());
     private static final Map<String, PrintWriter> CHANNEL_WRITERS = new ConcurrentHashMap<>();
+
+    public static String keyFor(Channel channel)
+    {
+        return channel != null ? channel.getName() + "-" + channel.getChannelID() : null;
+    }
 
     /**
      * Enable diagnostics for a channel. Creates a per-channel log file.

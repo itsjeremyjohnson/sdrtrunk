@@ -59,6 +59,7 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
     // Transmission boundary detection constants
     private static final float ENERGY_EMA_FACTOR = 0.002f;  // Faster response to energy changes
     private static final float ENERGY_SILENCE_RATIO = 0.15f; // silence = below 15% of peak
+    private static final float SIGNAL_RISE_RATIO = 4.0f;
     private static final double SILENCE_DURATION_SECONDS = 0.5; // 500ms silence threshold
 
     // Strategy 3: Fade detection for TDU recovery
@@ -84,6 +85,9 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
     private float mPeakEnergy = 0f;
     private int mSilenceSampleCount = 0;
     private int mSilenceSamplesThreshold = 12500;
+    private int mNoiseFloorSamplesThreshold = 2500;
+    private float mNoiseFloor;
+    private int mNoiseFloorSampleCount;
     private boolean mInSilence = true;
     private int mBoundaryResetCount = 0;
 
@@ -179,6 +183,7 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
         mBasebandFilterQ = FilterFactory.getRealFilter(getBasebandFilter(decimatedSampleRate));
         mDemodulator.setSamplesPerSymbol(decimatedSampleRate / (float)SYMBOL_RATE);
         mSilenceSamplesThreshold = (int)(decimatedSampleRate * SILENCE_DURATION_SECONDS);
+        mNoiseFloorSamplesThreshold = (int)(decimatedSampleRate * 0.1);
         mMessageFramer.setListener(mMessageProcessor);
     }
 
@@ -223,7 +228,7 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
      * When sustained silence is followed by signal return, triggers a cold-start reset.
      * Also detects energy fade for TDU recovery (Strategy 3).
      */
-    private void detectTransmissionBoundary(float[] i, float[] q)
+    void detectTransmissionBoundary(float[] i, float[] q)
     {
         for(int idx = 0; idx < i.length; idx++)
         {
@@ -243,32 +248,39 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
 
             float silenceThreshold = mPeakEnergy * ENERGY_SILENCE_RATIO;
 
-            if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
+            if(mInSilence)
+            {
+                mNoiseFloorSampleCount++;
+                mNoiseFloor += (mEnergyAverage - mNoiseFloor) * 0.001f;
+
+                if(mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
+                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO)
+                {
+                    // A relative rise above the learned idle floor marks a new transmission.
+                    mDemodulator.coldStartReset();
+                    mEqualizer.reset();
+                    mMessageFramer.coldStartReset();
+                    mMessageFramer.setBoundaryRecoveryActive(true);
+                    mMessageFramer.setInitialAcquisitionActive(true);
+                    mBoundaryResetCount++;
+                    mInSilence = false;
+                    mSilenceSampleCount = 0;
+                    mPreviousEnergyAverage = mEnergyAverage;
+                    mFadeWindowSampleCount = 0;
+                }
+            }
+            else if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
             {
                 mSilenceSampleCount++;
                 if(mSilenceSampleCount >= mSilenceSamplesThreshold)
                 {
                     mInSilence = true;
+                    mNoiseFloor = mEnergyAverage;
+                    mNoiseFloorSampleCount = 0;
                 }
             }
             else
             {
-                if(mInSilence && mPeakEnergy > 0)
-                {
-                    // Transition from silence to signal — new transmission starting
-                    mDemodulator.coldStartReset();
-                    mEqualizer.reset();
-                    mMessageFramer.coldStartReset();
-                    // Strategy 2: Activate boundary recovery for hard sync detection
-                    mMessageFramer.setBoundaryRecoveryActive(true);
-                    // Strategy 4: Activate initial acquisition for weak preamble recovery
-                    mMessageFramer.setInitialAcquisitionActive(true);
-                    mBoundaryResetCount++;
-                    mInSilence = false;
-                    // Reset fade detection for new transmission
-                    mPreviousEnergyAverage = mEnergyAverage;
-                    mFadeWindowSampleCount = 0;
-                }
                 mSilenceSampleCount = 0;
             }
 
@@ -431,6 +443,11 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
     public float getSignalEnergyLevel()
     {
         return mPeakEnergy > 0 ? mEnergyAverage / mPeakEnergy : 0f;
+    }
+
+    int getBoundaryResetCount()
+    {
+        return mBoundaryResetCount;
     }
 
     /**

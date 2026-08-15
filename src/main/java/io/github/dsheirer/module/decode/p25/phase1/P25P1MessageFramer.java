@@ -360,11 +360,13 @@ public class P25P1MessageFramer
             if(mMessageAssemblyRequired)
             {
                 mMessageAssembler = new P25P1MessageAssembler(mDetectedNAC, mDetectedDataUnitID);
+                mMessageAssembler.setDuidCorrected(mDetectedDuidCorrected);
                 mMessageAssemblyRequired = false;
                 mFlywheelAssembly = false;
             }
             //Strategy 5: Flywheel — predict DUID when sync is lost but frame timing is known
-            else if(mFlywheelActive && mFlywheelConsecutiveMisses < MAX_FLYWHEEL_MISSES && mDetectedNAC > 0)
+            else if(mFlywheelActive && mFlywheelConsecutiveMisses < MAX_FLYWHEEL_MISSES && mDetectedNAC > 0 &&
+                    (mEnergyProvider == null || mEnergyProvider.isSignalPresent()))
             {
                 P25P1DataUnitID predicted = predictNextDUID(mPreviousDataUnitID);
 
@@ -372,6 +374,7 @@ public class P25P1MessageFramer
                 {
                     mDetectedDataUnitID = predicted;
                     mMessageAssembler = new P25P1MessageAssembler(mDetectedNAC, predicted);
+                    mMessageAssembler.setDuidCorrected(true);
                     mFlywheelAssembly = true;
                     mFlywheelAttemptCount++;
                     mFlywheelConsecutiveMisses++;
@@ -524,12 +527,7 @@ public class P25P1MessageFramer
 
         if(message != null)
         {
-            // Mark messages whose DUID was corrected by context-aware prediction.
-            // These are noise-derived LDUs after a missed TDU — audio should be suppressed.
-            if(mConsecutiveDuidCorrections > 0)
-            {
-                message.setDuidCorrected(true);
-            }
+            message.setDuidCorrected(mMessageAssembler.isDuidCorrected());
             broadcast(message);
         }
         else
@@ -903,12 +901,18 @@ public class P25P1MessageFramer
     private int mDuidCorrectionCount = 0;
     private int mMaxConsecutiveDuidCorrections = Integer.MAX_VALUE; // Default: unlimited for backward compat
     private int mConsecutiveDuidCorrections = 0;
+    private boolean mDetectedDuidCorrected;
 
     public int getDuidCorrectionCount() { return mDuidCorrectionCount; }
 
     void setPreviousDataUnitID(P25P1DataUnitID dataUnitID)
     {
         mPreviousDataUnitID = dataUnitID;
+    }
+
+    P25P1MessageAssembler getMessageAssembler()
+    {
+        return mMessageAssembler;
     }
 
     /**
@@ -926,6 +930,7 @@ public class P25P1MessageFramer
     public void nidDetected(int nac, P25P1DataUnitID dataUnitID, int detectedBitErrors)
     {
         mDetectedDataUnitID = dataUnitID;
+        mDetectedDuidCorrected = false;
 
         //If the DUID is UNKNOWN, use the PLACEHOLDER and don't overwrite the previously detected NAC
         if(mDetectedDataUnitID == P25P1DataUnitID.UNKNOWN)
@@ -952,6 +957,7 @@ public class P25P1MessageFramer
                 if(predicted != null)
                 {
                     mDetectedDataUnitID = predicted;
+                    mDetectedDuidCorrected = true;
                     mDuidCorrectionCount++;
                     mConsecutiveDuidCorrections++;
                 }

@@ -179,19 +179,22 @@ public class P25P1MessageProcessor implements Listener<IMessage>
             }
             else if(message instanceof TDULCMessage tdulc)
             {
-                // Flush any held LDU1/LDU2 messages — TDULC marks end of transmission
-                processSourceIDExtension(null);
-
                 boolean motorolaTalkerAliasComplete = false;
                 LinkControlWord lcw = tdulc.getLinkControlWord();
 
+                if(lcw instanceof LCSourceIDExtension sourceIDExtension)
+                {
+                    processSourceIDExtension(sourceIDExtension);
+                }
+                else
+                {
+                    // TDULC marks end of transmission; flush messages if it carries no source extension.
+                    processSourceIDExtension(null);
+                }
+
                 if(lcw instanceof IExtendedSourceMessage esm)
                 {
-                    if(lcw instanceof LCSourceIDExtension sourceIDExtension)
-                    {
-                        processSourceIDExtension(sourceIDExtension);
-                    }
-                    else if(esm.isExtensionRequired())
+                    if(!(lcw instanceof LCSourceIDExtension) && esm.isExtensionRequired())
                     {
                         mHeldTDULCMessage = tdulc;
                         return;

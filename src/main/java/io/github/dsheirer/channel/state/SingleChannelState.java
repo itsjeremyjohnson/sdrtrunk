@@ -41,6 +41,7 @@ import io.github.dsheirer.identifier.decoder.ChannelStateIdentifier;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.config.WithCallTimeout;
 import io.github.dsheirer.module.decode.event.IDecodeEvent;
+import io.github.dsheirer.module.decode.p25.phase1.P25PipelineDiagnostics;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.source.ISourceEventListener;
 import io.github.dsheirer.source.SourceEvent;
@@ -100,8 +101,8 @@ public class SingleChannelState extends AbstractChannelState implements IDecoder
     {
         super(channel);
         mChannelMetadata = new ChannelMetadata(aliasModel);
-        mStateMachine.setDiagnosticsChannelName(channel.getName());
-        mSquelchController.setDiagnosticsChannelName(channel.getName());
+        mStateMachine.setDiagnosticsChannelName(P25PipelineDiagnostics.keyFor(channel));
+        mSquelchController.setDiagnosticsChannelName(P25PipelineDiagnostics.keyFor(channel));
         mIdentifierCollection.setIdentifierUpdateListener(mIdentifierUpdateNotificationProxy);
         createConfigurationIdentifiers(channel);
 

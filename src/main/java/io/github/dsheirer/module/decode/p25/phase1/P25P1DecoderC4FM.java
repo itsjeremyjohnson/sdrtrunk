@@ -71,7 +71,7 @@ import org.slf4j.LoggerFactory;
  * correction.  It also provides a stream of demodulated soft symbols (in radians) for display to the user.
  */
 public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProvider, IComplexSamplesListener,
-        ISourceEventListener, ISourceEventProvider, Listener<ComplexSamples>
+        ISourceEventListener, ISourceEventProvider, Listener<ComplexSamples>, ISignalEnergyProvider
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(P25P1DecoderC4FM.class);
     private static final DecimalFormat DECIMAL_FORMAT = new DecimalFormat("#.##");
@@ -126,6 +126,7 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         }
         mMessageProcessor.setMessageListener(getMessageListener());
         mSymbolProcessor = new P25P1DemodulatorC4FM(mMessageFramer, this);
+        mMessageFramer.setEnergyProvider(this);
     }
 
     public void setDiagnosticsChannelName(String channelName)
@@ -267,6 +268,18 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
                 mSilenceSampleCount = 0;
             }
         }
+    }
+
+    @Override
+    public boolean isSignalPresent()
+    {
+        return !mInSilence && mPeakEnergy > 0;
+    }
+
+    @Override
+    public float getSignalEnergyLevel()
+    {
+        return mPeakEnergy > 0 ? mEnergyAverage / mPeakEnergy : 0f;
     }
 
     /**

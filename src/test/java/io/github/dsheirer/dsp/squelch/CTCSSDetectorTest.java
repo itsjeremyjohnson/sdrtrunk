@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.dsp.squelch;
 
+import java.util.Random;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -63,9 +64,10 @@ public class CTCSSDetectorTest
     {
         int numSamples = (int)(SAMPLE_RATE * durationSeconds);
         float[] samples = new float[numSamples];
+        Random random = new Random(0);
         for(int i = 0; i < numSamples; i++)
         {
-            samples[i] = (float)((Math.random() * 2.0 - 1.0) * amplitude);
+            samples[i] = (float)((random.nextDouble() * 2.0 - 1.0) * amplitude);
         }
         return samples;
     }
@@ -186,5 +188,25 @@ public class CTCSSDetectorTest
         float[] adjacentTone = generateTone(118.8, TONE_AMPLITUDE, 1.0);
         mDetector.process(adjacentTone);
         assertFalse(mDetector.isToneDetected(), "Should not detect adjacent CTCSS tone 118.8 Hz");
+    }
+
+    @Test
+    void loudClosestAdjacentToneDoesNotOpenDetector()
+    {
+        CTCSSDetector detector = new CTCSSDetector(67.0);
+        detector.setSampleRate(SAMPLE_RATE);
+        detector.process(generateTone(69.3, 1.0f, 1.0));
+
+        assertFalse(detector.isToneDetected(), "69.3 Hz leakage must not open the 67.0 Hz detector");
+    }
+
+    @Test
+    void closestTargetToneStillOpensDetector()
+    {
+        CTCSSDetector detector = new CTCSSDetector(67.0);
+        detector.setSampleRate(SAMPLE_RATE);
+        detector.process(generateTone(67.0, TONE_AMPLITUDE, 1.0));
+
+        assertTrue(detector.isToneDetected());
     }
 }

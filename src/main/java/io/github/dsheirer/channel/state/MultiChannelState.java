@@ -39,6 +39,7 @@ import io.github.dsheirer.identifier.configuration.SiteConfigurationIdentifier;
 import io.github.dsheirer.identifier.configuration.SystemConfigurationIdentifier;
 import io.github.dsheirer.identifier.decoder.ChannelStateIdentifier;
 import io.github.dsheirer.module.decode.event.IDecodeEvent;
+import io.github.dsheirer.module.decode.p25.phase1.P25PipelineDiagnostics;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.source.ISourceEventListener;
 import io.github.dsheirer.source.SourceEvent;
@@ -110,12 +111,12 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
             mutableIdentifierCollection.setIdentifierUpdateListener(mIdentifierUpdateNotificationProxy);
 
             StateMachine stateMachine = new StateMachine(timeslot, State.MULTI_CHANNEL_ACTIVE_STATES);
-            stateMachine.setDiagnosticsChannelName(channel.getName());
+            stateMachine.setDiagnosticsChannelName(P25PipelineDiagnostics.keyFor(channel));
             mStateMachineMap.put(timeslot, stateMachine);
             stateMachine.addListener(this);
 
             StateMonitoringSquelchController squelchController = new StateMonitoringSquelchController(timeslot);
-            squelchController.setDiagnosticsChannelName(channel.getName());
+            squelchController.setDiagnosticsChannelName(P25PipelineDiagnostics.keyFor(channel));
             mSquelchControllerMap.put(timeslot, squelchController);
             stateMachine.addListener(squelchController);
 

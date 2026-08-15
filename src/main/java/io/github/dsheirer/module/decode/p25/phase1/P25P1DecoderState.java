@@ -326,9 +326,9 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     {
         if(iMessage instanceof P25P1Message message)
         {
-            if(P25PipelineDiagnostics.isEnabled(mChannel.getName()))
+            if(P25PipelineDiagnostics.isEnabled(P25PipelineDiagnostics.keyFor(mChannel)))
             {
-                P25PipelineDiagnostics.log(mChannel.getName(), "DECODER_STATE", "MSG_RECV",
+                P25PipelineDiagnostics.log(P25PipelineDiagnostics.keyFor(mChannel), "DECODER_STATE", "MSG_RECV",
                     message.getDUID().name() + " valid=" + message.isValid() + " nac=" + message.getNAC());
             }
 
@@ -916,18 +916,18 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
                 if(headerData.isEncryptedAudio())
                 {
-                    if(P25PipelineDiagnostics.isEnabled(mChannel.getName()))
+                    if(P25PipelineDiagnostics.isEnabled(P25PipelineDiagnostics.keyFor(mChannel)))
                     {
-                        P25PipelineDiagnostics.log(mChannel.getName(), "DECODER_STATE", "HDU_ENCRYPTED", "START/ENCRYPTED");
+                        P25PipelineDiagnostics.log(P25PipelineDiagnostics.keyFor(mChannel), "DECODER_STATE", "HDU_ENCRYPTED", "START/ENCRYPTED");
                     }
                     broadcast(new DecoderStateEvent(this, Event.START, State.ENCRYPTED));
                 }
                 else
                 {
                     mDiagCallStartCount++;
-                    if(P25PipelineDiagnostics.isEnabled(mChannel.getName()))
+                    if(P25PipelineDiagnostics.isEnabled(P25PipelineDiagnostics.keyFor(mChannel)))
                     {
-                        P25PipelineDiagnostics.log(mChannel.getName(), "DECODER_STATE", "HDU_CALL_START", "START/CALL tg=" + headerData.getTalkgroup());
+                        P25PipelineDiagnostics.log(P25PipelineDiagnostics.keyFor(mChannel), "DECODER_STATE", "HDU_CALL_START", "START/CALL tg=" + headerData.getTalkgroup());
                     }
                     broadcast(new DecoderStateEvent(this, Event.START, State.CALL));
                 }
@@ -1137,9 +1137,9 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
         if(tduFadeC4FM && (mModulation == Modulation.C4FM || mModulation == Modulation.C4FM_V2))
         {
-            if(P25PipelineDiagnostics.isEnabled(mChannel.getName()))
+            if(P25PipelineDiagnostics.isEnabled(P25PipelineDiagnostics.keyFor(mChannel)))
             {
-                P25PipelineDiagnostics.log(mChannel.getName(), "DECODER_STATE", "TDU_FADE", "C4FM TDU→END/FADE");
+                P25PipelineDiagnostics.log(P25PipelineDiagnostics.keyFor(mChannel), "DECODER_STATE", "TDU_FADE", "C4FM TDU→END/FADE");
             }
             broadcast(new DecoderStateEvent(this, Event.END, State.FADE));
         }
@@ -2395,7 +2395,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     {
         super.stop();
         stopPeriodicHoldoverCheck();
-        P25PipelineDiagnostics.disableChannel(mChannel.getName());
+        P25PipelineDiagnostics.disableChannel(P25PipelineDiagnostics.keyFor(mChannel));
     }
 
     @Override

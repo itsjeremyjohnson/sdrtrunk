@@ -37,9 +37,17 @@ public class CTCSSDetector
     private double mSampleRate;
     private int mBlockSize;
     private double mCoefficient;
+    private double mLowerCoefficient;
+    private double mUpperCoefficient;
     private double mS;
     private double mSPrev;
     private double mSPrev2;
+    private double mLowerS;
+    private double mLowerSPrev;
+    private double mLowerSPrev2;
+    private double mUpperS;
+    private double mUpperSPrev;
+    private double mUpperSPrev2;
     private int mSampleCount;
     private boolean mToneDetected;
     private int mHysteresisCount;
@@ -79,11 +87,31 @@ public class CTCSSDetector
             mBlockSize = minimumBlockSize;
         }
 
-        // Pre-calculate Goertzel coefficient for the target frequency
-        double normalizedFrequency = mTargetFrequency / sampleRate;
-        mCoefficient = 2.0 * Math.cos(2.0 * Math.PI * normalizedFrequency);
+        mCoefficient = getCoefficient(mTargetFrequency);
+
+        double lowerFrequency = 0;
+        double upperFrequency = 0;
+        for(CTCSSFrequency frequency : CTCSSFrequency.values())
+        {
+            double value = frequency.getFrequency();
+            if(value > 0 && value < mTargetFrequency && value > lowerFrequency)
+            {
+                lowerFrequency = value;
+            }
+            if(value > mTargetFrequency && (upperFrequency == 0 || value < upperFrequency))
+            {
+                upperFrequency = value;
+            }
+        }
+        mLowerCoefficient = lowerFrequency > 0 ? getCoefficient(lowerFrequency) : 0;
+        mUpperCoefficient = upperFrequency > 0 ? getCoefficient(upperFrequency) : 0;
 
         reset();
+    }
+
+    private double getCoefficient(double frequency)
+    {
+        return 2.0 * Math.cos(2.0 * Math.PI * frequency / mSampleRate);
     }
 
     /**
@@ -94,6 +122,12 @@ public class CTCSSDetector
         mS = 0;
         mSPrev = 0;
         mSPrev2 = 0;
+        mLowerS = 0;
+        mLowerSPrev = 0;
+        mLowerSPrev2 = 0;
+        mUpperS = 0;
+        mUpperSPrev = 0;
+        mUpperSPrev2 = 0;
         mSampleCount = 0;
     }
 
@@ -137,6 +171,19 @@ public class CTCSSDetector
             mSPrev2 = mSPrev;
             mSPrev = mS;
 
+            if(mLowerCoefficient != 0)
+            {
+                mLowerS = sample + (mLowerCoefficient * mLowerSPrev) - mLowerSPrev2;
+                mLowerSPrev2 = mLowerSPrev;
+                mLowerSPrev = mLowerS;
+            }
+            if(mUpperCoefficient != 0)
+            {
+                mUpperS = sample + (mUpperCoefficient * mUpperSPrev) - mUpperSPrev2;
+                mUpperSPrev2 = mUpperSPrev;
+                mUpperSPrev = mUpperS;
+            }
+
             mSampleCount++;
 
             if(mSampleCount >= mBlockSize)
@@ -156,6 +203,10 @@ public class CTCSSDetector
     private void evaluateBlock()
     {
         double magnitude = getMagnitudeSquared(mSPrev, mSPrev2, mCoefficient);
+        double lowerMagnitude = mLowerCoefficient != 0 ?
+                getMagnitudeSquared(mLowerSPrev, mLowerSPrev2, mLowerCoefficient) : 0;
+        double upperMagnitude = mUpperCoefficient != 0 ?
+                getMagnitudeSquared(mUpperSPrev, mUpperSPrev2, mUpperCoefficient) : 0;
 
         // Fixed reference level scaled to block size
         double totalPower = (double)mBlockSize * mBlockSize * 0.01;
@@ -168,7 +219,7 @@ public class CTCSSDetector
         else
         {
             double ratio = 10.0 * Math.log10(magnitude / totalPower);
-            tonePresent = ratio > DETECTION_THRESHOLD_DB;
+            tonePresent = ratio > DETECTION_THRESHOLD_DB && magnitude > lowerMagnitude && magnitude > upperMagnitude;
         }
 
         // Apply hysteresis
@@ -217,5 +268,11 @@ public class CTCSSDetector
         mS = 0;
         mSPrev = 0;
         mSPrev2 = 0;
+        mLowerS = 0;
+        mLowerSPrev = 0;
+        mLowerSPrev2 = 0;
+        mUpperS = 0;
+        mUpperSPrev = 0;
+        mUpperSPrev2 = 0;
     }
 }
