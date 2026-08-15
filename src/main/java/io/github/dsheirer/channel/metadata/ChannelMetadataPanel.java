@@ -56,7 +56,6 @@ import java.awt.Component;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.text.DecimalFormat;
-import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashSet;
 import java.util.List;
@@ -456,18 +455,14 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     }
 
     /**
-     * Returns the aliases associated with a channel's metadata, preferring TO (talkgroup) aliases,
-     * falling back to FROM (radio) aliases, and finally falling back to the channel's configured
-     * alias list (for conventional channels like NBFM that may not have active TO/FROM identifiers
-     * between transmissions).
+     * Returns aliases resolved from the channel's active metadata, preferring TO (talkgroup) aliases and falling back to
+     * FROM (radio) aliases.  An idle channel has no concrete alias target and uses channel-local mute tracking.
      *
      * @param metadata to get aliases from
-     * @param channel to get alias list name from (used as fallback)
      * @return list of aliases, or null if none found
      */
-    private List<Alias> getChannelAliases(ChannelMetadata metadata, Channel channel)
+    static List<Alias> getChannelAliases(ChannelMetadata metadata)
     {
-        //First: check live metadata TO aliases (populated during active calls/transmissions)
         List<Alias> toAliases = metadata.getToIdentifierAliases();
 
         if(toAliases != null && !toAliases.isEmpty())
@@ -475,35 +470,11 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
             return toAliases;
         }
 
-        //Second: check live metadata FROM aliases
         List<Alias> fromAliases = metadata.getFromIdentifierAliases();
 
         if(fromAliases != null && !fromAliases.isEmpty())
         {
             return fromAliases;
-        }
-
-        //Third: fallback to the channel's configured alias list.
-        //This handles conventional channels (NBFM) where TO/FROM identifiers are only
-        //present during active transmissions but the channel is conceptually tied to aliases.
-        String aliasListName = channel.getAliasListName();
-
-        if(aliasListName != null && !aliasListName.isEmpty())
-        {
-            List<Alias> aliasListAliases = new ArrayList<>();
-
-            for(Alias alias : mPlaylistManager.getAliasModel().getAliases())
-            {
-                if(alias.hasList() && alias.getAliasListName().equalsIgnoreCase(aliasListName))
-                {
-                    aliasListAliases.add(alias);
-                }
-            }
-
-            if(!aliasListAliases.isEmpty())
-            {
-                return aliasListAliases;
-            }
         }
 
         return null;
@@ -527,7 +498,7 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
      */
     private void setChannelMuted(ChannelMetadata metadata, Channel channel, boolean mute)
     {
-        List<Alias> aliases = getChannelAliases(metadata, channel);
+        List<Alias> aliases = getChannelAliases(metadata);
 
         if(aliases != null)
         {
@@ -587,7 +558,7 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
      */
     private boolean isChannelMuted(ChannelMetadata metadata, Channel channel)
     {
-        List<Alias> aliases = getChannelAliases(metadata, channel);
+        List<Alias> aliases = getChannelAliases(metadata);
 
         if(aliases != null)
         {

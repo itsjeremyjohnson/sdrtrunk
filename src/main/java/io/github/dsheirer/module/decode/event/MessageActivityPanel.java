@@ -133,11 +133,15 @@ public class MessageActivityPanel extends JPanel implements Listener<ProcessingC
         }
     }
 
-    private void restoreFilterStates(FilterSet<IMessage> filterSet)
+    void restoreFilterStates(FilterSet<?> filterSet)
     {
-        for(IFilter<IMessage> ifilter : filterSet.getFilters())
+        for(IFilter<?> ifilter : filterSet.getFilters())
         {
-            if(ifilter instanceof Filter<?,?> filter)
+            if(ifilter instanceof FilterSet<?> childFilterSet)
+            {
+                restoreFilterStates(childFilterSet);
+            }
+            else if(ifilter instanceof Filter<?,?> filter)
             {
                 for(FilterElement<?> element : filter.getFilterElements())
                 {
@@ -148,11 +152,15 @@ public class MessageActivityPanel extends JPanel implements Listener<ProcessingC
         }
     }
 
-    private void saveFilterStates(FilterSet<IMessage> filterSet)
+    void saveFilterStates(FilterSet<?> filterSet)
     {
-        for(IFilter<IMessage> ifilter : filterSet.getFilters())
+        for(IFilter<?> ifilter : filterSet.getFilters())
         {
-            if(ifilter instanceof Filter<?,?> filter)
+            if(ifilter instanceof FilterSet<?> childFilterSet)
+            {
+                saveFilterStates(childFilterSet);
+            }
+            else if(ifilter instanceof Filter<?,?> filter)
             {
                 for(FilterElement<?> element : filter.getFilterElements())
                 {

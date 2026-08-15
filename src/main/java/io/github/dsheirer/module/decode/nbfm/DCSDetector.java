@@ -235,7 +235,7 @@ public class DCSDetector
      * Handles detection of a DCS code from the underlying decoder.
      * Applies confirmation counting before reporting accepted or rejected codes.
      */
-    private void handleDetection(DCSCode code)
+    void handleDetection(DCSCode code)
     {
         if(code == null || code == DCSCode.UNKNOWN)
         {
@@ -245,8 +245,6 @@ public class DCSDetector
         // Note: broadband interference check removed in ap-14.10. Real DCS signals mixed with
         // voice audio produce low band ratios (0.05-0.40), well below any useful threshold.
         // The DCS 23-bit codeword + parity check is sufficient to reject false detections.
-
-        mSamplesSinceLastDetection = 0;
 
         float bandRatio = (mWideBandEnergy > 1e-10f) ? (mLowBandEnergy / mWideBandEnergy) : 0;
         LOGGER.trace("{}DCS code {} detected (ratio={} confirm={}/{} target={})",
@@ -283,7 +281,8 @@ public class DCSDetector
             return;
         }
 
-        // TARGET code detected — reset loss counter
+        // TARGET code detected — reset loss timing
+        mSamplesSinceLastDetection = 0;
         mLossCounter = 0;
 
         // Code is in our allowed set

@@ -279,12 +279,12 @@ public class DecodeConfigNBFM extends DecodeConfigAnalog
     }
 
     /**
-     * Indicates if this channel has valid, enabled tone filters configured
+     * Indicates if the channel's tone gate is enabled.  An enabled gate with no configured tones mutes all audio.
      */
     @JsonIgnore
     public boolean hasToneFiltering()
     {
-        return mToneFilterEnabled && !mToneFilters.isEmpty();
+        return mToneFilterEnabled;
     }
 
     // ========== NEW: Squelch tail/head removal ==========

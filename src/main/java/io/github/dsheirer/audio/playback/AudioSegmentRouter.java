@@ -115,15 +115,9 @@ public class AudioSegmentRouter
     /**
      * Registers an audio segment for routing if it has a custom device configured
      */
-    public void route(AudioSegment audioSegment)
+    public synchronized void route(AudioSegment audioSegment)
     {
         if(!mEnabled || audioSegment == null)
-        {
-            return;
-        }
-
-        // Check if already routing this segment
-        if(mActiveSegments.containsKey(audioSegment))
         {
             return;
         }
@@ -138,6 +132,15 @@ public class AudioSegmentRouter
         }
 
         String deviceName = alias.getAudioOutputDevice();
+        SegmentRouter router = new SegmentRouter(audioSegment, deviceName, alias.getName());
+        audioSegment.incrementConsumerCount();
+
+        if(mActiveSegments.putIfAbsent(audioSegment, router) != null)
+        {
+            audioSegment.decrementConsumerCount();
+            return;
+        }
+
         mLog.info("Starting VAC routing for alias [" + alias.getName() + "] to device [" + deviceName + "]");
 
         // Remove from recently active list if present - new audio is coming
@@ -145,10 +148,6 @@ public class AudioSegmentRouter
 
         // Suppress main playback
         audioSegment.monitorPriorityProperty().set(Priority.DO_NOT_MONITOR);
-
-        // Create a router for this segment
-        SegmentRouter router = new SegmentRouter(audioSegment, deviceName, alias.getName());
-        mActiveSegments.put(audioSegment, router);
     }
 
     /**
@@ -175,6 +174,7 @@ public class AudioSegmentRouter
                 // Mark this device as recently active so we keep feeding it silence
                 mRecentlyActiveLines.put(router.deviceName, System.currentTimeMillis());
                 mLog.debug("Completed routing for segment - routed " + router.getTotalBuffersRouted() + " buffers");
+                segment.decrementConsumerCount();
                 return true; // Remove from active list
             }
 
@@ -470,7 +470,7 @@ public class AudioSegmentRouter
         mEnabled = enabled;
     }
 
-    public void dispose()
+    public synchronized void dispose()
     {
         mEnabled = false;
 
@@ -490,6 +490,11 @@ public class AudioSegmentRouter
                 mExecutor.shutdownNow();
                 Thread.currentThread().interrupt();
             }
+        }
+
+        for(AudioSegment audioSegment : mActiveSegments.keySet())
+        {
+            audioSegment.decrementConsumerCount();
         }
 
         mActiveSegments.clear();

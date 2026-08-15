@@ -197,14 +197,29 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
             getBroadcastConfiguration().getMaximumRecordingAge();
     }
 
-    private void processRecordingQueue()
+    void processRecordingQueue()
     {
         while(connected() && !mAudioRecordingQueue.isEmpty())
         {
             final AudioRecording audioRecording = mAudioRecordingQueue.poll();
             broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_QUEUE_CHANGE));
 
-            if(isValid(audioRecording) && audioRecording.getRecordingLength() > 0)
+            if(!isValid(audioRecording))
+            {
+                audioRecording.removePendingReplay();
+                incrementAgedOffAudioCount();
+                broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_AGED_OFF_COUNT_CHANGE));
+                continue;
+            }
+
+            if(audioRecording.getRecordingLength() <= 0)
+            {
+                audioRecording.removePendingReplay();
+                incrementErrorAudioCount();
+                broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                continue;
+            }
+
             {
                 float durationSeconds = (float)(audioRecording.getRecordingLength() / 1E3f);
                 long timestampSeconds = (int)(audioRecording.getStartTime() / 1E3);
@@ -332,7 +347,15 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
 
         while(audioRecording != null)
         {
-            if(isValid(audioRecording))
+            if(audioRecording.getRecordingLength() <= 0)
+            {
+                mAudioRecordingQueue.poll();
+                audioRecording.removePendingReplay();
+                incrementErrorAudioCount();
+                broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                audioRecording = mAudioRecordingQueue.peek();
+            }
+            else if(isValid(audioRecording))
             {
                 return;
             }

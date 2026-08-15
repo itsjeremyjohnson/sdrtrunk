@@ -192,7 +192,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
     }
 
     @Override
-    public void stop()
+    public synchronized void stop()
     {
         mStopped.set(true);
         stopKeepalive();
@@ -396,10 +396,15 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
     // Audio Processing
     // ========================================================================
 
-    private void processAudioQueue()
+    void processAudioQueue()
     {
         synchronized(this)
         {
+            if(mCurrentStreamId.get() <= 0)
+            {
+                return;
+            }
+
             try
             {
                 float[] buffer;
@@ -565,14 +570,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
         {
             mHttpClient.newWebSocketBuilder()
                 .buildAsync(URI.create(wsUrl), new ZelloWebSocketListener())
-                .thenAccept(ws -> {
-                    mWebSocket = ws;
-                    mSessionEpoch.incrementAndGet();
-                    mReconnecting.set(false);
-                    setLastErrorDetail(null);
-                    sendLogon();
-                    startConnectionTimeout();
-                })
+                .thenAccept(this::handleWebSocketConnected)
                 .exceptionally(ex -> {
                     mLog.error("{}WebSocket connection failed: {}", ch(), ex.getMessage());
                     setLastErrorDetail("WebSocket handshake failed");
@@ -589,6 +587,30 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
             mReconnecting.set(false);
             scheduleReconnect();
         }
+    }
+
+    synchronized void handleWebSocketConnected(WebSocket webSocket)
+    {
+        mReconnecting.set(false);
+
+        if(mStopped.get())
+        {
+            try
+            {
+                webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "Shutting down");
+            }
+            catch(Exception e)
+            {
+                // Connection may already be closed.
+            }
+            return;
+        }
+
+        mWebSocket = webSocket;
+        mSessionEpoch.incrementAndGet();
+        setLastErrorDetail(null);
+        sendLogon();
+        startConnectionTimeout();
     }
 
     private void disconnectWebSocket()
