@@ -34,6 +34,7 @@ import io.github.dsheirer.preference.UserPreferences;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.lang.reflect.Modifier;
 import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Stream;
@@ -69,6 +70,14 @@ class LiveAudioRecordingManagerTest
         {
             mUserPreferences.getDirectoryPreference().setDirectoryRecording(mOriginalRecordingDirectory);
         }
+    }
+
+    @Test
+    void queuedDiscardUsesProcessorSynchronization() throws Exception
+    {
+        var method = LiveAudioRecordingManager.class.getDeclaredMethod("discardQueuedAudioSegments");
+        assertTrue(Modifier.isSynchronized(method.getModifiers()),
+            "Shutdown discard must use the same monitor as processAudioSegments");
     }
 
     @Test

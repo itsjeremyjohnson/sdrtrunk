@@ -45,6 +45,7 @@ import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Random;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -112,7 +113,7 @@ class SignalClassifierTest
      */
     static class FakeComplexSource extends ComplexSource
     {
-        private Listener<ComplexSamples> mSampleListener;
+        protected Listener<ComplexSamples> mSampleListener;
         private Listener<SourceEvent> mSourceEventListener;
         final AtomicBoolean mStopped = new AtomicBoolean(false);
 
@@ -156,6 +157,29 @@ class SignalClassifierTest
             {
                 i[x] = 1.0f;
                 q[x] = 1.0f;
+            }
+            mSampleListener.receive(new ComplexSamples(i, q, System.currentTimeMillis()));
+        }
+    }
+
+    static class NoiseOnlyComplexSource extends FakeComplexSource
+    {
+        @Override
+        public void start()
+        {
+            if(mSampleListener == null)
+            {
+                return;
+            }
+
+            Random random = new Random(42L);
+            int size = 13_500;
+            float[] i = new float[size];
+            float[] q = new float[size];
+            for(int x = 0; x < size; x++)
+            {
+                i[x] = (float)(random.nextGaussian() * 0.05);
+                q[x] = (float)(random.nextGaussian() * 0.05);
             }
             mSampleListener.receive(new ComplexSamples(i, q, System.currentTimeMillis()));
         }
@@ -450,6 +474,25 @@ class SignalClassifierTest
         assertTrue(noSignalSource.mStopped.get(), "source must be stopped even for NO_SIGNAL");
     }
 
+    @Test
+    @Timeout(5)
+    void classify_noiseOnlySamples_returnsNoSignalWithoutBuildingProbes() throws Exception
+    {
+        NoiseOnlyComplexSource noiseSource = new NoiseOnlyComplexSource();
+        FakeProbeChainFactory factory = new FakeProbeChainFactory(new HashMap<>(), new HashMap<>());
+        SourceProvider provider = (config, spec, name) -> noiseSource;
+        DiscoveryPreference preferences = new DiscoveryPreference(type -> {})
+        {
+            @Override public Duration probeWindow(DecoderType decoderType) { return Duration.ofMillis(20); }
+        };
+
+        ClassificationResult result = new SignalClassifier(provider, factory, preferences, mExecutor)
+            .classify(ClassificationRequest.forFrequency(FREQ)).get();
+
+        assertEquals(ClassificationOutcome.NO_SIGNAL, result.outcome());
+        assertTrue(factory.getBuiltChains().isEmpty(), "Receiver noise must not enter decoder probing");
+    }
+
     // -------------------------------------------------------------------------
     // Test 4: SourceProvider returns null → ERROR
     // -------------------------------------------------------------------------
@@ -484,10 +527,12 @@ class SignalClassifierTest
             }
 
             @Override
-            public boolean hasCapacityBeyondHeadroom(int headroomChannels)
+            public ComplexSource acquireWithHeadroom(SourceConfiguration config,
+                                                      ChannelSpecification specification,
+                                                      String threadName, int headroomChannels)
             {
                 assertEquals(2, headroomChannels);
-                return false;
+                return null;
             }
         };
         mUserPreferences.getDiscoveryPreference().setTunerHeadroomChannels(2);
@@ -498,6 +543,52 @@ class SignalClassifierTest
 
         assertEquals(ClassificationOutcome.ERROR, result.outcome());
         assertFalse(acquired.get(), "Headroom rejection must occur before source acquisition");
+    }
+
+    @Test
+    @Timeout(5)
+    void classify_concurrentHeadroomAcquisitionsPreserveReserve() throws Exception
+    {
+        AtomicInteger idleTuners = new AtomicInteger(2);
+        AtomicInteger acquisitions = new AtomicInteger();
+        SourceProvider provider = new SourceProvider()
+        {
+            @Override
+            public ComplexSource acquire(SourceConfiguration config, ChannelSpecification specification,
+                                         String threadName)
+            {
+                throw new AssertionError("Headroom-aware acquisition is required");
+            }
+
+            @Override
+            public synchronized ComplexSource acquireWithHeadroom(SourceConfiguration config,
+                                                                  ChannelSpecification specification,
+                                                                  String threadName, int headroomChannels)
+            {
+                if(idleTuners.get() <= headroomChannels)
+                {
+                    return null;
+                }
+                idleTuners.decrementAndGet();
+                acquisitions.incrementAndGet();
+                return new NoSignalComplexSource();
+            }
+        };
+        DiscoveryPreference preferences = new DiscoveryPreference(type -> {})
+        {
+            @Override public int getTunerHeadroomChannels() { return 1; }
+            @Override public int getMaxConcurrentClassifications() { return 2; }
+        };
+        SignalClassifier classifier = new SignalClassifier(provider,
+            new FakeProbeChainFactory(new HashMap<>(), new HashMap<>()), preferences, mExecutor);
+
+        CompletableFuture<ClassificationResult> first = classifier.classify(
+            ClassificationRequest.forFrequency(FREQ));
+        CompletableFuture<ClassificationResult> second = classifier.classify(
+            ClassificationRequest.forFrequency(FREQ + 10_000));
+        CompletableFuture.allOf(first, second).get();
+
+        assertEquals(1, acquisitions.get(), "Concurrent classifications must not consume the reserved tuner");
     }
 
     // -------------------------------------------------------------------------

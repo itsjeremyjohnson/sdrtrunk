@@ -1199,8 +1199,10 @@ public class BandScanController
                     }
                 });
             }
-            case UNIDENTIFIED, NO_SIGNAL ->
+            case UNIDENTIFIED ->
                 clearClassification(discovery, DiscoveryState.UNIDENTIFIED, now);
+            case NO_SIGNAL ->
+                clearClassification(discovery, DiscoveryState.UNIDENTIFIED, null);
             case ERROR ->
                 clearClassification(discovery, DiscoveryState.ERROR, now);
             case CANCELLED ->
@@ -1214,7 +1216,10 @@ public class BandScanController
     private static void clearClassification(Discovery discovery, DiscoveryState state, Instant lastSeen)
     {
         FxThreads.run(() -> {
-            discovery.setLastSeen(lastSeen);
+            if(lastSeen != null)
+            {
+                discovery.setLastSeen(lastSeen);
+            }
             discovery.setState(state);
             discovery.setDetectedDecoder(null);
             discovery.setDetectedDecodeConfiguration(null);

@@ -1576,9 +1576,10 @@ class BandScanControllerTest
 
         Classifier countingClassifier = req ->
         {
-            classifyCallCount.incrementAndGet();
-            return CompletableFuture.completedFuture(
-                ClassificationResult.unidentified(req.centerFrequencyHz(), List.of(), Double.NaN));
+            int call = classifyCallCount.incrementAndGet();
+            return CompletableFuture.completedFuture(call == 1
+                ? ClassificationResult.unidentified(req.centerFrequencyHz(), List.of(), Double.NaN)
+                : ClassificationResult.noSignal(req.centerFrequencyHz(), Double.NaN));
         };
 
         // First cycle: survey returns FREQ_A; subsequent cycles: survey returns nothing
@@ -1607,6 +1608,7 @@ class BandScanControllerTest
             .filter(x -> x.getCenterFrequencyHz() == FREQ_A)
             .findFirst().orElseThrow();
         ctrl.setWatched(d, true);
+        Instant lastSeenWithEnergy = d.getLastSeen();
 
         int callCountAfterFirstCycle = classifyCallCount.get();
 
@@ -1619,6 +1621,8 @@ class BandScanControllerTest
         // Must have probed again even though the survey returned no energy at FREQ_A
         assertTrue(classifyCallCount.get() > callCountAfterFirstCycle,
             "Watched UNIDENTIFIED should be re-probed even when survey returns no peak at that frequency");
+        assertEquals(lastSeenWithEnergy, d.getLastSeen(),
+            "A NO_SIGNAL reprobe must not claim the absent watched signal was seen again");
     }
 
     // -------------------------------------------------------------------------

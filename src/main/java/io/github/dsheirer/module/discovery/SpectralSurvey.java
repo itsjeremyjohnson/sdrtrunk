@@ -478,7 +478,7 @@ public class SpectralSurvey implements SpectralSurveyApi
         List<Long> stepCenters = new ArrayList<>();
         long center = minHz + halfUsableBandwidthHz;
 
-        while(center - halfUsableBandwidthHz < maxHz)
+        while(stepCenters.isEmpty() || stepCenters.getLast() + halfUsableBandwidthHz < maxHz)
         {
             stepCenters.add(center);
             center += strideHz;

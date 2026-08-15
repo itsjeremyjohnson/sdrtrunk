@@ -508,6 +508,19 @@ class SpectralSurveyTest
 
     @Test
     @Timeout(10)
+    void survey_steppedPath_stopsWhenPriorWindowCoversUpperBound() throws Exception
+    {
+        FakeTunerControl tunerControl = new FakeTunerControl(100_000_000L, 4_000_000.0);
+        SpectralSurvey survey = new SpectralSurvey(mExecutor);
+
+        survey.survey(100_000_000L, 110_000_000L, Duration.ofMillis(10), 6.0, null, tunerControl).get();
+
+        assertEquals(4, tunerControl.getSetFreqCallCount(),
+            "Three windows cover the span; only the fourth call should restore the original center");
+    }
+
+    @Test
+    @Timeout(10)
     void survey_steppedPath_appliesConfiguredDwellPerStep() throws Exception
     {
         FakeTunerControl tunerControl = new FakeTunerControl(160_000_000L, 2_000_000.0);

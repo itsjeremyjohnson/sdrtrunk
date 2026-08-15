@@ -19,6 +19,8 @@
 package io.github.dsheirer.module.discovery;
 
 import io.github.dsheirer.dsp.squelch.PowerMonitor;
+import io.github.dsheirer.dsp.window.WindowFactory;
+import io.github.dsheirer.dsp.window.WindowType;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
@@ -35,6 +37,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
@@ -44,6 +47,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
+import org.jtransforms.fft.FloatFFT_1D;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -55,11 +59,10 @@ import org.slf4j.LoggerFactory;
  *   <li>Acquire a {@link ComplexSource} from the injected {@link SourceProvider}.
  *       If the provider returns {@code null} (no tuner capacity) → {@link ClassificationOutcome#ERROR}.</li>
  *   <li>Start a {@link ComplexSampleFanout} over the real source and subscribe a
- *       {@link PowerMonitor} to it.  Wait up to the <em>energy gate window</em> (~1 s)
- *       collecting power readings.  If zero readings arrive (no samples at all), return
- *       {@link ClassificationOutcome#NO_SIGNAL}; otherwise continue probing and retain the
- *       peak measured power for result reporting.  Temporal variation of one tuned signal is
- *       not treated as an SNR estimate.</li>
+ *       {@link PowerMonitor} and short FFT accumulator to it. Wait up to the <em>energy gate window</em>
+ *       (~1 s), then compare the strongest averaged spectral bin with the adaptive median-bin noise floor.
+ *       If it does not exceed the configured threshold, return {@link ClassificationOutcome#NO_SIGNAL};
+ *       otherwise continue probing and retain the peak channel power for result reporting.</li>
  *   <li>Subscribe up to N probe chains concurrently (N = {@link DiscoveryPreference#getMaxConcurrentProbes()},
  *       clamped ≥ 1), in {@link CandidateOrdering} priority order.  As soon as any chain
  *       reaches {@link LockState#LOCKED} the remaining lower-priority candidates are skipped.
@@ -346,16 +349,10 @@ public class SignalClassifier implements Classifier
         ComplexSource realSource;
         int headroomChannels = mDiscoveryPreference.getTunerHeadroomChannels();
 
-        if(headroomChannels > 0 && !mSourceProvider.hasCapacityBeyondHeadroom(headroomChannels))
-        {
-            mLog.info("SignalClassifier: preserving {} tuner headroom channel(s) for {} Hz",
-                headroomChannels, freqHz);
-            return ClassificationResult.error(freqHz, "tuner headroom reserve reached");
-        }
-
         try
         {
-            realSource = mSourceProvider.acquire(sourceConfig, channelSpec, "discovery-" + freqHz);
+            realSource = mSourceProvider.acquireWithHeadroom(sourceConfig, channelSpec,
+                "discovery-" + freqHz, headroomChannels);
         }
         catch(SourceException e)
         {
@@ -701,9 +698,9 @@ public class SignalClassifier implements Classifier
      * Attaches a {@link PowerMonitor} subscriber to the fanout, then starts the real
      * source, and waits up to {@link #ENERGY_GATE_WINDOW} collecting power readings.
      *
-     * <p>If no readings arrive at all (zero samples), {@code Double.NaN} is returned.
-     * Otherwise the peak measured power is returned.  The minimum and maximum readings from
-     * the same tuned signal are not a noise-floor/SNR measurement.</p>
+     * <p>If no readings arrive, or the strongest spectral bin does not exceed the adaptive
+     * FFT-bin noise floor by the configured threshold, {@code Double.NaN} is returned.
+     * Otherwise the peak measured channel power is returned for result reporting.</p>
      *
      * <p>The subscriber is registered <em>before</em> the source is started so that
      * samples delivered synchronously during {@code start()} (as in tests) are captured.</p>
@@ -723,6 +720,7 @@ public class SignalClassifier implements Classifier
 
         PowerMonitor pm = new PowerMonitor();
         pm.setSampleRate((int) realSource.getSampleRate());
+        EnergySpectrum spectrum = new EnergySpectrum();
 
         pm.setSourceEventListener(event -> {
             if(event.getEvent() == SourceEvent.Event.NOTIFICATION_CHANNEL_POWER && event.hasValue())
@@ -742,7 +740,11 @@ public class SignalClassifier implements Classifier
 
         // Register subscriber BEFORE starting the source
         ComplexSource energySub = fanout.newSubscriberSource();
-        energySub.setListener(samples -> pm.process(samples.i(), samples.q()));
+        energySub.setListener(samples ->
+        {
+            spectrum.process(samples.i(), samples.q());
+            pm.process(samples.i(), samples.q());
+        });
 
         // Now start the source — any synchronously pushed samples will be captured
         realSource.start();
@@ -786,9 +788,70 @@ public class SignalClassifier implements Classifier
                 return Double.NaN;
             }
 
-            // Temporal variation of the same tuned signal is not an SNR estimate.  Any valid
-            // power reading is sufficient to continue probing; retain the peak for reporting.
-            return powerReadings.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN);
+            double peakPower = powerReadings.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN);
+            double spectralSnr = spectrum.getPeakSnrDb();
+            return Double.isFinite(peakPower) && spectralSnr >= mDiscoveryPreference.getEnergyThresholdDb()
+                ? peakPower : Double.NaN;
+        }
+    }
+
+    /**
+     * Accumulates short FFT frames and compares the strongest averaged bin with the median-bin adaptive floor.
+     */
+    private static class EnergySpectrum
+    {
+        private static final int FFT_SIZE = 2048;
+        private final float[] mWindow = WindowFactory.getWindow(WindowType.HANN, FFT_SIZE);
+        private final FloatFFT_1D mFft = new FloatFFT_1D(FFT_SIZE);
+        private final float[] mFrame = new float[FFT_SIZE * 2];
+        private final double[] mPowerSum = new double[FFT_SIZE];
+        private int mPointer;
+        private int mFrameCount;
+
+        synchronized void process(float[] i, float[] q)
+        {
+            int count = Math.min(i.length, q.length);
+            for(int sample = 0; sample < count; sample++)
+            {
+                mFrame[mPointer * 2] = i[sample] * mWindow[mPointer];
+                mFrame[mPointer * 2 + 1] = q[sample] * mWindow[mPointer];
+                mPointer++;
+
+                if(mPointer == FFT_SIZE)
+                {
+                    mFft.complexForward(mFrame);
+                    for(int bin = 0; bin < FFT_SIZE; bin++)
+                    {
+                        float real = mFrame[bin * 2];
+                        float imaginary = mFrame[bin * 2 + 1];
+                        mPowerSum[bin] += real * real + imaginary * imaginary;
+                    }
+                    mFrameCount++;
+                    mPointer = 0;
+                }
+            }
+        }
+
+        synchronized double getPeakSnrDb()
+        {
+            if(mFrameCount == 0)
+            {
+                return Double.NaN;
+            }
+
+            float[] averagedDb = new float[FFT_SIZE];
+            float peak = -Float.MAX_VALUE;
+            for(int bin = 0; bin < FFT_SIZE; bin++)
+            {
+                averagedDb[bin] = (float)(10.0 * Math.log10(Math.max(1.0e-20,
+                    mPowerSum[bin] / mFrameCount)));
+                peak = Math.max(peak, averagedDb[bin]);
+            }
+
+            float[] floorBins = averagedDb.clone();
+            Arrays.sort(floorBins);
+            double noiseFloor = floorBins[floorBins.length / 2];
+            return peak - noiseFloor;
         }
     }
 }

@@ -361,7 +361,7 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
         mWriters.clear();
     }
 
-    private void discardQueuedAudioSegments()
+    private synchronized void discardQueuedAudioSegments()
     {
         AudioSegment audioSegment = mNewAudioSegments.poll();
 

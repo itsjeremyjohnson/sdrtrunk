@@ -249,14 +249,27 @@ public class SDRTrunk implements Listener<TunerEvent>
             }
 
             @Override
-            public boolean hasCapacityBeyondHeadroom(int headroomChannels)
+            public synchronized ComplexSource acquireWithHeadroom(SourceConfiguration config,
+                                                                   ChannelSpecification spec,
+                                                                   String name,
+                                                                   int headroomChannels) throws SourceException
             {
-                long idleTuners = mTunerManager.getAvailableTuners().stream()
-                    .filter(discovered -> discovered.getTuner() != null)
-                    .filter(discovered -> discovered.getTuner().getChannelSourceManager() != null)
-                    .filter(discovered -> discovered.getTuner().getChannelSourceManager().getTunerChannelCount() == 0)
-                    .count();
-                return idleTuners > headroomChannels;
+                if(headroomChannels > 0)
+                {
+                    long idleTuners = mTunerManager.getAvailableTuners().stream()
+                        .filter(discovered -> discovered.getTuner() != null)
+                        .filter(discovered -> discovered.getTuner().getChannelSourceManager() != null)
+                        .filter(discovered ->
+                            discovered.getTuner().getChannelSourceManager().getTunerChannelCount() == 0)
+                        .count();
+
+                    if(idleTuners <= headroomChannels)
+                    {
+                        return null;
+                    }
+                }
+
+                return acquire(config, spec, name);
             }
         };
         ProbeChainFactory probeChainFactory = new ProbeChainFactory(aliasModel,

@@ -52,14 +52,19 @@ public interface SourceProvider
         throws SourceException;
 
     /**
-     * Indicates whether a discovery source can be acquired while preserving the requested operator reserve.
-     * Implementations without capacity visibility may retain the default behavior.
+     * Atomically checks the requested operator reserve and acquires a source. Implementations with capacity
+     * visibility should override this method so concurrent classifications cannot pass a separate capacity check.
      *
+     * @param config source configuration
+     * @param specification channel specification
+     * @param threadName suggested source worker name
      * @param headroomChannels number of tuner channels to keep free
-     * @return {@code true} when acquisition may proceed
+     * @return the acquired source, or {@code null} when acquisition would consume the reserve
+     * @throws SourceException if acquisition fails
      */
-    default boolean hasCapacityBeyondHeadroom(int headroomChannels)
+    default ComplexSource acquireWithHeadroom(SourceConfiguration config, ChannelSpecification specification,
+                                              String threadName, int headroomChannels) throws SourceException
     {
-        return true;
+        return acquire(config, specification, threadName);
     }
 }
