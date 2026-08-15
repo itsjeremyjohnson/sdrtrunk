@@ -142,12 +142,18 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     }
 
     @Override
-    public synchronized void stop()
+    public void stop()
     {
+        // Do not hold this recorder's monitor while waiting for an in-flight dispatcher batch: process() needs the same
+        // monitor to write that batch before the WAV is closed.
         mBufferProcessor.flushAndStop();
         mBufferProcessor.setListener(null);
-        mRunning = false;
-        closeActiveRecording();
+
+        synchronized(this)
+        {
+            mRunning = false;
+            closeActiveRecording();
+        }
     }
 
     @Override

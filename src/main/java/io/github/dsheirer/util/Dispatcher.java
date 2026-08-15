@@ -175,8 +175,21 @@ public class Dispatcher<E> implements Listener<E>
 
             if(mExecutorService != null)
             {
-                mExecutorService.shutdown();
+                ScheduledExecutorService executorService = mExecutorService;
+                executorService.shutdown();
                 mExecutorService = null;
+
+                try
+                {
+                    if(!executorService.awaitTermination(2, TimeUnit.SECONDS))
+                    {
+                        mLog.warn("Timed out waiting for dispatcher [{}] to finish its in-flight batch", mThreadName);
+                    }
+                }
+                catch(InterruptedException e)
+                {
+                    Thread.currentThread().interrupt();
+                }
             }
 
             List<E> elements = new ArrayList<>();
@@ -218,18 +231,20 @@ public class Dispatcher<E> implements Listener<E>
 
         mQueue.drainTo(elements);
 
+        Listener<E> listener = mListener;
+
         for(E element: elements)
         {
-            if(mRunning.get() && mListener != null)
+            if(listener != null)
             {
                 try
                 {
-                    mListener.receive(element);
+                    listener.receive(element);
                 }
                 catch(Throwable t)
                 {
                     mLog.error("Error while dispatching element [" + element.getClass() + "] to listener [" +
-                            mListener.getClass() + "]", t);
+                            listener.getClass() + "]", t);
                 }
             }
         }

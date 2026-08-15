@@ -29,7 +29,9 @@ import io.github.dsheirer.alias.action.beep.BeepAction;
 import io.github.dsheirer.alias.action.clip.ClipAction;
 import io.github.dsheirer.alias.action.script.ScriptAction;
 import io.github.dsheirer.message.IMessage;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import javafx.beans.Observable;
 import javafx.beans.property.SimpleStringProperty;
@@ -108,7 +110,24 @@ public abstract class AliasAction
         {
             mUnknownProperties = new LinkedHashMap<>();
         }
-        mUnknownProperties.put(key, value);
+        Object existing = mUnknownProperties.get(key);
+        if(existing == null)
+        {
+            mUnknownProperties.put(key, value);
+        }
+        else if(existing instanceof List<?> list)
+        {
+            List<Object> values = new ArrayList<>(list);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
+        else
+        {
+            List<Object> values = new ArrayList<>();
+            values.add(existing);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
     }
 
     @JsonAnyGetter
@@ -121,7 +140,9 @@ public abstract class AliasAction
     {
         if(aliasAction != null && aliasAction.mUnknownProperties != null)
         {
-            mUnknownProperties = new LinkedHashMap<>(aliasAction.mUnknownProperties);
+            mUnknownProperties = new LinkedHashMap<>();
+            aliasAction.mUnknownProperties.forEach((key, value) -> mUnknownProperties.put(key,
+                    value instanceof List<?> list ? new ArrayList<>(list) : value));
         }
     }
 }

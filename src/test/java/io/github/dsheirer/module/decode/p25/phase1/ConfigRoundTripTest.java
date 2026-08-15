@@ -132,6 +132,25 @@ public class ConfigRoundTripTest
     }
 
     @Test
+    void repeatedUnknownAliasActionPropertiesRoundTrip() throws Exception
+    {
+        XmlMapper mapper = createMapper();
+        String xml = """
+                <action type="beepAction">
+                  <futureActionValue>one</futureActionValue>
+                  <futureActionValue>two</futureActionValue>
+                </action>
+                """;
+
+        BeepAction action = mapper.readValue(xml, BeepAction.class);
+        assertEquals(java.util.List.of("one", "two"),
+                action.getUnknownProperties().get("futureActionValue"));
+
+        String output = mapper.writeValueAsString(action);
+        assertEquals(2, output.split("<futureActionValue>", -1).length - 1);
+    }
+
+    @Test
     void loggerRemovalUpdatesSerializedValues()
     {
         EventLogConfiguration configuration = new EventLogConfiguration();

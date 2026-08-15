@@ -10,7 +10,9 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import java.io.File;
 import java.io.StringReader;
+import java.nio.file.Path;
 import java.util.List;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.junit.jupiter.api.Test;
@@ -18,6 +20,7 @@ import org.xml.sax.InputSource;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class DecodeQualityCompatibilityTest
 {
@@ -110,6 +113,28 @@ class DecodeQualityCompatibilityTest
         assertEquals(false, DecodeQualityTest.shouldGateImbeFrames(-1));
         assertEquals(false, DecodeQualityTest.shouldGateImbeFrames(0));
         assertEquals(true, DecodeQualityTest.shouldGateImbeFrames(1));
+    }
+
+    @Test
+    void scoringDecodeFailuresPropagate()
+    {
+        File missing = new File("build/nonexistent-decode-quality-sample.wav");
+        assertThrows(IllegalStateException.class,
+                () -> DecodeQualityTest.runDecode(missing, "C4FM", -1, false, 5, 0, 0, 0));
+        TestJmbeCodecLoader codec = new TestJmbeCodecLoader(null);
+        assertThrows(IllegalStateException.class,
+                () -> DecodeQualityTest.decodeAudio(missing, "C4FM", -1, codec, Path.of("build"),
+                        5, 0, 500, 0.01f, 200, 0, 0, 0));
+    }
+
+    @Test
+    void fireDepartmentChannelRecognitionUsesFdTokenBoundaries()
+    {
+        assertEquals(true, DecodeQualityTest.isFireDepartmentChannel("FD Dispatch"));
+        assertEquals(true, DecodeQualityTest.isFireDepartmentChannel("FD"));
+        assertEquals(true, DecodeQualityTest.isFireDepartmentChannel("Londonderry-FD"));
+        assertEquals(true, DecodeQualityTest.isFireDepartmentChannel("County Fire"));
+        assertEquals(false, DecodeQualityTest.isFireDepartmentChannel("FDR Dispatch"));
     }
 
     @Test

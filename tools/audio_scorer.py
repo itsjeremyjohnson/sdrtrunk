@@ -85,6 +85,8 @@ def analyze_audio_directory(audio_dir, enable_stt=False, stt_model="tiny"):
             print(f"  Whisper model loaded.", file=sys.stderr)
         except ImportError:
             print("  WARNING: whisper not available, skipping STT", file=sys.stderr)
+        except Exception as error:
+            print(f"  WARNING: failed to load whisper model, skipping STT: {error}", file=sys.stderr)
 
     for idx, subdir in enumerate(subdirs):
         subdir_path = os.path.join(audio_dir, subdir)
@@ -147,6 +149,11 @@ def analysis_window_starts(sample_count, window_size):
     return range(0, sample_count - window_size + 1, window_size)
 
 
+def completed_tone_run_count(sustained_tone_windows):
+    """Return one completed dispatch tone for a continuous run of at least one second."""
+    return 1 if sustained_tone_windows >= 2 else 0
+
+
 def detect_tones_and_distortion(mp3_files):
     """
     Detect dispatch tones and distortion events in audio segments.
@@ -180,6 +187,9 @@ def detect_tones_and_distortion(mp3_files):
                 # Check for perfect silence (distortion indicator)
                 if np.max(np.abs(window)) < 1.0:
                     distortion_count += 1
+                    tone_count += completed_tone_run_count(sustained_tone_windows)
+                    sustained_tone_windows = 0
+                    last_peak_freq = None
                     continue
 
                 # FFT analysis

@@ -179,7 +179,7 @@ public class DecodeQualityTest
             String tuner = config != null ? config.preferredTuner() : "N/A";
             String system = config != null ? config.system() : "";
             String site = config != null ? config.site() : "";
-            boolean isFD = channelName.toLowerCase().contains("fire") || channelName.toLowerCase().contains(" fd");
+            boolean isFD = isFireDepartmentChannel(channelName);
 
             System.out.printf("%n━━━ %s ━━━%n", bbFile.getName());
             System.out.printf("  Channel: %s | Mod: %s | NAC: %d | Tuner: %s%n", channelName, modulation, nac, tuner);
@@ -393,7 +393,7 @@ public class DecodeQualityTest
         };
     }
 
-    private static DecodeResult runDecode(File file, String modulation, int nac, boolean diagEnabled, int maxBchErrors, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
+    static DecodeResult runDecode(File file, String modulation, int nac, boolean diagEnabled, int maxBchErrors, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
     {
         return runDecode(file, modulation, nac, diagEnabled, maxBchErrors, cmaAcqMu, cmaTrkMu, cmaShiftMs, null, false);
     }
@@ -531,7 +531,10 @@ public class DecodeQualityTest
             // Adaptive signal detection: compute threshold from distribution of RMS values
             signalSeconds[0] = computeSignalSeconds(bufferRmsValues, bufferSizes, sampleRate);
         }
-        catch(Exception e) { System.err.println("  ERROR: " + e.getMessage()); }
+        catch(Exception e)
+        {
+            throw new IllegalStateException("Decode failed for " + file, e);
+        }
 
         // Print DUID breakdown
         if(!duidCounts.isEmpty())
@@ -636,13 +639,24 @@ public class DecodeQualityTest
         return encryptionStateEstablished && !encryptedCall;
     }
 
+    static boolean isFireDepartmentChannel(String channelName)
+    {
+        if(channelName == null)
+        {
+            return false;
+        }
+
+        String normalized = channelName.toLowerCase();
+        return normalized.contains("fire") || normalized.matches(".*(^|[^a-z0-9])fd([^a-z0-9]|$).*");
+    }
+
     static boolean startsAudioSegment(boolean explicitTerminator, long previousTimestamp, long currentTimestamp,
                                       int segmentGapMs)
     {
         return explicitTerminator || isSegmentBoundary(previousTimestamp, currentTimestamp, segmentGapMs);
     }
 
-    private static AudioResult decodeAudio(File file, String modulation, int nac, TestJmbeCodecLoader codec, Path audioDir, int maxBchErrors, int maxImbeErrors, int segmentGapMs, float silenceThreshold, int silenceMinMs, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
+    static AudioResult decodeAudio(File file, String modulation, int nac, TestJmbeCodecLoader codec, Path audioDir, int maxBchErrors, int maxImbeErrors, int segmentGapMs, float silenceThreshold, int silenceMinMs, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
     {
         List<float[]> audioBuffers = new ArrayList<>();
         List<Long> lduTimestamps = new ArrayList<>();
@@ -784,7 +798,10 @@ public class DecodeQualityTest
             while(source.next(2048)) {}
             decoder.stop();
         }
-        catch(Exception e) { System.err.println("  AUDIO ERROR: " + e.getMessage()); }
+        catch(Exception e)
+        {
+            throw new IllegalStateException("Audio decode failed for " + file, e);
+        }
 
         if(audioBuffers.isEmpty()) return new AudioResult(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0);
 
