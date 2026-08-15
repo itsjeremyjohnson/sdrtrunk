@@ -34,6 +34,7 @@ import io.github.dsheirer.identifier.configuration.SystemConfigurationIdentifier
 import io.github.dsheirer.module.decode.p25.phase1.PcmStreamManager;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -148,7 +149,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         io.github.dsheirer.identifier.Identifier id =
                 mIdentifierCollection.getIdentifier(IdentifierClass.CONFIGURATION, Form.SYSTEM, Role.ANY);
         if(id instanceof SystemConfigurationIdentifier)
-            return pcmEscape(((SystemConfigurationIdentifier)id).getValue());
+            return ((SystemConfigurationIdentifier)id).getValue();
         return "";
     }
 
@@ -158,15 +159,8 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         io.github.dsheirer.identifier.Identifier id =
                 mIdentifierCollection.getIdentifier(IdentifierClass.CONFIGURATION, Form.SITE, Role.ANY);
         if(id instanceof SiteConfigurationIdentifier)
-            return pcmEscape(((SiteConfigurationIdentifier)id).getValue());
+            return ((SiteConfigurationIdentifier)id).getValue();
         return "";
-    }
-
-    private static String pcmEscape(String s)
-    {
-        if(s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", " ").replace("\r", "");
     }
 
     @Override
@@ -210,16 +204,16 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                     PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
                     if(pcmMgr != null && pcmMgr.isRunning() && mPcmCallId == null)
                     {
-                        mPcmCallId = Long.toHexString(System.currentTimeMillis()).substring(4);
+                        mPcmCallId = UUID.randomUUID().toString();
                         mPcmFrameSeq.set(0);
                         mPcmFrameCount.set(0);
                         // Cache metadata once at call_start — reused on every addAudio() frame
                         mPcmCachedSystem = pcmGetSystem();
                         mPcmCachedSite = pcmGetSite();
-                        mPcmCachedTalkgroup = pcmEscape(mIdentifierCollection.getToIdentifier() != null
-                                ? mIdentifierCollection.getToIdentifier().toString() : "");
-                        mPcmCachedFrom = pcmEscape(mIdentifierCollection.getFromIdentifier() != null
-                                ? mIdentifierCollection.getFromIdentifier().toString() : "");
+                        mPcmCachedTalkgroup = mIdentifierCollection.getToIdentifier() != null
+                                ? mIdentifierCollection.getToIdentifier().toString() : "";
+                        mPcmCachedFrom = mIdentifierCollection.getFromIdentifier() != null
+                                ? mIdentifierCollection.getFromIdentifier().toString() : "";
                         pcmMgr.broadcastCallStart(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
                                 mPcmCachedTalkgroup, mPcmCachedFrom,
                                 LocalDateTime.now().format(PCM_TIMESTAMP_FMT));

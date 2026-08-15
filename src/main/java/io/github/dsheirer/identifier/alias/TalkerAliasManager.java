@@ -64,7 +64,7 @@ public class TalkerAliasManager
      * @param identifier
      * @param alias
      */
-    public void update(RadioIdentifier identifier, TalkerAliasIdentifier alias)
+    public synchronized void update(RadioIdentifier identifier, TalkerAliasIdentifier alias)
     {
         if(identifier.getRole() == Role.FROM)
         {

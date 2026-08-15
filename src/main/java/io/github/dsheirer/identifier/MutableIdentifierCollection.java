@@ -268,7 +268,7 @@ public class MutableIdentifierCollection extends IdentifierCollection implements
      */
     public void clear()
     {
-        List<Identifier> identifiers = new ArrayList<>();
+        List<Identifier> identifiers = new ArrayList<>(mIdentifiers);
 
         for(Identifier identifier: identifiers)
         {

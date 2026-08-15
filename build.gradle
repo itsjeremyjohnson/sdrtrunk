@@ -372,8 +372,8 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
     //Ensure native JNI libs are built before packaging
     rt.dependsOn 'buildHydraSdrJni'
 
-    //Copy HydraSDR native JNI libraries into runtime image (if available from local build)
-    rt.doLast {
+    //Copy HydraSDR native JNI libraries into runtime image before it is archived.
+    rt.doFirst {
         def nativeDir = hydraSdrJniDir
         if(nativeDir.exists()) {
             file("${buildDir}/image").eachDir { imageDir ->

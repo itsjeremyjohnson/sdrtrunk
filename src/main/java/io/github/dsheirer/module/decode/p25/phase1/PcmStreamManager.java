@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import io.github.dsheirer.util.JsonUtils;
 import java.io.IOException;
 import java.io.PrintWriter;
 import java.net.ServerSocket;
@@ -120,12 +121,12 @@ public class PcmStreamManager
     public void broadcastCallStart(String callId, String system, String site, String talkgroup, String from, String timestamp)
     {
         String json = "{\"type\":\"call_start\"" +
-                ",\"callId\":\"" + escape(callId) + "\"" +
-                ",\"system\":\"" + escape(system) + "\"" +
-                ",\"site\":\"" + escape(site) + "\"" +
-                ",\"talkgroup\":\"" + escape(talkgroup) + "\"" +
-                ",\"from\":\"" + escape(from) + "\"" +
-                ",\"timestamp\":\"" + escape(timestamp) + "\"}";
+                ",\"callId\":\"" + JsonUtils.escape(callId) + "\"" +
+                ",\"system\":\"" + JsonUtils.escape(system) + "\"" +
+                ",\"site\":\"" + JsonUtils.escape(site) + "\"" +
+                ",\"talkgroup\":\"" + JsonUtils.escape(talkgroup) + "\"" +
+                ",\"from\":\"" + JsonUtils.escape(from) + "\"" +
+                ",\"timestamp\":\"" + JsonUtils.escape(timestamp) + "\"}";
         broadcast(json);
     }
 
@@ -153,11 +154,11 @@ public class PcmStreamManager
         String samplesB64 = Base64.getEncoder().encodeToString(buf.array());
 
         String json = "{\"type\":\"pcm\"" +
-                ",\"callId\":\"" + escape(callId) + "\"" +
-                ",\"system\":\"" + escape(system) + "\"" +
-                ",\"site\":\"" + escape(site) + "\"" +
-                ",\"talkgroup\":\"" + escape(talkgroup) + "\"" +
-                ",\"from\":\"" + escape(from) + "\"" +
+                ",\"callId\":\"" + JsonUtils.escape(callId) + "\"" +
+                ",\"system\":\"" + JsonUtils.escape(system) + "\"" +
+                ",\"site\":\"" + JsonUtils.escape(site) + "\"" +
+                ",\"talkgroup\":\"" + JsonUtils.escape(talkgroup) + "\"" +
+                ",\"from\":\"" + JsonUtils.escape(from) + "\"" +
                 ",\"seq\":" + seq +
                 ",\"samples\":\"" + samplesB64 + "\"}";
         broadcast(json);
@@ -174,10 +175,10 @@ public class PcmStreamManager
     public void broadcastCallEnd(String callId, String system, String site, String talkgroup, int frameCount)
     {
         String json = "{\"type\":\"call_end\"" +
-                ",\"callId\":\"" + escape(callId) + "\"" +
-                ",\"system\":\"" + escape(system) + "\"" +
-                ",\"site\":\"" + escape(site) + "\"" +
-                ",\"talkgroup\":\"" + escape(talkgroup) + "\"" +
+                ",\"callId\":\"" + JsonUtils.escape(callId) + "\"" +
+                ",\"system\":\"" + JsonUtils.escape(system) + "\"" +
+                ",\"site\":\"" + JsonUtils.escape(site) + "\"" +
+                ",\"talkgroup\":\"" + JsonUtils.escape(talkgroup) + "\"" +
                 ",\"frames\":" + frameCount + "}";
         broadcast(json);
     }
@@ -195,19 +196,12 @@ public class PcmStreamManager
     public void broadcastVoiceId(String system, String site, String talkgroup, String from, String timestamp)
     {
         String json = "{\"type\":\"voice_id\"" +
-                ",\"system\":\"" + escape(system) + "\"" +
-                ",\"site\":\"" + escape(site) + "\"" +
-                ",\"talkgroup\":\"" + escape(talkgroup) + "\"" +
-                ",\"from\":\"" + escape(from) + "\"" +
-                ",\"timestamp\":\"" + escape(timestamp) + "\"}";
+                ",\"system\":\"" + JsonUtils.escape(system) + "\"" +
+                ",\"site\":\"" + JsonUtils.escape(site) + "\"" +
+                ",\"talkgroup\":\"" + JsonUtils.escape(talkgroup) + "\"" +
+                ",\"from\":\"" + JsonUtils.escape(from) + "\"" +
+                ",\"timestamp\":\"" + JsonUtils.escape(timestamp) + "\"}";
         broadcast(json);
-    }
-
-    private static String escape(String s)
-    {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", " ").replace("\r", "");
     }
 
     private void startAcceptLoop(int port)
@@ -266,6 +260,7 @@ public class PcmStreamManager
         private final Socket mSocket;
         private final PrintWriter mWriter;
         private final ArrayBlockingQueue<String> mQueue = new ArrayBlockingQueue<>(1024);
+        private final Thread mWriterThread;
         private volatile boolean mAlive = true;
 
         public ClientWriter(Socket socket) throws IOException
@@ -273,7 +268,7 @@ public class PcmStreamManager
             mSocket = socket;
             mWriter = new PrintWriter(socket.getOutputStream(), false);
 
-            Thread.ofVirtual().start(() ->
+            mWriterThread = Thread.ofVirtual().start(() ->
             {
                 while (mAlive)
                 {
@@ -309,6 +304,7 @@ public class PcmStreamManager
         public void close()
         {
             mAlive = false;
+            mWriterThread.interrupt();
             try
             {
                 mSocket.close();

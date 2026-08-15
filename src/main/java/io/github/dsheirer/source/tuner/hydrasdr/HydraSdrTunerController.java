@@ -137,58 +137,72 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				(mSerialNumber != 0 ? " serial=" + Long.toHexString(mSerialNumber) : ""));
 		}
 
-		mLog.info("Opened HydraSDR device, handle=0x" + Long.toHexString(mDeviceHandle));
+		boolean initialized = false;
 
-		/* Query device info and update frequency limits */
-		mDeviceInfo = HydraSdrNative.getDeviceInfo(mDeviceHandle);
-		if(mDeviceInfo != null)
+		try
 		{
-			mLog.info("HydraSDR device: " + mDeviceInfo.getBoardName() +
-				" serial=" + mDeviceInfo.getSerialNumber() +
-				" fw=" + mDeviceInfo.getFirmwareVersion() +
-				" freq=" + mDeviceInfo.getMinFrequency() + "-" + mDeviceInfo.getMaxFrequency() + " Hz" +
-				" caps=0x" + Integer.toHexString(mDeviceInfo.getCapabilities()));
+			mLog.info("Opened HydraSDR device, handle=0x" + Long.toHexString(mDeviceHandle));
 
-			if(mDeviceInfo.getMinFrequency() > 0)
+			/* Query device info and update frequency limits */
+			mDeviceInfo = HydraSdrNative.getDeviceInfo(mDeviceHandle);
+			if(mDeviceInfo != null)
 			{
-				setMinimumFrequency(mDeviceInfo.getMinFrequency());
+				mLog.info("HydraSDR device: " + mDeviceInfo.getBoardName() +
+					" serial=" + mDeviceInfo.getSerialNumber() +
+					" fw=" + mDeviceInfo.getFirmwareVersion() +
+					" freq=" + mDeviceInfo.getMinFrequency() + "-" + mDeviceInfo.getMaxFrequency() + " Hz" +
+					" caps=0x" + Integer.toHexString(mDeviceInfo.getCapabilities()));
+
+				if(mDeviceInfo.getMinFrequency() > 0)
+				{
+					setMinimumFrequency(mDeviceInfo.getMinFrequency());
+				}
+				if(mDeviceInfo.getMaxFrequency() > 0)
+				{
+					setMaximumFrequency(mDeviceInfo.getMaxFrequency());
+				}
 			}
-			if(mDeviceInfo.getMaxFrequency() > 0)
+			else
 			{
-				setMaximumFrequency(mDeviceInfo.getMaxFrequency());
+				mLog.warn("Failed to query HydraSDR device info");
 			}
-		}
-		else
-		{
-			mLog.warn("Failed to query HydraSDR device info");
-		}
 
-		/* Request float32 IQ samples from the library. The streaming callback path
-		 * (JNI deinterleave + onSamples float[]) assumes FLOAT32_IQ — any other
-		 * sample type would deliver garbage to downstream DSP. Fail fast. */
-		int result = HydraSdrNative.setSampleType(mDeviceHandle, HydraSdrNative.SAMPLE_FLOAT32_IQ);
-		if(result != HydraSdrNative.SUCCESS)
-		{
-			HydraSdrNative.close(mDeviceHandle);
-			mDeviceHandle = 0;
-			throw new SourceException("HydraSDR rejected FLOAT32_IQ sample type: " +
-				HydraSdrNative.errorName(result));
+			/* Request float32 IQ samples from the library. The streaming callback path
+			 * (JNI deinterleave + onSamples float[]) assumes FLOAT32_IQ — any other
+			 * sample type would deliver garbage to downstream DSP. Fail fast. */
+			int result = HydraSdrNative.setSampleType(mDeviceHandle, HydraSdrNative.SAMPLE_FLOAT32_IQ);
+			if(result != HydraSdrNative.SUCCESS)
+			{
+				throw new SourceException("HydraSDR rejected FLOAT32_IQ sample type: " +
+					HydraSdrNative.errorName(result));
+			}
+
+			/* Query available sample rates */
+			determineAvailableSampleRates();
+
+			/* Set default frequency */
+			setFrequency(FREQUENCY_DEFAULT);
+
+			/* Set default sample rate */
+			if(!mSampleRates.isEmpty())
+			{
+				setSampleRate(mSampleRates.get(0));
+			}
+			else
+			{
+				setSampleRateHz(DEFAULT_SAMPLE_RATE);
+			}
+
+			initialized = true;
 		}
-
-		/* Query available sample rates */
-		determineAvailableSampleRates();
-
-		/* Set default frequency */
-		setFrequency(FREQUENCY_DEFAULT);
-
-		/* Set default sample rate */
-		if(!mSampleRates.isEmpty())
+		finally
 		{
-			setSampleRate(mSampleRates.get(0));
-		}
-		else
-		{
-			setSampleRateHz(DEFAULT_SAMPLE_RATE);
+			if(!initialized)
+			{
+				long deviceHandle = mDeviceHandle;
+				mDeviceHandle = 0;
+				HydraSdrNative.close(deviceHandle);
+			}
 		}
 	}
 
@@ -234,7 +248,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	/**
 	 * Stops streaming. Called when the last buffer listener is removed.
 	 */
-	private void stopStreaming()
+	private synchronized void stopStreaming()
 	{
 		stopWatchdog();
 		if(mStreaming && mDeviceHandle != 0)
@@ -301,8 +315,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			if(mStreaming && (System.currentTimeMillis() - mLastCallbackTime) > WATCHDOG_TIMEOUT_MS)
 			{
 				mLog.error("HydraSDR streaming stopped unexpectedly (device error or USB disconnect)");
-				mStreaming = false;
-				stopWatchdog();
+				stopStreaming();
 				setErrorMessage("HydraSDR streaming stopped unexpectedly (device error or USB disconnect)");
 			}
 		}, WATCHDOG_TIMEOUT_MS, WATCHDOG_TIMEOUT_MS, TimeUnit.MILLISECONDS);

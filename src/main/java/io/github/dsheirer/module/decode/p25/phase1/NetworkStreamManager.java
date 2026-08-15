@@ -158,6 +158,7 @@ public class NetworkStreamManager
         private final Socket mSocket;
         private final PrintWriter mWriter;
         private final ArrayBlockingQueue<String> mQueue = new ArrayBlockingQueue<>(512);
+        private final Thread mWriterThread;
         private volatile boolean mAlive = true;
 
         public ClientWriter(Socket socket) throws IOException
@@ -165,7 +166,7 @@ public class NetworkStreamManager
             mSocket = socket;
             mWriter = new PrintWriter(socket.getOutputStream(), false);
 
-            Thread.ofVirtual().start(() ->
+            mWriterThread = Thread.ofVirtual().start(() ->
             {
                 while(mAlive)
                 {
@@ -210,6 +211,7 @@ public class NetworkStreamManager
         public void close()
         {
             mAlive = false;
+            mWriterThread.interrupt();
             try
             {
                 mSocket.close();

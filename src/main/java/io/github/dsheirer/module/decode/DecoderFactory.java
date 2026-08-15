@@ -87,6 +87,7 @@ import io.github.dsheirer.module.decode.p25.audio.ImbeAudioStreamModule;
 import io.github.dsheirer.module.decode.p25.phase1.ImbeStreamManager;
 import io.github.dsheirer.module.decode.p25.phase1.PcmStreamManager;
 import io.github.dsheirer.module.decode.p25.audio.P25P2AudioModule;
+import io.github.dsheirer.util.JsonUtils;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderC4FM;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderLSM;
@@ -166,6 +167,7 @@ public class DecoderFactory
 
         AliasList aliasList = aliasModel.getAliasList(channel.getAliasListName());
         modules.add(new AliasActionManager(aliasList));
+        loadPcmStreamManager(userPreferences);
 
         ChannelType channelType = channel.getChannelType();
 
@@ -352,8 +354,6 @@ public class DecoderFactory
             String safeImbeSystem = StringUtils.replaceIllegalCharacters(imbeSystem.trim());
             modules.add(new ImbeAudioStreamModule(safeImbeSystem, imbeStreamManager));
         }
-
-        loadPcmStreamManager(userPreferences);
 
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
         if(channel.getSourceConfiguration() instanceof SourceConfigTunerMultipleFrequency sctmf &&
@@ -906,10 +906,8 @@ public class DecoderFactory
 
     private static String formatRawMessage(String systemName, io.github.dsheirer.message.IMessage msg)
     {
-        String text = msg.toString()
-            .replace("\\", "\\\\").replace("\"", "\\\"")
-            .replace("\n", " ").replace("\r", "");
-        return "{\"pipe\":\"raw\",\"system\":\"" + systemName
+        String text = JsonUtils.escape(msg.toString());
+        return "{\"pipe\":\"raw\",\"system\":\"" + JsonUtils.escape(systemName)
             + "\",\"timestamp\":\"" + java.time.LocalDateTime.now().format(
                 java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
             + "\",\"message\":\"" + text + "\"}";
@@ -917,10 +915,8 @@ public class DecoderFactory
 
     private static String formatDmrRawMessage(String systemName, int timeslot, io.github.dsheirer.message.IMessage msg)
     {
-        String text = msg.toString()
-            .replace("\\", "\\\\").replace("\"", "\\\"")
-            .replace("\n", " ").replace("\r", "");
-        return "{\"pipe\":\"raw\",\"protocol\":\"DMR\",\"system\":\"" + systemName
+        String text = JsonUtils.escape(msg.toString());
+        return "{\"pipe\":\"raw\",\"protocol\":\"DMR\",\"system\":\"" + JsonUtils.escape(systemName)
             + "\",\"timeslot\":" + timeslot
             + ",\"timestamp\":" + msg.getTimestamp()
             + ",\"message\":\"" + text + "\"}";

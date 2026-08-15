@@ -22,7 +22,9 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -55,36 +57,57 @@ public class TalkerAliasLogger
      * Called whenever the alias map changes. Writes updated aliases to disk if the content has changed.
      * @param aliases current alias map (radioId -> TalkerAliasIdentifier)
      */
-    public void onAliasUpdate(Map<Integer, TalkerAliasIdentifier> aliases)
+    public synchronized void onAliasUpdate(Map<Integer, TalkerAliasIdentifier> aliases)
     {
         StringBuilder sb = new StringBuilder();
         sb.append("RADIO_ID,TALKER_ALIAS\n");
 
-        for(Map.Entry<Integer, TalkerAliasIdentifier> entry : aliases.entrySet())
-        {
-            String aliasText = entry.getValue().getValue();
-            if(aliasText == null)
+        aliases.entrySet().stream()
+            .sorted(Map.Entry.comparingByKey(Comparator.naturalOrder()))
+            .forEach(entry ->
             {
-                aliasText = "";
-            }
-            // Strip commas from alias text to keep CSV valid
-            aliasText = aliasText.replace(",", "");
-            sb.append(entry.getKey()).append(",").append(aliasText).append("\n");
-        }
+                String aliasText = entry.getValue().getValue();
+                if(aliasText == null)
+                {
+                    aliasText = "";
+                }
+                // Strip commas from alias text to keep CSV valid
+                aliasText = aliasText.replace(",", "");
+                sb.append(entry.getKey()).append(",").append(aliasText).append("\n");
+            });
 
         String content = sb.toString();
 
         if(!content.equals(mLastWrittenContent))
         {
             Path aliasFile = mLogDirectory.resolve(mSystemName + "_talker_aliases.csv");
+            Path tempFile = null;
+
             try
             {
-                Files.writeString(aliasFile, content, StandardOpenOption.TRUNCATE_EXISTING, StandardOpenOption.CREATE);
+                Files.createDirectories(mLogDirectory);
+                tempFile = Files.createTempFile(mLogDirectory, mSystemName + "_talker_aliases", ".tmp");
+                Files.writeString(tempFile, content, StandardOpenOption.TRUNCATE_EXISTING);
+                Files.move(tempFile, aliasFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
                 mLastWrittenContent = content;
             }
             catch(IOException e)
             {
                 mLog.error("Error writing talker alias file [" + aliasFile + "]", e);
+            }
+            finally
+            {
+                if(tempFile != null)
+                {
+                    try
+                    {
+                        Files.deleteIfExists(tempFile);
+                    }
+                    catch(IOException e)
+                    {
+                        mLog.warn("Could not delete temporary talker alias file [" + tempFile + "]", e);
+                    }
+                }
             }
         }
     }

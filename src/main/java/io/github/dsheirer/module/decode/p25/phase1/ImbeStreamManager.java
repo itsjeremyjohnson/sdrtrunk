@@ -139,6 +139,7 @@ public class ImbeStreamManager
         private final Socket mSocket;
         private final PrintWriter mWriter;
         private final ArrayBlockingQueue<String> mQueue = new ArrayBlockingQueue<>(1024);
+        private final Thread mWriterThread;
         private volatile boolean mAlive = true;
 
         public ClientWriter(Socket socket) throws IOException
@@ -146,7 +147,7 @@ public class ImbeStreamManager
             mSocket = socket;
             mWriter = new PrintWriter(socket.getOutputStream(), false);
 
-            Thread.ofVirtual().start(() ->
+            mWriterThread = Thread.ofVirtual().start(() ->
             {
                 while (mAlive)
                 {
@@ -182,6 +183,7 @@ public class ImbeStreamManager
         public void close()
         {
             mAlive = false;
+            mWriterThread.interrupt();
             try
             {
                 mSocket.close();

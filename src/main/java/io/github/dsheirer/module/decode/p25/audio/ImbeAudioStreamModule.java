@@ -31,10 +31,12 @@ import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.p25.phase1.ImbeStreamManager;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.util.JsonUtils;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Base64;
 import java.util.List;
+import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -120,9 +122,9 @@ public class ImbeAudioStreamModule extends Module
     {
         return notification ->
         {
-            if (notification != null && notification.getIdentifier() != null)
+            if(notification != null && notification.getIdentifier() != null)
             {
-                mIdentifiers.update(notification.getIdentifier());
+                mIdentifiers.receive(notification);
             }
         };
     }
@@ -134,7 +136,7 @@ public class ImbeAudioStreamModule extends Module
      */
     private static String newCallId()
     {
-        return Long.toHexString(System.currentTimeMillis()).substring(4);
+        return UUID.randomUUID().toString();
     }
 
     private String currentTalkgroup()
@@ -149,13 +151,6 @@ public class ImbeAudioStreamModule extends Module
         return from != null ? from.toString() : "";
     }
 
-    private String escape(String s)
-    {
-        if (s == null) return "";
-        return s.replace("\\", "\\\\").replace("\"", "\\\"")
-                .replace("\n", " ").replace("\r", "");
-    }
-
     /**
      * Opens a new call: generates a callId, resets counters, and broadcasts call_start.
      */
@@ -168,9 +163,9 @@ public class ImbeAudioStreamModule extends Module
 
         String json = "{\"type\":\"call_start\"" +
                 ",\"callId\":\"" + mCallId + "\"" +
-                ",\"system\":\"" + escape(mSystemName) + "\"" +
-                ",\"talkgroup\":\"" + escape(currentTalkgroup()) + "\"" +
-                ",\"from\":\"" + escape(currentFrom()) + "\"" +
+                ",\"system\":\"" + JsonUtils.escape(mSystemName) + "\"" +
+                ",\"talkgroup\":\"" + JsonUtils.escape(currentTalkgroup()) + "\"" +
+                ",\"from\":\"" + JsonUtils.escape(currentFrom()) + "\"" +
                 ",\"timestamp\":\"" + LocalDateTime.now().format(TIMESTAMP_FMT) + "\"}";
 
         mStreamManager.broadcast(json);
@@ -188,8 +183,8 @@ public class ImbeAudioStreamModule extends Module
 
         String json = "{\"type\":\"call_end\"" +
                 ",\"callId\":\"" + closingCallId + "\"" +
-                ",\"system\":\"" + escape(mSystemName) + "\"" +
-                ",\"talkgroup\":\"" + escape(currentTalkgroup()) + "\"" +
+                ",\"system\":\"" + JsonUtils.escape(mSystemName) + "\"" +
+                ",\"talkgroup\":\"" + JsonUtils.escape(currentTalkgroup()) + "\"" +
                 ",\"frames\":" + totalFrames + "}";
 
         mStreamManager.broadcast(json);
@@ -209,9 +204,9 @@ public class ImbeAudioStreamModule extends Module
         }
 
         String callId    = mCallId;
-        String talkgroup = escape(currentTalkgroup());
-        String from      = escape(currentFrom());
-        String system    = escape(mSystemName);
+        String talkgroup = JsonUtils.escape(currentTalkgroup());
+        String from      = JsonUtils.escape(currentFrom());
+        String system    = JsonUtils.escape(mSystemName);
 
         List<byte[]> frames = ldu.getIMBEFrames();
         for (byte[] frame : frames)

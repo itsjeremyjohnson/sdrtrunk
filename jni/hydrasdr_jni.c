@@ -540,19 +540,24 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 	ctx->buf_index = 1 - idx;
 
 	/*
-	 * GetPrimitiveArrayCritical: fastest JNI array access path.
-	 * May return direct pointer to Java heap (no copy on most JVMs).
-	 * Must not call other JNI functions while held.
+	 * GetFloatArrayElements avoids nesting critical JNI regions while both
+	 * output arrays are populated.
 	 */
-	jfloat *i_ptr = (*env)->GetPrimitiveArrayCritical(env, ctx->ji_buf[idx], NULL);
-	jfloat *q_ptr = (*env)->GetPrimitiveArrayCritical(env, ctx->jq_buf[idx], NULL);
+	jfloat *i_ptr = (*env)->GetFloatArrayElements(env, ctx->ji_buf[idx], NULL);
+	jfloat *q_ptr = (*env)->GetFloatArrayElements(env, ctx->jq_buf[idx], NULL);
 
-	if (i_ptr && q_ptr) {
-		deinterleave_iq(samples, i_ptr, q_ptr, sample_count);
+	if (!i_ptr || !q_ptr) {
+		if (q_ptr) (*env)->ReleaseFloatArrayElements(env, ctx->jq_buf[idx], q_ptr, JNI_ABORT);
+		if (i_ptr) (*env)->ReleaseFloatArrayElements(env, ctx->ji_buf[idx], i_ptr, JNI_ABORT);
+		if ((*env)->ExceptionCheck(env))
+			(*env)->ExceptionClear(env);
+		return 0;
 	}
 
-	if (q_ptr) (*env)->ReleasePrimitiveArrayCritical(env, ctx->jq_buf[idx], q_ptr, 0);
-	if (i_ptr) (*env)->ReleasePrimitiveArrayCritical(env, ctx->ji_buf[idx], i_ptr, 0);
+	deinterleave_iq(samples, i_ptr, q_ptr, sample_count);
+
+	(*env)->ReleaseFloatArrayElements(env, ctx->jq_buf[idx], q_ptr, 0);
+	(*env)->ReleaseFloatArrayElements(env, ctx->ji_buf[idx], i_ptr, 0);
 
 	(*env)->CallVoidMethod(env, ctx->callback, ctx->onSamplesMethod,
 		ctx->ji_buf[idx], ctx->jq_buf[idx], (jint)sample_count,
