@@ -19,6 +19,7 @@
 package io.github.dsheirer.identifier.alias;
 
 import java.io.IOException;
+import java.nio.file.AtomicMoveNotSupportedException;
 import java.nio.file.Files;
 import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
@@ -88,7 +89,17 @@ public class TalkerAliasLogger
                 Files.createDirectories(mLogDirectory);
                 tempFile = Files.createTempFile(mLogDirectory, mSystemName + "_talker_aliases", ".tmp");
                 Files.writeString(tempFile, content, StandardOpenOption.TRUNCATE_EXISTING);
-                Files.move(tempFile, aliasFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+
+                try
+                {
+                    Files.move(tempFile, aliasFile, StandardCopyOption.ATOMIC_MOVE,
+                        StandardCopyOption.REPLACE_EXISTING);
+                }
+                catch(AtomicMoveNotSupportedException e)
+                {
+                    Files.move(tempFile, aliasFile, StandardCopyOption.REPLACE_EXISTING);
+                }
+
                 mLastWrittenContent = content;
             }
             catch(IOException e)
