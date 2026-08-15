@@ -43,6 +43,35 @@ class DiscoveryOverlayTest
     }
 
     @Test
+    void sessionAllOverridesIdentifiedOnlyPreference()
+    {
+        DiscoveryModel model = new DiscoveryModel();
+        Discovery discovery = new Discovery(100_100_000L, 10_000, -70.0, 15.0, Instant.now());
+        discovery.setState(DiscoveryState.UNIDENTIFIED);
+        model.add(discovery);
+        mPreferenceNode = Preferences.userRoot().node("sdrtrunk-discovery-overlay-" + UUID.randomUUID());
+        DiscoveryPreference preference = new DiscoveryPreference(type -> {}, mPreferenceNode);
+        OverlayPanel axis = new OverlayPanel(new SettingsManager(), null, null)
+        {
+            @Override public double getAxisFromFrequency(long value) { return (value - 100_000_000L) / 1_000.0; }
+        };
+        DiscoveryOverlay overlay = new DiscoveryOverlay(model, preference, axis);
+        overlay.setSize(300, 100);
+
+        try
+        {
+            assertFalse(overlay.contains(100, 50));
+            overlay.setDiscoveryDisplay(DiscoveryOverlay.DiscoveryDisplay.ALL);
+            assertTrue(overlay.contains(100, 50), "Session ALL must display unidentified discoveries");
+        }
+        finally
+        {
+            overlay.dispose();
+            axis.dispose();
+        }
+    }
+
+    @Test
     void markerClickPostsRequestForMatchingDiscovery()
     {
         long frequency = 100_100_000L;

@@ -270,6 +270,12 @@ public class SpectralSurvey implements SpectralSurveyApi
     public static List<EnergyPeak> findPeaks(float[] magnitudesDb, long binWidthHz,
                                               long baseFrequencyHz, double thresholdDb)
     {
+        return findPeaks(magnitudesDb, (double)binWidthHz, (double)baseFrequencyHz, thresholdDb);
+    }
+
+    private static List<EnergyPeak> findPeaks(float[] magnitudesDb, double binWidthHz,
+                                              double baseFrequencyHz, double thresholdDb)
+    {
         if(magnitudesDb == null || magnitudesDb.length == 0)
         {
             return Collections.emptyList();
@@ -715,23 +721,23 @@ public class SpectralSurvey implements SpectralSurveyApi
         }
 
         // Bin width and base frequency
-        long binWidthHz = Math.max(1L, (long)(sampleRate / FFT_SIZE));
+        double binWidthHz = sampleRate / FFT_SIZE;
 
         // After fftshift, bin 0 corresponds to centerHz - sampleRate/2 + binWidth/2
-        long baseFrequencyHz = centerHz - (long)(sampleRate / 2.0) + binWidthHz / 2;
+        double baseFrequencyHz = centerHz - sampleRate / 2.0 + binWidthHz / 2.0;
 
         return findPeaksInFrequencyRange(shiftedDb, binWidthHz, baseFrequencyHz, thresholdDb,
             usableMinHz, usableMaxHz);
     }
 
-    static List<EnergyPeak> findPeaksInFrequencyRange(float[] magnitudesDb, long binWidthHz,
-                                                       long baseFrequencyHz, double thresholdDb,
+    static List<EnergyPeak> findPeaksInFrequencyRange(float[] magnitudesDb, double binWidthHz,
+                                                       double baseFrequencyHz, double thresholdDb,
                                                        long usableMinHz, long usableMaxHz)
     {
-        int firstUsableBin = (int)Math.max(0L,
-            Math.ceil((usableMinHz - baseFrequencyHz) / (double)binWidthHz));
-        int lastUsableBin = (int)Math.min(magnitudesDb.length - 1L,
-            Math.floor((usableMaxHz - baseFrequencyHz) / (double)binWidthHz));
+        int firstUsableBin = (int)Math.max(0.0,
+            Math.ceil((usableMinHz - baseFrequencyHz) / binWidthHz));
+        int lastUsableBin = (int)Math.min(magnitudesDb.length - 1.0,
+            Math.floor((usableMaxHz - baseFrequencyHz) / binWidthHz));
 
         if(firstUsableBin > lastUsableBin)
         {
@@ -739,7 +745,7 @@ public class SpectralSurvey implements SpectralSurveyApi
         }
 
         float[] usableDb = Arrays.copyOfRange(magnitudesDb, firstUsableBin, lastUsableBin + 1);
-        long usableBaseFrequencyHz = baseFrequencyHz + (long)firstUsableBin * binWidthHz;
+        double usableBaseFrequencyHz = baseFrequencyHz + firstUsableBin * binWidthHz;
         return findPeaks(usableDb, binWidthHz, usableBaseFrequencyHz, thresholdDb);
     }
 
@@ -931,7 +937,7 @@ public class SpectralSurvey implements SpectralSurveyApi
      * Converts a contiguous run of above-threshold bins to an {@link EnergyPeak}.
      */
     private static EnergyPeak runToPeak(float[] magnitudesDb, int startIdx, int endIdx,
-                                         long binWidthHz, long baseFreqHz, double noiseFloor)
+                                         double binWidthHz, double baseFreqHz, double noiseFloor)
     {
         double weightedBinSum = 0.0;
         double totalWeight = 0.0;
@@ -940,7 +946,7 @@ public class SpectralSurvey implements SpectralSurveyApi
         for(int i = startIdx; i <= endIdx; i++)
         {
             double linearPower = Math.pow(10.0, magnitudesDb[i] / 10.0);
-            double binCenterHz = baseFreqHz + (long) i * binWidthHz;
+            double binCenterHz = baseFreqHz + i * binWidthHz;
             weightedBinSum += binCenterHz * linearPower;
             totalWeight += linearPower;
 
@@ -955,7 +961,7 @@ public class SpectralSurvey implements SpectralSurveyApi
             return null;
         }
 
-        long centerHz = (long)(weightedBinSum / totalWeight);
+        long centerHz = Math.round(weightedBinSum / totalWeight);
 
         if(centerHz <= 0)
         {
@@ -965,7 +971,7 @@ public class SpectralSurvey implements SpectralSurveyApi
         int guardedStart = Math.max(0, startIdx - GUARD_BINS);
         int guardedEnd   = Math.min(magnitudesDb.length - 1, endIdx + GUARD_BINS);
         int runBins = (guardedEnd - guardedStart) + 1;
-        int bandwidthHz = (int) Math.max(1L, (long) runBins * binWidthHz);
+        int bandwidthHz = (int)Math.max(1L, Math.round(runBins * binWidthHz));
 
         double snr = peakDb - noiseFloor;
 
@@ -975,7 +981,7 @@ public class SpectralSurvey implements SpectralSurveyApi
     /**
      * Merges peaks whose center frequencies are within {@link #MIN_SEPARATION_BINS} bins of each other.
      */
-    private static List<EnergyPeak> mergePeaks(List<EnergyPeak> peaks, long binWidthHz)
+    private static List<EnergyPeak> mergePeaks(List<EnergyPeak> peaks, double binWidthHz)
     {
         if(peaks.size() <= 1)
         {
@@ -985,7 +991,7 @@ public class SpectralSurvey implements SpectralSurveyApi
         List<EnergyPeak> sorted = new ArrayList<>(peaks);
         sorted.sort((a, b) -> Long.compare(a.centerFrequencyHz(), b.centerFrequencyHz()));
 
-        long minSeparationHz = MIN_SEPARATION_BINS * binWidthHz;
+        double minSeparationHz = MIN_SEPARATION_BINS * binWidthHz;
         boolean merged;
 
         do

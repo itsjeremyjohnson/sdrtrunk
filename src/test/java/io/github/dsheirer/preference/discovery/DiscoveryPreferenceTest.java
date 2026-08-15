@@ -211,6 +211,27 @@ class DiscoveryPreferenceTest
         assertEquals(OverlayDisplay.ALL, freshPreference().getOverlayDisplay());
     }
 
+    @Test
+    void defaultScanDecodersPersistIndependentlyFromGlobalExclusions()
+    {
+        Set<DecoderType> exclusions = Set.of(DecoderType.DMR);
+        Set<DecoderType> defaults = Set.of(DecoderType.NBFM);
+        mPreference.setExcludedDecoders(exclusions);
+        mPreference.setDefaultScanDecoders(defaults);
+
+        DiscoveryPreference reloaded = freshPreference();
+        assertEquals(exclusions, reloaded.getExcludedDecoders());
+        assertEquals(defaults, reloaded.getDefaultScanDecoders());
+    }
+
+    @Test
+    void explicitlyEmptyDefaultScanDecoderSetPersists()
+    {
+        mPreference.setDefaultScanDecoders(Set.of());
+
+        assertTrue(freshPreference().getDefaultScanDecoders().isEmpty());
+    }
+
     // -------------------------------------------------------------------------
     // Ignore list round-trip
     // -------------------------------------------------------------------------

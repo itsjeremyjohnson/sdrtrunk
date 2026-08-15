@@ -51,10 +51,9 @@ import org.slf4j.LoggerFactory;
  * <ul>
  *   <li>Discoveries whose {@code createdChannel} is non-null are skipped — they already render
  *       as normal channel overlays on the {@link OverlayPanel}.</li>
- *   <li>Visibility is controlled by two independent toggles:
- *       {@link OverlayDisplay} from {@link DiscoveryPreference} (user preference) and a
- *       per-session {@link DiscoveryDisplay} that the operator sets via the context menu.</li>
- *   <li>When both indicate visibility, discoveries are coloured by state:
+ *   <li>The persisted {@link OverlayDisplay} preference initializes a per-session
+ *       {@link DiscoveryDisplay} that the operator can change via the context menu.</li>
+ *   <li>Visible discoveries are coloured by state:
  *       ENERGY_DETECTED = dark grey, PROBING = mid-grey, IDENTIFIED = green-ish,
  *       UNIDENTIFIED = amber, ERROR = red.  All at low alpha so the spectrum is not obscured.</li>
  * </ul>
@@ -97,19 +96,17 @@ public class DiscoveryOverlay extends JComponent
 
     // ---- dependencies -------------------------------------------------------
     private final DiscoveryModel mDiscoveryModel;
-    private final DiscoveryPreference mDiscoveryPreference;
     private final OverlayPanel mOverlayPanel;
 
     // ---- per-session display toggle (from context menu) ---------------------
-    private DiscoveryDisplay mDiscoveryDisplay = DiscoveryDisplay.IDENTIFIED_ONLY;
+    private DiscoveryDisplay mDiscoveryDisplay;
 
     // ---- DiscoveryModel listener (held so we can unregister on dispose) -----
     private final Listener<DiscoveryEvent> mDiscoveryListener;
 
     /**
-     * Per-session display-mode toggle exposed in the right-click context menu.
-     * Independent from the preference-based {@link OverlayDisplay} — both must
-     * permit display for the overlay to render.
+     * Display mode initialized from preferences and mutable for the current session
+     * through the right-click context menu.
      */
     public enum DiscoveryDisplay
     {
@@ -130,8 +127,13 @@ public class DiscoveryOverlay extends JComponent
                              OverlayPanel overlayPanel)
     {
         mDiscoveryModel = discoveryModel;
-        mDiscoveryPreference = discoveryPreference;
         mOverlayPanel = overlayPanel;
+        mDiscoveryDisplay = switch(discoveryPreference.getOverlayDisplay())
+        {
+            case ALL -> DiscoveryDisplay.ALL;
+            case IDENTIFIED_ONLY -> DiscoveryDisplay.IDENTIFIED_ONLY;
+            case NONE -> DiscoveryDisplay.NONE;
+        };
 
         setOpaque(false);
 
@@ -369,8 +371,7 @@ public class DiscoveryOverlay extends JComponent
             return false;
         }
 
-        OverlayDisplay prefDisplay = mDiscoveryPreference.getOverlayDisplay();
-        return prefDisplay != OverlayDisplay.NONE;
+        return true;
     }
 
     private boolean shouldShowDiscovery(Discovery discovery)
@@ -379,8 +380,7 @@ public class DiscoveryOverlay extends JComponent
         if(state == null) return false;
 
         // IDENTIFIED_ONLY mode — show only IDENTIFIED rows
-        if(mDiscoveryDisplay == DiscoveryDisplay.IDENTIFIED_ONLY
-            || mDiscoveryPreference.getOverlayDisplay() == OverlayDisplay.IDENTIFIED_ONLY)
+        if(mDiscoveryDisplay == DiscoveryDisplay.IDENTIFIED_ONLY)
         {
             return state == DiscoveryState.IDENTIFIED;
         }

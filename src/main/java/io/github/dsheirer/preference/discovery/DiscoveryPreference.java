@@ -75,6 +75,7 @@ public class DiscoveryPreference extends Preference
     private static final String KEY_OVERLAY_DISPLAY          = "discovery.overlay.display";
     private static final String KEY_IGNORE_LIST              = "discovery.ignore.list";
     private static final String KEY_EXCLUDED_DECODERS        = "discovery.excluded.decoders";
+    private static final String KEY_DEFAULT_SCAN_DECODERS    = "discovery.default.scan.decoders";
 
     // -------------------------------------------------------------------------
     // Defaults (package-visible for test verification)
@@ -134,6 +135,7 @@ public class DiscoveryPreference extends Preference
     private OverlayDisplay mOverlayDisplay;
     private List<IgnoreRange> mIgnoreList;
     private Set<DecoderType> mExcludedDecoders;
+    private Set<DecoderType> mDefaultScanDecoders;
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -573,8 +575,52 @@ public class DiscoveryPreference extends Preference
      */
     public Set<DecoderType> getDefaultScanDecoders()
     {
-        // Phase 1 v1: always returns all primaries; persisted customisation in Phase 4.
-        return EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
+        if(mDefaultScanDecoders == null)
+        {
+            String raw = mPreferences.get(KEY_DEFAULT_SCAN_DECODERS, null);
+            mDefaultScanDecoders = raw == null ? EnumSet.copyOf(DecoderType.PRIMARY_DECODERS)
+                : parseDecoderSet(raw, "default-scan-decoders");
+        }
+
+        return EnumSet.copyOf(mDefaultScanDecoders);
+    }
+
+    /**
+     * Replaces the decoder set selected by default for new band scans.
+     *
+     * @param decoders default scan decoders; null or empty selects no decoders
+     */
+    public void setDefaultScanDecoders(Set<DecoderType> decoders)
+    {
+        mDefaultScanDecoders = decoders == null || decoders.isEmpty()
+            ? EnumSet.noneOf(DecoderType.class) : EnumSet.copyOf(decoders);
+        String csv = mDefaultScanDecoders.stream().map(Enum::name)
+            .collect(java.util.stream.Collectors.joining(","));
+        mPreferences.put(KEY_DEFAULT_SCAN_DECODERS, csv);
+        notifyPreferenceUpdated();
+    }
+
+    private Set<DecoderType> parseDecoderSet(String raw, String preferenceName)
+    {
+        Set<DecoderType> result = EnumSet.noneOf(DecoderType.class);
+        for(String name : raw.split(","))
+        {
+            String decoderName = name.trim();
+            if(decoderName.isEmpty())
+            {
+                continue;
+            }
+
+            try
+            {
+                result.add(DecoderType.valueOf(decoderName));
+            }
+            catch(IllegalArgumentException e)
+            {
+                mLog.warn("Unknown DecoderType in {} preference: '{}'", preferenceName, decoderName);
+            }
+        }
+        return result;
     }
 
     // -------------------------------------------------------------------------

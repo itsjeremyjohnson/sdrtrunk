@@ -1287,6 +1287,50 @@ class BandScanControllerTest
             "A survey registered after stop advanced the epoch must be cancelled immediately");
     }
 
+    @Test
+    void stopWhileClassificationFutureIsBeingCreatedCancelsRegisteredFuture() throws Exception
+    {
+        CountDownLatch enteredClassification = new CountDownLatch(1);
+        CountDownLatch releaseClassification = new CountDownLatch(1);
+        AtomicBoolean futureCancelled = new AtomicBoolean();
+        Classifier delayedRegistration = request ->
+        {
+            enteredClassification.countDown();
+            try
+            {
+                releaseClassification.await();
+            }
+            catch(InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+            }
+            return new CompletableFuture<ClassificationResult>()
+            {
+                @Override
+                public boolean cancel(boolean mayInterruptIfRunning)
+                {
+                    futureCancelled.set(true);
+                    return super.cancel(mayInterruptIfRunning);
+                }
+            };
+        };
+        BandScanController ctrl = makeController(new FakeSurvey(List.of(makePeak(FREQ_A))), delayedRegistration);
+
+        ctrl.startScan(simpleScan());
+        assertTrue(enteredClassification.await(2, TimeUnit.SECONDS));
+        ctrl.stop();
+        releaseClassification.countDown();
+
+        long deadline = System.currentTimeMillis() + 2_000;
+        while(!futureCancelled.get() && System.currentTimeMillis() < deadline)
+        {
+            Thread.sleep(10);
+        }
+        assertTrue(futureCancelled.get(),
+            "A classification registered after stop advanced the epoch must be cancelled immediately");
+        assertEquals(ScanState.CANCELLED, ctrl.getScanState());
+    }
+
     // -------------------------------------------------------------------------
     // Fix #4: double startScan is coherent (epoch prevents old scan clobbering new)
     // -------------------------------------------------------------------------

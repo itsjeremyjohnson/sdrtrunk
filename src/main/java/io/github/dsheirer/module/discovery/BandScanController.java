@@ -666,12 +666,12 @@ public class BandScanController
         // --- Step 4: Finished or schedule continuous re-scan ------------------
         if(request.continuous())
         {
-            setState(ScanState.IDLE_CONTINUOUS);
+            setStateIfEpoch(ScanState.IDLE_CONTINUOUS, myEpoch);
             scheduleRescan(request, myEpoch);
         }
         else
         {
-            setState(ScanState.DONE);
+            setStateIfEpoch(ScanState.DONE, myEpoch);
         }
     }
 
@@ -818,7 +818,7 @@ public class BandScanController
         }
 
         setProgress(1.0);
-        setState(ScanState.IDLE_CONTINUOUS);
+        setStateIfEpoch(ScanState.IDLE_CONTINUOUS, myEpoch);
         scheduleRescan(request, myEpoch);
     }
 
@@ -1112,6 +1112,13 @@ public class BandScanController
 
         CompletableFuture<ClassificationResult> future = mClassifier.classify(req);
         mActiveClassifyFuture.set(future);
+
+        if(mCurrentEpoch.get() != myEpoch || mShutdown.get() || Thread.currentThread().isInterrupted())
+        {
+            future.cancel(true);
+            mActiveClassifyFuture.compareAndSet(future, null);
+            return;
+        }
 
         try
         {

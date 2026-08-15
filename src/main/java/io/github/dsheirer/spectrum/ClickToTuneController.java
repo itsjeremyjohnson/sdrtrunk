@@ -648,8 +648,15 @@ public class ClickToTuneController
                 return;
             }
 
+            ClassificationResult nextBestMiss = selectBestMiss(bestMiss, result);
+            if(result == null || result.outcome() != ClassificationOutcome.NO_SIGNAL)
+            {
+                completeSearchMiss(searchFuture, centerFreqHz, nextBestMiss);
+                return;
+            }
+
             classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix,
-                searchDeadlineNanos, offsetCount, offsetIndex + 1, selectBestMiss(bestMiss, result));
+                searchDeadlineNanos, offsetCount, offsetIndex + 1, nextBestMiss);
         });
     }
 
@@ -682,8 +689,8 @@ public class ClickToTuneController
     {
         long remainingNanos = searchDeadlineNanos - System.nanoTime();
         int remainingOffsets = offsetCount - offsetIndex;
-        return remainingNanos > 0 && remainingOffsets > 0 ?
-            Duration.ofNanos(Math.max(1L, remainingNanos / remainingOffsets)) : null;
+        return remainingNanos > 0 && remainingOffsets > 0 ? Duration.ofNanos(Math.max(1L,
+            offsetIndex == 0 ? remainingNanos : remainingNanos / remainingOffsets)) : null;
     }
 
     private ClassificationRequest buildSearchRequest(long probeFreqHz, int bwHz, String label,

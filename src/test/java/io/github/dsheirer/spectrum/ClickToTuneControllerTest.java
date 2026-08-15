@@ -322,7 +322,7 @@ class ClickToTuneControllerTest
     }
 
     @Test
-    void classifyAndTune_partitionsDeadlineAcrossOffsetsAndAppliesExclusions() throws Exception
+    void classifyAndTune_givesCenterFullDeadlineAndAppliesExclusions() throws Exception
     {
         mUserPreferences.getDiscoveryPreference().setExcludedDecoders(Set.of(DecoderType.DMR));
         mFakeClassifier.setNextResult(ClassificationResult.noSignal(FREQ, Double.NaN));
@@ -333,11 +333,9 @@ class ClickToTuneControllerTest
         List<io.github.dsheirer.module.discovery.ClassificationRequest> requests =
             mFakeClassifier.getReceivedRequests();
         assertEquals(expectedSearchFrequencies(FREQ).size(), requests.size());
-        assertTrue(requests.get(0).overallDeadline().compareTo(Duration.ofSeconds(3)) >= 0,
-            "Each offset must retain the energy gate plus a viable decoder window");
         assertTrue(requests.get(0).overallDeadline().compareTo(
-            io.github.dsheirer.module.discovery.ClassificationRequest.DEFAULT_DEADLINE) < 0,
-            "The first offset must receive only its share of the total search deadline");
+                io.github.dsheirer.module.discovery.ClassificationRequest.DEFAULT_DEADLINE.minusMillis(100)) >= 0,
+            "The center attempt must receive essentially the full decoder-search budget");
         assertTrue(requests.stream().allMatch(request ->
             !request.candidateDecoders().contains(DecoderType.DMR)));
     }
@@ -352,6 +350,9 @@ class ClickToTuneControllerTest
 
         assertNotNull(mFakeUI.mMissResult);
         assertEquals(ClassificationOutcome.UNIDENTIFIED, mFakeUI.mMissResult.outcome());
+        assertEquals(List.of(FREQ), mFakeClassifier.getReceivedRequests().stream()
+            .map(io.github.dsheirer.module.discovery.ClassificationRequest::centerFrequencyHz)
+            .toList(), "Energy at the clicked frequency must stop nearby-offset expansion");
     }
 
     @Test
@@ -898,15 +899,14 @@ class ClickToTuneControllerTest
 
         io.github.dsheirer.module.discovery.ClassificationRequest keepListeningRequest = keepListeningRequests.get(0);
 
-        // Each offset receives a bounded share, and the extended keep-listening search still
-        // receives a larger first share than the default search.
+        // The center attempt receives the full search budget before nearby offsets are considered.
         Duration expectedDeadline = mUserPreferences.getDiscoveryPreference().getKeepListeningDuration();
         Duration initialFirstDeadline = requests.get(0).overallDeadline();
 
         assertTrue(keepListeningRequest.overallDeadline().compareTo(initialFirstDeadline) > 0,
-            "Keep-listening should allocate a larger per-offset budget than the default search");
-        assertTrue(keepListeningRequest.overallDeadline().compareTo(expectedDeadline) < 0,
-            "No single offset may consume the full keep-listening deadline");
+            "Keep-listening should allocate a larger center-search budget than the default search");
+        assertTrue(keepListeningRequest.overallDeadline().compareTo(expectedDeadline.minusMillis(100)) >= 0,
+            "The keep-listening center attempt must receive essentially the full configured deadline");
         assertTrue(keepListeningRequests.stream().allMatch(
                 request -> request.approximateBandwidthHz() == selectedBandwidthHz),
             "Keep-listening must preserve the operator-selected bandwidth across all search offsets");

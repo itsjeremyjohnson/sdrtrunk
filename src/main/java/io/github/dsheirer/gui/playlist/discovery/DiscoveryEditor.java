@@ -316,6 +316,63 @@ public class DiscoveryEditor extends BorderPane
             discovery.powerDbProperty(), discovery.snrDbProperty());
     }
 
+    static final class CreatedChannelStateObserver
+    {
+        private final Runnable mInvalidated;
+        private Discovery mDiscovery;
+        private Channel mChannel;
+        private final InvalidationListener mDiscoveryListener = observable -> updateChannel();
+        private final InvalidationListener mChannelListener;
+
+        CreatedChannelStateObserver(Runnable invalidated)
+        {
+            mInvalidated = invalidated;
+            mChannelListener = observable -> mInvalidated.run();
+        }
+
+        void observe(Discovery discovery)
+        {
+            if(mDiscovery == discovery)
+            {
+                return;
+            }
+
+            if(mDiscovery != null)
+            {
+                mDiscovery.createdChannelProperty().removeListener(mDiscoveryListener);
+            }
+
+            mDiscovery = discovery;
+            if(mDiscovery != null)
+            {
+                mDiscovery.createdChannelProperty().addListener(mDiscoveryListener);
+            }
+            updateChannel();
+        }
+
+        private void updateChannel()
+        {
+            Channel channel = mDiscovery != null ? mDiscovery.getCreatedChannel() : null;
+            if(mChannel == channel)
+            {
+                mInvalidated.run();
+                return;
+            }
+
+            if(mChannel != null)
+            {
+                mChannel.temporaryLiveProperty().removeListener(mChannelListener);
+            }
+
+            mChannel = channel;
+            if(mChannel != null)
+            {
+                mChannel.temporaryLiveProperty().addListener(mChannelListener);
+            }
+            mInvalidated.run();
+        }
+    }
+
     static String detectedLabel(Discovery discovery)
     {
         DecoderType decoder = discovery.getDetectedDecoder();
@@ -362,6 +419,8 @@ public class DiscoveryEditor extends BorderPane
         {
             private Discovery mDiscovery;
             private final InvalidationListener mDiscoveryListener = observable -> render();
+            private final CreatedChannelStateObserver mChannelObserver =
+                new CreatedChannelStateObserver(this::render);
 
             private void updateDiscovery(Discovery discovery)
             {
@@ -373,7 +432,6 @@ public class DiscoveryEditor extends BorderPane
                 if(mDiscovery != null)
                 {
                     mDiscovery.stateProperty().removeListener(mDiscoveryListener);
-                    mDiscovery.createdChannelProperty().removeListener(mDiscoveryListener);
                 }
 
                 mDiscovery = discovery;
@@ -381,8 +439,9 @@ public class DiscoveryEditor extends BorderPane
                 if(mDiscovery != null)
                 {
                     mDiscovery.stateProperty().addListener(mDiscoveryListener);
-                    mDiscovery.createdChannelProperty().addListener(mDiscoveryListener);
                 }
+
+                mChannelObserver.observe(mDiscovery);
             }
 
             private void render()

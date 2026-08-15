@@ -212,23 +212,23 @@ public class DiscoveryPreferenceEditor extends HBox
         for(DecoderType type : DecoderType.PRIMARY_DECODERS)
         {
             CheckBox cb = new CheckBox(type.getDisplayString());
-            cb.setSelected(!mPreference.getExcludedDecoders().contains(type));
+            cb.setSelected(mPreference.getDefaultScanDecoders().contains(type));
 
             // Lay out in a 2-column grid: column 0 for even i, column 1 for odd i
             mEditorPane.add(cb, i % 2, decoderBaseRow + i / 2);
 
             final DecoderType decoderType = type;
             cb.selectedProperty().addListener((obs, o, n) -> {
-                java.util.Set<DecoderType> excluded = new java.util.HashSet<>(mPreference.getExcludedDecoders());
+                java.util.Set<DecoderType> defaults = new java.util.HashSet<>(mPreference.getDefaultScanDecoders());
                 if(Boolean.TRUE.equals(n))
                 {
-                    excluded.remove(decoderType);
+                    defaults.add(decoderType);
                 }
                 else
                 {
-                    excluded.add(decoderType);
+                    defaults.remove(decoderType);
                 }
-                mPreference.setExcludedDecoders(excluded);
+                mPreference.setDefaultScanDecoders(defaults);
             });
 
             i++;

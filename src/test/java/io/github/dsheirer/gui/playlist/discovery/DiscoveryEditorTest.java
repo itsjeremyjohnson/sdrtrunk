@@ -10,14 +10,35 @@
  */
 package io.github.dsheirer.gui.playlist.discovery;
 
+import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.module.discovery.Discovery;
 import java.time.Instant;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 class DiscoveryEditorTest
 {
+    @Test
+    void createdChannelObserverTracksTemporaryLiveState()
+    {
+        Discovery discovery = new Discovery(155_000_000L, 12_500, -80.0, 10.0, Instant.now());
+        AtomicInteger invalidations = new AtomicInteger();
+        DiscoveryEditor.CreatedChannelStateObserver observer =
+            new DiscoveryEditor.CreatedChannelStateObserver(invalidations::incrementAndGet);
+        observer.observe(discovery);
+        Channel channel = new Channel("discovery");
+        channel.setTemporaryLive(true);
+        discovery.setCreatedChannel(channel);
+        int beforeSave = invalidations.get();
+
+        channel.setTemporaryLive(false);
+
+        assertEquals(beforeSave + 1, invalidations.get(),
+            "Saving the observed channel must invalidate the State cell");
+    }
+
     @Test
     void powerSnrBindingObservesBothValues()
     {

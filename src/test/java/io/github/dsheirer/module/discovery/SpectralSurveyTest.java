@@ -224,6 +224,28 @@ class SpectralSurveyTest
     }
 
     @Test
+    void findPeaksInFrequencyRange_preservesFractionalBinWidthUntilFinalFrequency()
+    {
+        int fftSize = 4_096;
+        double sampleRate = 2_400_000.0;
+        double binWidthHz = sampleRate / fftSize;
+        long centerFrequencyHz = 154_000_000L;
+        double baseFrequencyHz = centerFrequencyHz - sampleRate / 2.0 + binWidthHz / 2.0;
+        float[] magnitudes = makeFlat(fftSize, -100.0f);
+        int signalBin = fftSize - 2;
+        magnitudes[signalBin] = -40.0f;
+
+        List<EnergyPeak> peaks = SpectralSurvey.findPeaksInFrequencyRange(magnitudes, binWidthHz,
+            baseFrequencyHz, THRESHOLD_DB, centerFrequencyHz - 1_200_000L,
+            centerFrequencyHz + 1_200_000L);
+
+        assertEquals(1, peaks.size());
+        assertEquals(Math.round(baseFrequencyHz + signalBin * binWidthHz),
+            peaks.get(0).centerFrequencyHz(),
+            "Fractional 2.4 Msps bin widths must not accumulate whole-Hz truncation error");
+    }
+
+    @Test
     void findPeaksInFrequencyRange_excludesUnusableEdgeBinsFromNoiseEstimate()
     {
         float[] magnitudes = new float[100];
