@@ -168,7 +168,8 @@ public class NBFMAudioFilters
         // 7. Output Gain - Amplify clean signal (don't amplify noise!)
         sample *= mInputGain;
 
-        return sample;
+        // Downstream float-to-PCM conversions cast directly to short, so saturate after the complete chain.
+        return Math.max(-1.0f, Math.min(1.0f, sample));
     }
     
     /**

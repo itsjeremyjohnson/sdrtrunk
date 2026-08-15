@@ -12,9 +12,11 @@ import java.net.http.WebSocket;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ZelloBroadcasterLifecycleTest
 {
@@ -42,6 +44,75 @@ class ZelloBroadcasterLifecycleTest
         broadcaster.processAudioQueue();
 
         assertEquals(1, broadcaster.getAudioQueueSize());
+        broadcaster.stop();
+    }
+
+    @Test
+    void finalizesWorkCallWhenStartAcknowledgementArrivesAfterStop() throws Exception
+    {
+        ZelloConfiguration configuration = new ZelloConfiguration();
+        configuration.setRelaxationTimeMs(0);
+        ZelloBroadcaster broadcaster = new ZelloBroadcaster(configuration, null, null, new AliasModel());
+        AtomicReference<String> lastText = new AtomicReference<>();
+        setConnectionState(broadcaster, webSocket(new AtomicInteger(), lastText));
+        setStreamActive(broadcaster, true);
+        broadcaster.receiveRealTimeAudio(new float[10]);
+
+        broadcaster.stopRealTimeStream();
+        assertEquals(1, broadcaster.getAudioQueueSize());
+
+        broadcaster.handleStartStreamAcknowledged(123);
+        assertEquals(0, broadcaster.getAudioQueueSize());
+        assertTrue(lastText.get().contains("stop_stream"));
+        assertTrue(lastText.get().contains("123"));
+        broadcaster.stop();
+    }
+
+    @Test
+    void finalizesConsumerCallWhenStartAcknowledgementArrivesAfterStop() throws Exception
+    {
+        ZelloConsumerConfiguration configuration = new ZelloConsumerConfiguration();
+        configuration.setRelaxationTimeMs(0);
+        ZelloConsumerBroadcaster broadcaster = new ZelloConsumerBroadcaster(configuration, null, null, new AliasModel());
+        AtomicReference<String> lastText = new AtomicReference<>();
+        setConnectionState(broadcaster, webSocket(new AtomicInteger(), lastText));
+        setStreamActive(broadcaster, true);
+        broadcaster.receiveRealTimeAudio(new float[10]);
+
+        broadcaster.stopRealTimeStream();
+        assertEquals(1, broadcaster.getAudioQueueSize());
+
+        broadcaster.handleStartStreamAcknowledged(456);
+        assertEquals(0, broadcaster.getAudioQueueSize());
+        assertTrue(lastText.get().contains("stop_stream"));
+        assertTrue(lastText.get().contains("456"));
+        broadcaster.stop();
+    }
+
+    @Test
+    void ignoresCloseFromSupersededWorkSocket() throws Exception
+    {
+        ZelloBroadcaster broadcaster = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
+        WebSocket oldSocket = webSocket(new AtomicInteger());
+        setConnectionState(broadcaster, webSocket(new AtomicInteger()));
+
+        listener(broadcaster).onClose(oldSocket, WebSocket.NORMAL_CLOSURE, "old");
+
+        assertTrue(atomicBoolean(broadcaster, "mConnected").get());
+        broadcaster.stop();
+    }
+
+    @Test
+    void ignoresCloseFromSupersededConsumerSocket() throws Exception
+    {
+        ZelloConsumerBroadcaster broadcaster = new ZelloConsumerBroadcaster(new ZelloConsumerConfiguration(), null,
+            null, new AliasModel());
+        WebSocket oldSocket = webSocket(new AtomicInteger());
+        setConnectionState(broadcaster, webSocket(new AtomicInteger()));
+
+        listener(broadcaster).onClose(oldSocket, WebSocket.NORMAL_CLOSURE, "old");
+
+        assertTrue(atomicBoolean(broadcaster, "mConnected").get());
         broadcaster.stop();
     }
 
@@ -77,13 +148,45 @@ class ZelloBroadcasterLifecycleTest
         ((AtomicBoolean)field.get(broadcaster)).set(active);
     }
 
+    private static void setConnectionState(Object broadcaster, WebSocket webSocket) throws Exception
+    {
+        Field socketField = broadcaster.getClass().getDeclaredField("mWebSocket");
+        socketField.setAccessible(true);
+        socketField.set(broadcaster, webSocket);
+        atomicBoolean(broadcaster, "mConnected").set(true);
+    }
+
+    private static AtomicBoolean atomicBoolean(Object broadcaster, String name) throws Exception
+    {
+        Field field = broadcaster.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return (AtomicBoolean)field.get(broadcaster);
+    }
+
+    private static WebSocket.Listener listener(Object broadcaster) throws Exception
+    {
+        Class<?> listenerClass = Class.forName(broadcaster.getClass().getName() + "$ZelloWebSocketListener");
+        var constructor = listenerClass.getDeclaredConstructor(broadcaster.getClass());
+        constructor.setAccessible(true);
+        return (WebSocket.Listener)constructor.newInstance(broadcaster);
+    }
+
     private static WebSocket webSocket(AtomicInteger closes)
+    {
+        return webSocket(closes, new AtomicReference<>());
+    }
+
+    private static WebSocket webSocket(AtomicInteger closes, AtomicReference<String> lastText)
     {
         return (WebSocket)Proxy.newProxyInstance(WebSocket.class.getClassLoader(), new Class[]{WebSocket.class},
             (proxy, method, args) -> {
                 if(method.getName().equals("sendClose"))
                 {
                     closes.incrementAndGet();
+                }
+                else if(method.getName().equals("sendText"))
+                {
+                    lastText.set((String)args[0]);
                 }
 
                 if(CompletableFuture.class.isAssignableFrom(method.getReturnType()))

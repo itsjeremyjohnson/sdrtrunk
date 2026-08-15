@@ -143,6 +143,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
     private volatile String mRefreshToken;
 
     private final AtomicBoolean mStreamActive = new AtomicBoolean(false);
+    private final AtomicBoolean mStopPendingAcknowledgement = new AtomicBoolean(false);
     private final AtomicLong mCurrentStreamId = new AtomicLong(-1);
     private volatile long mLastStreamStopTime = 0;
     private volatile int mStreamSessionEpoch = -1; // epoch captured when stream started
@@ -226,15 +227,16 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
     @Override
     public boolean isRealTimeReady()
     {
-        return mConnected.get() && mChannelOnline.get() && (!mStreamActive.get() || mRelaxationFuture != null);
+        return mConnected.get() && mChannelOnline.get() && !mStopPendingAcknowledgement.get()
+                && (!mStreamActive.get() || mRelaxationFuture != null);
     }
 
     @Override
     public synchronized void startRealTimeStream(IdentifierCollection identifiers)
     {
-        if(!mConnected.get() || !mChannelOnline.get())
+        if(!mConnected.get() || !mChannelOnline.get() || mStopPendingAcknowledgement.get())
         {
-            mLog.warn("{}Cannot start Zello stream - not connected", ch());
+            mLog.warn("{}Cannot start Zello stream - not connected or previous stream is still finalizing", ch());
             return;
         }
         // If a relaxation timer is pending, the stream is still active — cancel the
@@ -332,7 +334,19 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
 
         if(mEncoderFuture != null) { mEncoderFuture.cancel(false); mEncoderFuture = null; }
 
-        // Drain remaining audio — catch Opus encoder assertion errors gracefully
+        long streamId = mCurrentStreamId.get();
+        if(streamId <= 0 && mConnected.get())
+        {
+            mStopPendingAcknowledgement.set(true);
+            mLog.debug("{}Waiting for start_stream acknowledgement before finalizing stopped stream", ch());
+            return;
+        }
+
+        finalizeStoppedStream(streamId);
+    }
+
+    private synchronized void finalizeStoppedStream(long streamId)
+    {
         try
         {
             processAudioQueue();
@@ -343,44 +357,20 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
             mLog.debug("{}Error flushing audio on stream stop: {}", ch(), e.getMessage());
         }
 
-        long streamId = mCurrentStreamId.get();
         if(streamId > 0)
         {
             sendStopStream(streamId);
             mStreamedCount.incrementAndGet();
-            mKickedCount.set(0); // Successful stream proves connection is healthy
-            mConsecutiveGhostStreams = 0; // Server responded — session is healthy
+            mKickedCount.set(0);
+            mConsecutiveGhostStreams = 0;
             broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
         }
-        else if(streamId <= 0 && mConnected.get())
-        {
-            // "Ghost stream": we sent start_stream but the server never responded
-            // with a stream_id. No audio was actually transmitted.
-            mConsecutiveGhostStreams++;
-            mLog.warn("{}Zello ghost stream detected — server did not return stream_id ({}/{})",
-                ch(), mConsecutiveGhostStreams, MAX_GHOST_STREAMS_BEFORE_RECONNECT);
 
-            if(mConsecutiveGhostStreams >= MAX_GHOST_STREAMS_BEFORE_RECONNECT)
-            {
-                mLog.error("{}Zello session appears dead — {} consecutive ghost streams. Forcing reconnect.",
-                    ch(), mConsecutiveGhostStreams);
-                mConsecutiveGhostStreams = 0;
-                mCurrentStreamId.set(-1);
-                mAudioQueue.clear();
-                mLastStreamStopTime = System.currentTimeMillis();
-                mLog.info("{}Zello stream stopped", ch());
-                disconnectWebSocket();
-                setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                scheduleReconnect();
-                return;
-            }
-        }
-
+        mStopPendingAcknowledgement.set(false);
         mCurrentStreamId.set(-1);
+        mResampleBufferPos = 0;
         mAudioQueue.clear();
 
-        // Pause time: additional delay after stop_stream before the broadcaster
-        // is ready for a new stream (like Bridge's pause_time).
         int pauseMs = getBroadcastConfiguration().getPauseTimeMs();
         if(pauseMs > 0)
         {
@@ -390,6 +380,19 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
 
         mLastStreamStopTime = System.currentTimeMillis();
         mLog.info("{}Zello stream stopped", ch());
+    }
+
+    synchronized void handleStartStreamAcknowledged(long streamId)
+    {
+        mCurrentStreamId.set(streamId);
+        mConsecutiveGhostStreams = 0;
+        setLastErrorDetail(null);
+        mLog.debug("{}Zello stream_id={}", ch(), streamId);
+
+        if(mStopPendingAcknowledgement.get())
+        {
+            finalizeStoppedStream(streamId);
+        }
     }
 
     // ========================================================================
@@ -617,6 +620,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
     {
         mConnected.set(false);
         mChannelOnline.set(false);
+        mStopPendingAcknowledgement.set(false);
         cancelConnectionTimeout();
         if(mWebSocket != null)
         {
@@ -752,6 +756,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
             mConnected.set(false);
             mChannelOnline.set(false);
             mStreamActive.set(false);
+            mStopPendingAcknowledgement.set(false);
             mCurrentStreamId.set(-1);
             // Abort the dead WebSocket so connectWebSocket() starts fresh
             if(mWebSocket != null)
@@ -905,6 +910,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
         @Override
         public CompletionStage<?> onText(WebSocket ws, CharSequence data, boolean last)
         {
+            if(ws != mWebSocket) return null;
             mTextBuffer.append(data);
             if(last) { handleTextMessage(mTextBuffer.toString()); mTextBuffer.setLength(0); }
             ws.request(1);
@@ -914,6 +920,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
         @Override
         public CompletionStage<?> onBinary(WebSocket ws, ByteBuffer data, boolean last)
         {
+            if(ws != mWebSocket) return null;
             ws.request(1);
             return null;
         }
@@ -921,6 +928,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
         @Override
         public CompletionStage<?> onPing(WebSocket ws, ByteBuffer msg)
         {
+            if(ws != mWebSocket) return null;
             // Server ping is proof of life — reset keepalive counter
             handleKeepaliveAck();
             ws.sendPong(msg);
@@ -931,6 +939,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
         @Override
         public CompletionStage<?> onPong(WebSocket ws, ByteBuffer msg)
         {
+            if(ws != mWebSocket) return null;
             // Response to our client-side ping — connection is alive
             handleKeepaliveAck();
             ws.request(1);
@@ -940,6 +949,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
         @Override
         public CompletionStage<?> onClose(WebSocket ws, int code, String reason)
         {
+            if(ws != mWebSocket) return null;
             mLog.info("{}Zello disconnected (code={} {})", ch(), code, reason);
             stopKeepalive();
             mConnected.set(false);
@@ -947,6 +957,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
             // Always reset stream state on disconnect — prevents stale stream IDs
             // from surviving into the next session regardless of mStreamActive state
             mStreamActive.set(false);
+            mStopPendingAcknowledgement.set(false);
             mCurrentStreamId.set(-1);
 
             // A close callback is expected after an intentional stop.
@@ -976,12 +987,14 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
         @Override
         public void onError(WebSocket ws, Throwable error)
         {
+            if(ws != mWebSocket) return;
             mLog.error("{}Zello WebSocket error: {}", ch(), error.getMessage());
             stopKeepalive();
             mConnected.set(false);
             mChannelOnline.set(false);
             // Reset stream state on error — same as onClose
             mStreamActive.set(false);
+            mStopPendingAcknowledgement.set(false);
             mCurrentStreamId.set(-1);
 
             // Don't override CONFIGURATION_ERROR or double-schedule after kicked
@@ -1038,6 +1051,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
                         setLastErrorDetail("[" + bridgeCode + "] " + errorMsg +
                             (originCmd != null ? " — " + originCmd : ""));
                         mStreamActive.set(false);
+                        mStopPendingAcknowledgement.set(false);
                         mCurrentStreamId.set(-1);
                         mLastStreamStopTime = System.currentTimeMillis();
                         return;
@@ -1138,11 +1152,7 @@ public class ZelloConsumerBroadcaster extends AbstractAudioBroadcaster<ZelloCons
                 {
                     if(json.get("success").getAsBoolean())
                     {
-                        long streamId = json.get("stream_id").getAsLong();
-                        mCurrentStreamId.set(streamId);
-                        mConsecutiveGhostStreams = 0; // Server is responding — session is healthy
-                        setLastErrorDetail(null);
-                        mLog.debug("{}Zello stream_id={}", ch(), streamId);
+                        handleStartStreamAcknowledged(json.get("stream_id").getAsLong());
                     }
                     else
                     {

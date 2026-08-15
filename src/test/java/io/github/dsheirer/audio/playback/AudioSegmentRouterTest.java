@@ -7,16 +7,38 @@ package io.github.dsheirer.audio.playback;
 
 import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.alias.AliasList;
+import io.github.dsheirer.alias.id.radio.Radio;
 import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.audio.AudioSegment;
+import io.github.dsheirer.module.decode.p25.identifier.radio.APCO25RadioIdentifier;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import io.github.dsheirer.protocol.Protocol;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
 class AudioSegmentRouterTest
 {
+    @Test
+    void selectsAliasWithConfiguredOutputDevice()
+    {
+        AliasList aliasList = new AliasList("test");
+        Alias talkgroupAlias = new Alias("unrouted talkgroup");
+        talkgroupAlias.addAliasID(new Talkgroup(Protocol.APCO25, 100));
+        aliasList.addAlias(talkgroupAlias);
+        Alias radioAlias = new Alias("routed radio");
+        radioAlias.addAliasID(new Radio(Protocol.APCO25, 200));
+        radioAlias.setAudioOutputDevice("test-device");
+        aliasList.addAlias(radioAlias);
+
+        AudioSegment segment = new AudioSegment(aliasList, 0);
+        segment.addIdentifier(APCO25Talkgroup.create(100));
+        segment.addIdentifier(APCO25RadioIdentifier.createFrom(200));
+
+        assertSame(radioAlias, new AudioSegmentRouter().getAlias(segment));
+    }
+
     @Test
     void holdsConsumerReferenceUntilRouterDisposal()
     {

@@ -21,6 +21,7 @@ package io.github.dsheirer.module.decode.ctcss;
 
 import io.github.dsheirer.channel.state.DecoderState;
 import io.github.dsheirer.channel.state.DecoderStateEvent;
+import io.github.dsheirer.identifier.Form;
 import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.module.decode.DecoderType;
 import java.util.HashMap;
@@ -52,6 +53,12 @@ public class CTCSSDecoderState extends DecoderState
     {
         if(message instanceof CTCSSMessage ctcssMessage)
         {
+            if(ctcssMessage.isToneLost())
+            {
+                clearCurrentTone();
+                return;
+            }
+
             mCurrentCode = ctcssMessage.getCTCSSCode();
 
             if(!mCtcssCodeCountsMap.containsKey(mCurrentCode))
@@ -72,12 +79,22 @@ public class CTCSSDecoderState extends DecoderState
     {
         switch(event.getEvent())
         {
+            case END:
+                clearCurrentTone();
+                break;
             case REQUEST_RESET:
+                clearCurrentTone();
                 resetState();
                 break;
             default:
                 break;
         }
+    }
+
+    private void clearCurrentTone()
+    {
+        mCurrentCode = CTCSSCode.UNKNOWN;
+        getIdentifierCollection().remove(Form.TONE);
     }
 
     @Override

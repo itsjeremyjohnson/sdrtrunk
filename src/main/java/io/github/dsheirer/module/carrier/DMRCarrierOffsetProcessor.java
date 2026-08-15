@@ -210,6 +210,8 @@ public class DMRCarrierOffsetProcessor
     {
         if(mLastCalculationTimestamp + CALCULATION_TIME_INTERVAL_MS < samples.timestamp())
         {
+            // Throttle attempts, not just successful sequences, so weak/idle channels are analyzed once per interval.
+            mLastCalculationTimestamp = samples.timestamp();
             int bufferOffset = 0;
 
             while((bufferOffset + FFT_BIN_SIZE) <= samples.length())

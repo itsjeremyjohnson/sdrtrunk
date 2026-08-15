@@ -313,7 +313,7 @@ public class AudioSegmentRouter
     /**
      * Gets the primary alias for an audio segment - checks ALL identifiers
      */
-    private Alias getAlias(AudioSegment audioSegment)
+    Alias getAlias(AudioSegment audioSegment)
     {
         if(audioSegment.getAliasList() == null)
         {
@@ -329,9 +329,15 @@ public class AudioSegmentRouter
             {
                 List<Alias> aliases = audioSegment.getAliasList().getAliases(identifier);
 
-                if(aliases != null && !aliases.isEmpty())
+                if(aliases != null)
                 {
-                    return aliases.get(0);
+                    for(Alias alias : aliases)
+                    {
+                        if(alias.hasAudioOutputDevice())
+                        {
+                            return alias;
+                        }
+                    }
                 }
             }
         }

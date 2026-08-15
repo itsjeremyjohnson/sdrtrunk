@@ -72,6 +72,10 @@ public class CTCSSAuxDecoder extends Decoder implements IRealBufferListener, Lis
             @Override
             public void ctcssLost()
             {
+                if(mLastReportedCode != null && getMessageListener() != null)
+                {
+                    getMessageListener().receive(CTCSSMessage.toneLost(System.currentTimeMillis()));
+                }
                 mLastReportedCode = null;
             }
         });

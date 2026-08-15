@@ -44,10 +44,21 @@ public class CTCSSMessage extends Message
         mCTCSSCode = code;
     }
 
+    public static CTCSSMessage toneLost(long timestamp)
+    {
+        return new CTCSSMessage(null, timestamp);
+    }
+
+    public boolean isToneLost()
+    {
+        return mCTCSSCode == null;
+    }
+
     @Override
     public String toString()
     {
-        return "Continuous Tone-Coded Squelch (CTCSS) Detected: " + mCTCSSCode.getDisplayString();
+        return isToneLost() ? "Continuous Tone-Coded Squelch (CTCSS) Lost" :
+            "Continuous Tone-Coded Squelch (CTCSS) Detected: " + mCTCSSCode.getDisplayString();
     }
 
     /**
@@ -74,6 +85,6 @@ public class CTCSSMessage extends Message
     @Override
     public List<Identifier> getIdentifiers()
     {
-        return Collections.singletonList(new CTCSSIdentifier(mCTCSSCode));
+        return isToneLost() ? Collections.emptyList() : Collections.singletonList(new CTCSSIdentifier(mCTCSSCode));
     }
 }

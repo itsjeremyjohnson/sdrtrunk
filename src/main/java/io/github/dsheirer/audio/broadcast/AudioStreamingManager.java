@@ -65,10 +65,9 @@ public class AudioStreamingManager implements Listener<AudioSegment>
     private int mNextRecordingNumber = 1;
     private BroadcastModel mBroadcastModel;
 
-    // Real-time streaming state: maps audio segment to its active real-time broadcasters
-    private java.util.Map<AudioSegment, List<IRealTimeAudioBroadcaster>> mRealTimeStreams =
+    // Real-time streaming state: each broadcaster tracks its own next buffer so late-ready destinations can catch up.
+    private java.util.Map<AudioSegment, java.util.Map<IRealTimeAudioBroadcaster, Integer>> mRealTimeStreams =
             new java.util.concurrent.ConcurrentHashMap<>();
-    private java.util.Map<AudioSegment, Integer> mLastBufferIndex = new java.util.concurrent.ConcurrentHashMap<>();
 
     /**
      * Constructs an instance
@@ -146,7 +145,6 @@ public class AudioStreamingManager implements Listener<AudioSegment>
 
         mAudioSegments.clear();
         mRealTimeStreams.clear();
-        mLastBufferIndex.clear();
     }
 
     /**
@@ -255,53 +253,53 @@ public class AudioStreamingManager implements Listener<AudioSegment>
             return;
         }
 
-        // Start real-time streams for newly arrived segments
-        if(!mRealTimeStreams.containsKey(audioSegment))
+        Set<IRealTimeAudioBroadcaster> configuredBroadcasters = new HashSet<>();
+        for(BroadcastChannel broadcastChannel : audioSegment.getBroadcastChannels())
         {
-            List<IRealTimeAudioBroadcaster> rtBroadcasters = new ArrayList<>();
-
-            for(BroadcastChannel broadcastChannel : audioSegment.getBroadcastChannels())
+            AbstractAudioBroadcaster<?> broadcaster = mBroadcastModel.getBroadcaster(broadcastChannel.getChannelName());
+            if(broadcaster instanceof IRealTimeAudioBroadcaster rtb)
             {
-                AbstractAudioBroadcaster<?> broadcaster = mBroadcastModel.getBroadcaster(broadcastChannel.getChannelName());
-                if(broadcaster instanceof IRealTimeAudioBroadcaster rtb && rtb.isRealTimeReady())
-                {
-                    IdentifierCollection identifiers = audioSegment.getIdentifierCollection() != null
-                            ? new IdentifierCollection(audioSegment.getIdentifierCollection().getIdentifiers())
-                            : null;
-                    rtb.startRealTimeStream(identifiers);
-                    rtBroadcasters.add(rtb);
-                }
-            }
-
-            if(!rtBroadcasters.isEmpty())
-            {
-                mRealTimeStreams.put(audioSegment, rtBroadcasters);
-                mLastBufferIndex.put(audioSegment, 0);
+                configuredBroadcasters.add(rtb);
             }
         }
 
-        // Forward any new audio buffers
-        List<IRealTimeAudioBroadcaster> rtBroadcasters = mRealTimeStreams.get(audioSegment);
-        if(rtBroadcasters != null && !rtBroadcasters.isEmpty())
-        {
-            int lastIndex = mLastBufferIndex.getOrDefault(audioSegment, 0);
-            List<float[]> buffers = audioSegment.getAudioBuffers();
-            int currentSize = buffers.size();
+        configuredBroadcasters.forEach(rtb -> forwardRealTimeAudio(audioSegment, rtb));
+    }
 
-            for(int i = lastIndex; i < currentSize; i++)
+    /**
+     * Starts a destination when it becomes ready and forwards every buffer that destination has not received yet.
+     */
+    void forwardRealTimeAudio(AudioSegment audioSegment, IRealTimeAudioBroadcaster broadcaster)
+    {
+        java.util.Map<IRealTimeAudioBroadcaster, Integer> rtBroadcasters =
+                mRealTimeStreams.computeIfAbsent(audioSegment, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
+
+        if(!rtBroadcasters.containsKey(broadcaster))
+        {
+            if(!broadcaster.isRealTimeReady())
             {
-                float[] buffer = audioSegment.getAudioBuffer(i);
-                if(buffer != null)
-                {
-                    for(IRealTimeAudioBroadcaster rtb : rtBroadcasters)
-                    {
-                        rtb.receiveRealTimeAudio(buffer);
-                    }
-                }
+                return;
             }
 
-            mLastBufferIndex.put(audioSegment, currentSize);
+            IdentifierCollection identifiers = audioSegment.getIdentifierCollection() != null
+                    ? new IdentifierCollection(audioSegment.getIdentifierCollection().getIdentifiers())
+                    : null;
+            broadcaster.startRealTimeStream(identifiers);
+            rtBroadcasters.put(broadcaster, 0);
         }
+
+        int currentSize = audioSegment.getAudioBuffers().size();
+        int lastIndex = rtBroadcasters.get(broadcaster);
+        for(int i = lastIndex; i < currentSize; i++)
+        {
+            float[] buffer = audioSegment.getAudioBuffer(i);
+            if(buffer != null)
+            {
+                broadcaster.receiveRealTimeAudio(buffer);
+            }
+        }
+
+        rtBroadcasters.put(broadcaster, currentSize);
     }
 
     /**
@@ -309,12 +307,11 @@ public class AudioStreamingManager implements Listener<AudioSegment>
      */
     private void stopRealTimeStreams(AudioSegment audioSegment)
     {
-        List<IRealTimeAudioBroadcaster> rtBroadcasters = mRealTimeStreams.remove(audioSegment);
-        mLastBufferIndex.remove(audioSegment);
+        java.util.Map<IRealTimeAudioBroadcaster, Integer> rtBroadcasters = mRealTimeStreams.remove(audioSegment);
 
         if(rtBroadcasters != null)
         {
-            for(IRealTimeAudioBroadcaster rtb : rtBroadcasters)
+            for(IRealTimeAudioBroadcaster rtb : rtBroadcasters.keySet())
             {
                 try
                 {

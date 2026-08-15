@@ -95,6 +95,24 @@ public class P25P1MessageFramer
         mAllowedNACs = allowedNACs;
     }
 
+    boolean isNACAllowed(int nac)
+    {
+        return mAllowedNACs == null || mAllowedNACs.isEmpty() || mAllowedNACs.contains(nac);
+    }
+
+    void trackNACIfAllowed(int nac)
+    {
+        if(isNACAllowed(nac))
+        {
+            mNACTracker.track(nac);
+        }
+    }
+
+    int getTrackedNAC()
+    {
+        return mNACTracker.getTrackedNAC();
+    }
+
     /**
      * Process soft symbol and apply soft symbol sync pattern detection.
      * @param softSymbol demodulated soft symbol
@@ -855,17 +873,14 @@ public class P25P1MessageFramer
             return false;
         }
 
-        //The BCH decoder can over-correct the NID and produce an invalid NAC.  Compare it against the tracked NAC to
-        //flag it as invalid NID when this happens.  The NAC tracker will give us a value of 0 until it has enough
-        //observations of a valid NID value.
-        mNACTracker.track(nac);
-
-        //NAC filtering: reject frames with non-matching NAC
-        if(mAllowedNACs != null && !mAllowedNACs.isEmpty() && !mAllowedNACs.contains(nac))
+        //NAC filtering: reject frames with non-matching NAC before they can train BCH correction fallback.
+        if(!isNACAllowed(nac))
         {
             dispatchSyncLoss(112);
             return false;
         }
+
+        trackNACIfAllowed(nac);
 
 //        System.out.println("\t\t" + mDebugSymbolCount + " VALID NID - NAC:" + nac + " DUID:" + duid);
         nidDetected(nac, duid, nid.getCorrectedBitCount());

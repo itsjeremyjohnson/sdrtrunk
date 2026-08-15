@@ -40,9 +40,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -56,6 +58,32 @@ public class AudioStreamingManagerTest
     private static final int TALKGROUP_2 = 200;
     private static final int TALKGROUP_3 = 300;
     private static final int RADIO_1 = 9999;
+
+    @Test
+    void tracksReadinessAndProgressPerRealTimeBroadcaster()
+    {
+        AudioStreamingManager manager = new AudioStreamingManager(null, BroadcastFormat.MP3, new UserPreferences());
+        AudioSegment segment = new AudioSegment(null, TimeslotMessage.TIMESLOT_0);
+        segment.addAudio(new float[10]);
+        segment.addAudio(new float[10]);
+        TestRealTimeBroadcaster ready = new TestRealTimeBroadcaster(true);
+        TestRealTimeBroadcaster late = new TestRealTimeBroadcaster(false);
+
+        manager.forwardRealTimeAudio(segment, ready);
+        manager.forwardRealTimeAudio(segment, late);
+        assertEquals(2, ready.buffers.get());
+        assertEquals(0, late.buffers.get());
+
+        segment.addAudio(new float[10]);
+        late.ready = true;
+        manager.forwardRealTimeAudio(segment, ready);
+        manager.forwardRealTimeAudio(segment, late);
+
+        assertEquals(3, ready.buffers.get());
+        assertEquals(3, late.buffers.get());
+        assertEquals(1, ready.starts.get());
+        assertEquals(1, late.starts.get());
+    }
 
     @Test
     public void testPatchGroupStreamingAsPatchGroup()
@@ -124,6 +152,39 @@ public class AudioStreamingManagerTest
 
         assertTrue(success, "Stream patch group audio as INDIVIDUAL TALKGROUPS failed to produce [" +
                 latch.getCount() + "/" + expectedRecordingsCount + "] streaming recordings");
+    }
+
+    private static class TestRealTimeBroadcaster implements IRealTimeAudioBroadcaster
+    {
+        private volatile boolean ready;
+        private final AtomicInteger starts = new AtomicInteger();
+        private final AtomicInteger buffers = new AtomicInteger();
+
+        private TestRealTimeBroadcaster(boolean ready)
+        {
+            this.ready = ready;
+        }
+
+        @Override
+        public void startRealTimeStream(io.github.dsheirer.identifier.IdentifierCollection identifiers)
+        {
+            starts.incrementAndGet();
+        }
+
+        @Override
+        public void receiveRealTimeAudio(float[] audioBuffer)
+        {
+            buffers.incrementAndGet();
+        }
+
+        @Override
+        public void stopRealTimeStream() {}
+
+        @Override
+        public boolean isRealTimeReady()
+        {
+            return ready;
+        }
     }
 
     /**

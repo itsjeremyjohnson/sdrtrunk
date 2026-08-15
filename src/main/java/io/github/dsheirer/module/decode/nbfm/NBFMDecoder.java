@@ -92,11 +92,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
     // CTCSS/DCS tone filtering
     private final boolean mToneFilterEnabled;
-    private final ChannelToneFilter.ToneType mToneFilterType;
     private final Set<CTCSSCode> mTargetCTCSSCodes;
     private final Set<DCSCode> mTargetDCSCodes;
     private CTCSSDetector mCTCSSDetector;
     private DCSDetector mDCSDetector;
+    private volatile boolean mCTCSSMatch = false;
+    private volatile boolean mDCSMatch = false;
     private volatile boolean mToneMatch = false;
 
     /**
@@ -147,20 +148,16 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
             mTargetCTCSSCodes = extractCTCSSCodes(config.getToneFilters());
             mTargetDCSCodes = extractDCSCodes(config.getToneFilters());
 
-            // Determine which type of filter is configured
             if(!mTargetCTCSSCodes.isEmpty())
             {
-                mToneFilterType = ChannelToneFilter.ToneType.CTCSS;
                 mLog.info("[{}] CTCSS tone filtering enabled with {} target code(s)", mChannelLabel, mTargetCTCSSCodes.size());
             }
-            else if(!mTargetDCSCodes.isEmpty())
+            if(!mTargetDCSCodes.isEmpty())
             {
-                mToneFilterType = ChannelToneFilter.ToneType.DCS;
                 mLog.info("[{}] DCS code filtering enabled with {} target code(s)", mChannelLabel, mTargetDCSCodes.size());
             }
-            else
+            if(mTargetCTCSSCodes.isEmpty() && mTargetDCSCodes.isEmpty())
             {
-                mToneFilterType = null;
                 mLog.warn("[{}] Tone filtering enabled but no valid CTCSS or DCS codes configured", mChannelLabel);
             }
         }
@@ -168,7 +165,6 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             mTargetCTCSSCodes = null;
             mTargetDCSCodes = null;
-            mToneFilterType = null;
         }
 
         // Extract squelch tail removal configuration
@@ -253,6 +249,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     {
                         // Holdover expired or no previous match — full reset.
                         // Channel stays idle until detector confirms the correct tone.
+                        mCTCSSMatch = false;
+                        mDCSMatch = false;
                         mToneMatch = false;
 
                         if(mCTCSSDetector != null)
@@ -619,6 +617,21 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mDecoderStateEventListener = null;
     }
 
+    boolean hasConfiguredCTCSSFiltering()
+    {
+        return mTargetCTCSSCodes != null && !mTargetCTCSSCodes.isEmpty();
+    }
+
+    boolean hasConfiguredDCSFiltering()
+    {
+        return mTargetDCSCodes != null && !mTargetDCSCodes.isEmpty();
+    }
+
+    private void updateToneMatch()
+    {
+        mToneMatch = mCTCSSMatch || mDCSMatch;
+    }
+
     /**
      * Updates the decoder to process complex sample buffers at the specified sample rate.
      * @param sampleRate of the incoming complex sample buffer stream.
@@ -694,7 +707,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 {
                     // Matching tone confirmed — wake up the channel like a real radio unsquelching
                     boolean wasBlocked = !mToneMatch;
-                    mToneMatch = true;
+                    mCTCSSMatch = true;
+                    updateToneMatch();
                     mLastToneMatchTime = System.currentTimeMillis();
 
                     // If we were previously blocked, fire a call start now
@@ -712,16 +726,19 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 @Override
                 public void ctcssRejected(CTCSSCode code)
                 {
-                    // Wrong tone confirmed — fully squelch the channel like a real radio
+                    // Wrong CTCSS tone only closes the OR gate when no configured DCS code remains matched.
                     boolean wasActive = mToneMatch;
-                    mToneMatch = false;
+                    mCTCSSMatch = false;
+                    updateToneMatch();
 
-                    // If we had an active call, end it and go idle
-                    if(wasActive)
+                    if(!mToneMatch)
                     {
-                        notifyCallEnd();
+                        if(wasActive)
+                        {
+                            notifyCallEnd();
+                        }
+                        notifyIdle();
                     }
-                    notifyIdle();
 
                     if(mDecoderState != null)
                     {
@@ -732,15 +749,19 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 @Override
                 public void ctcssLost()
                 {
-                    // Tone lost — squelch the channel until tone re-confirmed
+                    // Tone loss only closes the OR gate when no configured DCS code remains matched.
                     boolean wasActive = mToneMatch;
-                    mToneMatch = false;
+                    mCTCSSMatch = false;
+                    updateToneMatch();
 
-                    if(wasActive)
+                    if(!mToneMatch)
                     {
-                        notifyCallEnd();
+                        if(wasActive)
+                        {
+                            notifyCallEnd();
+                        }
+                        notifyIdle();
                     }
-                    notifyIdle();
 
                     if(mDecoderState != null)
                     {
@@ -754,8 +775,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         }
 
         // Initialize DCS detector at 8 kHz if DCS filtering is enabled
-        if(mToneFilterEnabled && mToneFilterType == ChannelToneFilter.ToneType.DCS
-                && mTargetDCSCodes != null && !mTargetDCSCodes.isEmpty())
+        if(mToneFilterEnabled && mTargetDCSCodes != null && !mTargetDCSCodes.isEmpty())
         {
             mDCSDetector = new DCSDetector(mTargetDCSCodes);
             mDCSDetector.setListener(new DCSDetector.DCSDetectorListener()
@@ -765,7 +785,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 {
                     // Matching code confirmed — wake up the channel
                     boolean wasBlocked = !mToneMatch;
-                    mToneMatch = true;
+                    mDCSMatch = true;
+                    updateToneMatch();
                     mLastToneMatchTime = System.currentTimeMillis();
 
                     if(wasBlocked)
@@ -782,15 +803,19 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 @Override
                 public void dcsRejected(DCSCode code)
                 {
-                    // Wrong code confirmed — fully squelch the channel
+                    // Wrong DCS code only closes the OR gate when no configured CTCSS tone remains matched.
                     boolean wasActive = mToneMatch;
-                    mToneMatch = false;
+                    mDCSMatch = false;
+                    updateToneMatch();
 
-                    if(wasActive)
+                    if(!mToneMatch)
                     {
-                        notifyCallEnd();
+                        if(wasActive)
+                        {
+                            notifyCallEnd();
+                        }
+                        notifyIdle();
                     }
-                    notifyIdle();
 
                     if(mDecoderState != null)
                     {
@@ -801,15 +826,19 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                 @Override
                 public void dcsLost()
                 {
-                    // Code lost — squelch until re-confirmed
+                    // Code loss only closes the OR gate when no configured CTCSS tone remains matched.
                     boolean wasActive = mToneMatch;
-                    mToneMatch = false;
+                    mDCSMatch = false;
+                    updateToneMatch();
 
-                    if(wasActive)
+                    if(!mToneMatch)
                     {
-                        notifyCallEnd();
+                        if(wasActive)
+                        {
+                            notifyCallEnd();
+                        }
+                        notifyIdle();
                     }
-                    notifyIdle();
 
                     if(mDecoderState != null)
                     {

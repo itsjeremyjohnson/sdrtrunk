@@ -5,7 +5,9 @@
  */
 package io.github.dsheirer.module.decode.nbfm;
 
+import io.github.dsheirer.module.decode.config.ChannelToneFilter;
 import io.github.dsheirer.module.decode.dcs.DCSCode;
+import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
@@ -22,6 +24,21 @@ class NBFMToneFilterTest
         configuration.setToneFilterEnabled(true);
 
         assertTrue(configuration.hasToneFiltering());
+    }
+
+    @Test
+    void mixedCtcssAndDcsFiltersEnableBothDetectorTypes()
+    {
+        DecodeConfigNBFM configuration = new DecodeConfigNBFM();
+        configuration.setToneFilterEnabled(true);
+        configuration.setToneFilters(List.of(
+            new ChannelToneFilter(ChannelToneFilter.ToneType.CTCSS, "TONE_XZ", "ctcss"),
+            new ChannelToneFilter(ChannelToneFilter.ToneType.DCS, "N023", "dcs")));
+
+        NBFMDecoder decoder = new NBFMDecoder(configuration);
+
+        assertTrue(decoder.hasConfiguredCTCSSFiltering());
+        assertTrue(decoder.hasConfiguredDCSFiltering());
     }
 
     @Test
