@@ -20,6 +20,7 @@ Usage:
 import argparse
 import json
 import os
+import re
 import shutil
 import sys
 import glob as glob_mod
@@ -288,6 +289,11 @@ def format_delta(control_val, test_val, higher_is_better=True, fmt=".0f"):
     return f"{test_val:{fmt}}{arrow}{pct}"
 
 
+def metric_file_key(file_name):
+    """Match DecodeQualityTest's per-sample audio directory sanitizer."""
+    return re.sub(r'_baseband\.wav$', '', re.sub(r'[^a-zA-Z0-9._-]', '_', file_name))
+
+
 def generate_report(control_metrics, test_metrics, control_audio=None, test_audio=None):
     """Generate comparison report text."""
     lines = []
@@ -391,7 +397,7 @@ def generate_report(control_metrics, test_metrics, control_audio=None, test_audi
             is_fd = c.get('is_fd', t.get('is_fd', False))
 
             # Get file key for audio lookup
-            file_key = f.replace(' ', '_').replace('_baseband.wav', '').replace('.', '_')
+            file_key = metric_file_key(f)
             # Try to find audio dirs
             c_audio = control_audio.get(file_key, control_audio.get(f, {})) if isinstance(control_audio, dict) else {}
             t_audio = test_audio.get(file_key, test_audio.get(f, {})) if isinstance(test_audio, dict) else {}

@@ -131,10 +131,22 @@ public class DecodeQualityTest
         boolean diagnosticMode = "diagnostic".equals(mode);
 
         TestJmbeCodecLoader codec = null;
-        if(fullMode && jmbePath != null)
+        if(fullMode)
         {
+            if(jmbePath == null)
+            {
+                System.err.println("ERROR: --mode full requires --jmbe with a usable codec jar");
+                System.exit(1);
+                return;
+            }
+
             codec = new TestJmbeCodecLoader(Paths.get(jmbePath));
-            if(!codec.isLoaded()) { System.err.println("WARNING: JMBE load failed: " + codec.getLoadError()); codec = null; }
+            if(!codec.isLoaded())
+            {
+                System.err.println("ERROR: JMBE load failed: " + codec.getLoadError());
+                System.exit(1);
+                return;
+            }
         }
 
         List<ChannelConfig> channels = parsePlaylist(new File(playlistPath));
@@ -158,7 +170,8 @@ public class DecodeQualityTest
 
             String channelName = config != null ? config.name() : "Unknown";
             String modulation = forceMod != null ? forceMod : (config != null ? config.modulation() : "C4FM");
-            int nac = forceNac >= 0 ? forceNac : (config != null ? config.nac() : 0);
+            int nac = forceNac >= 0 ? forceNac : (config != null ? config.nac() : -1);
+            String sampleId = sampleIdentifier(Paths.get(samplesDir), bbFile.toPath());
             String tuner = config != null ? config.preferredTuner() : "N/A";
             String system = config != null ? config.system() : "";
             String site = config != null ? config.site() : "";
@@ -183,7 +196,7 @@ public class DecodeQualityTest
             double qualityScore = 0;
             if(fullMode && codec != null)
             {
-                Path audioDir = outPath.resolve(sanitize(bbFile.getName()));
+                Path audioDir = outPath.resolve(sanitize(sampleId));
                 try { Files.createDirectories(audioDir); } catch(IOException e) { /* ignore */ }
                 AudioResult ar = decodeAudio(bbFile, modulation, nac, codec, audioDir, maxBchErrors, maxImbeErrors, segmentGapMs, silenceThreshold, silenceMinMs, cmaAcqMu, cmaTrkMu, cmaShiftMs);
                 audioSegments = ar.segmentCount;
@@ -253,7 +266,7 @@ public class DecodeQualityTest
                 "\"artifact_frames\": %d, \"artifact_seconds\": %.2f, \"artifact_percentage\": %.2f, " +
                 "\"speech_frames\": %d, \"speech_percentage\": %.2f, \"quality_score\": %.4f, " +
                 "\"signal_seconds\": %.2f, \"total_file_seconds\": %.2f, \"decode_ratio\": %.2f%s%s}",
-                escapeJson(bbFile.getName()), escapeJson(channelName), escapeJson(system), escapeJson(site),
+                escapeJson(sampleId), escapeJson(channelName), escapeJson(system), escapeJson(site),
                 modulation, nac, escapeJson(tuner), isFD,
                 result.lduCount, result.validMessages, result.totalMessages, result.syncBlockedCount,
                 result.bitErrors, result.syncLosses, audioSeconds, audioSegments,
@@ -275,6 +288,22 @@ public class DecodeQualityTest
         catch(IOException e) { System.err.println("ERROR writing metrics: " + e.getMessage()); }
     }
 
+    static String sampleIdentifier(Path samplesRoot, Path sample)
+    {
+        Path normalizedRoot = samplesRoot.toAbsolutePath().normalize();
+        Path normalizedSample = sample.toAbsolutePath().normalize();
+        return normalizedRoot.relativize(normalizedSample).toString().replace(File.separatorChar, '/');
+    }
+
+    static void configureDecoder(Object decoder, Object framer, int nac, int maxBchErrors)
+    {
+        if(nac >= 0)
+        {
+            invokeOptional(decoder, "setConfiguredNAC", new Class<?>[]{int.class}, nac);
+        }
+        invokeOptional(framer, "setMaxBchErrors", new Class<?>[]{int.class}, maxBchErrors);
+    }
+
     private static DecoderWrapper createDecoder(String modulation, int nac, int maxBchErrors, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
     {
         return switch(modulation.toUpperCase())
@@ -282,6 +311,7 @@ public class DecodeQualityTest
             case "CQPSK" ->
             {
                 P25P1DecoderLSM d = new P25P1DecoderLSM();
+                configureDecoder(d, d.getMessageFramer(), nac, maxBchErrors);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
@@ -295,8 +325,7 @@ public class DecodeQualityTest
             case "CQPSK_V2" ->
             {
                 P25P1DecoderLSMv2 d = new P25P1DecoderLSMv2();
-                if(nac > 0) invokeOptional(d, "setConfiguredNAC", new Class<?>[]{int.class}, nac);
-                if(maxBchErrors < 11) d.getMessageFramer().setMaxBchErrors(maxBchErrors);
+                configureDecoder(d, d.getMessageFramer(), nac, maxBchErrors);
                 if(cmaAcqMu > 0 || cmaTrkMu > 0 || cmaShiftMs > 0) d.setCMAConfig(cmaAcqMu, cmaTrkMu, cmaShiftMs);
                 yield new DecoderWrapper()
                 {
@@ -311,7 +340,7 @@ public class DecodeQualityTest
             case "C4FM_V2" ->
             {
                 P25P1DecoderC4FMv2 d = new P25P1DecoderC4FMv2();
-                if(nac > 0) invokeOptional(d, "setConfiguredNAC", new Class<?>[]{int.class}, nac);
+                configureDecoder(d, d.getMessageFramer(), nac, maxBchErrors);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
@@ -325,7 +354,7 @@ public class DecodeQualityTest
             default ->
             {
                 P25P1DecoderC4FM d = new P25P1DecoderC4FM();
-                if(nac > 0) invokeOptional(d, "setConfiguredNAC", new Class<?>[]{int.class}, nac);
+                configureDecoder(d, d.getMessageFramer(), nac, maxBchErrors);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
@@ -988,8 +1017,11 @@ public class DecodeQualityTest
                 if(!"decodeConfigP25Phase1".equals(dc.getAttribute("type"))) continue;
 
                 String modulation = dc.getAttribute("modulation");
-                int nac = 0;
-                try { nac = Integer.parseInt(dc.getAttribute("configuredNAC")); } catch(NumberFormatException e) {}
+                int nac = -1;
+                if(dc.hasAttribute("configuredNAC"))
+                {
+                    try { nac = Integer.parseInt(dc.getAttribute("configuredNAC")); } catch(NumberFormatException e) {}
+                }
 
                 NodeList sourceConfigs = ch.getElementsByTagName("source_configuration");
                 long frequency = 0;

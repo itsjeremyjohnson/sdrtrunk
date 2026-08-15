@@ -65,11 +65,24 @@ if [[ -z "$SAMPLES_DIR" ]]; then echo "ERROR: --samples is required"; usage; fi
 if [[ -z "$PLAYLIST" ]]; then echo "ERROR: --playlist is required"; usage; fi
 if [[ -z "$CONTROL_DIR" && -z "$CONTROL_REF" ]]; then echo "ERROR: --control or --control-ref is required"; usage; fi
 if [[ -z "$TEST_DIR" ]]; then TEST_DIR="$REPO_DIR"; fi
+if [[ "$MODE" != "quick" && "$MODE" != "full" ]]; then echo "ERROR: --mode must be quick or full"; exit 1; fi
+if [[ "$MODE" == "full" && ( -z "$JMBE_JAR" || ! -f "$JMBE_JAR" || ! -r "$JMBE_JAR" ) ]]; then
+    echo "ERROR: --mode full requires a readable JMBE codec jar supplied with --jmbe"
+    exit 1
+fi
+
+# Resolve caller-relative paths before run_decode changes into either source tree.
+SAMPLES_DIR="$(realpath -m -- "$SAMPLES_DIR")"
+PLAYLIST="$(realpath -m -- "$PLAYLIST")"
+TEST_DIR="$(realpath -m -- "$TEST_DIR")"
+if [[ -n "$CONTROL_DIR" ]]; then CONTROL_DIR="$(realpath -m -- "$CONTROL_DIR")"; fi
+if [[ -n "$JMBE_JAR" ]]; then JMBE_JAR="$(realpath -m -- "$JMBE_JAR")"; fi
 
 # Setup output directory
 if [[ -z "$OUTPUT_DIR" ]]; then
     OUTPUT_DIR="/tmp/decode-quality-$(date +%Y%m%d_%H%M%S)"
 fi
+OUTPUT_DIR="$(realpath -m -- "$OUTPUT_DIR")"
 mkdir -p "$OUTPUT_DIR"
 
 CONTROL_OUTPUT="$OUTPUT_DIR/control"

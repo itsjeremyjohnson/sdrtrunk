@@ -17,6 +17,28 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class DecodeQualityCompatibilityTest
 {
     @Test
+    void explicitZeroNacAndBchThresholdAreApplied()
+    {
+        ConfigurableDecoder decoder = new ConfigurableDecoder();
+        ConfigurableFramer framer = new ConfigurableFramer();
+
+        DecodeQualityTest.configureDecoder(decoder, framer, 0, 3);
+
+        assertEquals(0, decoder.mNac);
+        assertEquals(3, framer.mMaxBchErrors);
+    }
+
+    @Test
+    void duplicateBasenamesRetainRelativeDirectoryIdentity()
+    {
+        java.nio.file.Path root = java.nio.file.Path.of("samples").toAbsolutePath();
+        assertEquals("north/call_baseband.wav", DecodeQualityTest.sampleIdentifier(root,
+                root.resolve("north/call_baseband.wav")));
+        assertEquals("south/call_baseband.wav", DecodeQualityTest.sampleIdentifier(root,
+                root.resolve("south/call_baseband.wav")));
+    }
+
+    @Test
     void missingHistoricalTuningMethodIsIgnored()
     {
         HistoricalDecoder decoder = new HistoricalDecoder();
@@ -24,6 +46,26 @@ class DecodeQualityCompatibilityTest
         assertDoesNotThrow(() -> DecodeQualityTest.invokeOptional(decoder, "setConfiguredNAC",
                 new Class<?>[]{int.class}, 0x293));
         assertEquals(0, decoder.getCalls());
+    }
+
+    private static class ConfigurableDecoder
+    {
+        private int mNac = -1;
+
+        public void setConfiguredNAC(int nac)
+        {
+            mNac = nac;
+        }
+    }
+
+    private static class ConfigurableFramer
+    {
+        private int mMaxBchErrors = -1;
+
+        public void setMaxBchErrors(int maxBchErrors)
+        {
+            mMaxBchErrors = maxBchErrors;
+        }
     }
 
     private static class HistoricalDecoder
