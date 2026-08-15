@@ -718,9 +718,17 @@ Java_io_github_dsheirer_source_tuner_hydrasdr_HydraSdrNative_getDeviceInfo(
 
 	/* Preserve the legacy sdrtrunk unique ID format used by saved tuner configurations. */
 	char serial_str[64];
-	uint32_t sn_msb = info.part_serial.serial_no[2];
-	uint32_t sn_lsb = info.part_serial.serial_no[3];
-	snprintf(serial_str, sizeof(serial_str), "%08X-%08X", sn_msb, sn_lsb);
+	size_t serial_length = 0;
+	if (info.part_serial.serial_no[0] != 0) {
+		serial_length += snprintf(serial_str + serial_length,
+			sizeof(serial_str) - serial_length, "%08X-", info.part_serial.serial_no[0]);
+	}
+	if (info.part_serial.serial_no[1] != 0) {
+		serial_length += snprintf(serial_str + serial_length,
+			sizeof(serial_str) - serial_length, "%08X-", info.part_serial.serial_no[1]);
+	}
+	snprintf(serial_str + serial_length, sizeof(serial_str) - serial_length,
+		"%08X-%08X", info.part_serial.serial_no[2], info.part_serial.serial_no[3]);
 	SET_STRING_FIELD(setSerialNumber, serial_str);
 
 	char part_str[32];

@@ -95,12 +95,7 @@ public class ImbeStreamPreferenceEditor extends HBox
         Spinner<Integer> portSpinner = new Spinner<>();
         portSpinner.setValueFactory(
                 new SpinnerValueFactory.IntegerSpinnerValueFactory(1024, 65535, mPreference.getPort()));
-        portSpinner.setEditable(true);
-        portSpinner.setPrefWidth(100);
-        portSpinner.valueProperty().addListener((obs, oldVal, newVal) ->
-        {
-            if (newVal != null) mPreference.setPort(newVal);
-        });
+        NetworkStreamPreferenceEditor.configurePortSpinner(portSpinner, mPreference::setPort);
         HBox portRow = new HBox(10, portLabel, portSpinner);
         portRow.setAlignment(Pos.CENTER_LEFT);
 

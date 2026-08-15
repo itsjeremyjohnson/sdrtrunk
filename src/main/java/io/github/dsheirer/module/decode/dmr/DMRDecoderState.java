@@ -303,15 +303,20 @@ public class DMRDecoderState extends TimeslotDecoderState
         mRawStreamListener = listener;
     }
 
+    /**
+     * Indicates if a decoded message belongs on the advertised raw signaling/control stream.
+     */
+    static boolean isRawStreamMessageFamily(IMessage message)
+    {
+        return message instanceof CSBKMessage || message instanceof LCMessage;
+    }
+
     @Override
     public void receive(IMessage message)
     {
         if(message.getTimeslot() == getTimeslot())
         {
-            if(mRawStreamListener != null
-                    && isValid(message)
-                    && !(message instanceof VoiceMessage)
-                    && !(message instanceof EmptyTimeslotPlaceholderMessage))
+            if(mRawStreamListener != null && isValid(message) && isRawStreamMessageFamily(message))
             {
                 mRawStreamListener.receive(message);
             }

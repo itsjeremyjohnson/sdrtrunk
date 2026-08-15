@@ -34,6 +34,8 @@ import javafx.scene.layout.Priority;
 import javafx.scene.layout.VBox;
 import org.controlsfx.control.ToggleSwitch;
 
+import java.util.function.IntConsumer;
+
 /**
  * Preference editor for the TCP Network Stream Output feature.
  */
@@ -211,16 +213,60 @@ public class NetworkStreamPreferenceEditor extends HBox
 
         Spinner<Integer> spinner = new Spinner<>();
         spinner.setValueFactory(new SpinnerValueFactory.IntegerSpinnerValueFactory(1024, 65535, currentValue));
-        spinner.setEditable(true);
-        spinner.setPrefWidth(100);
-        spinner.valueProperty().addListener((obs, oldVal, newVal) ->
-        {
-            if(newVal != null) setter.set(newVal);
-        });
+        configurePortSpinner(spinner, setter::set);
 
         HBox row = new HBox(10, lbl, spinner);
         row.setAlignment(Pos.CENTER_LEFT);
         return row;
+    }
+
+    static void configurePortSpinner(Spinner<Integer> spinner, IntConsumer setter)
+    {
+        spinner.setEditable(true);
+        spinner.setPrefWidth(100);
+        spinner.valueProperty().addListener((obs, oldValue, newValue) ->
+        {
+            if(newValue != null)
+            {
+                setter.accept(newValue);
+            }
+        });
+        spinner.getEditor().setOnAction(event -> commitPortEditor(spinner));
+        spinner.getEditor().focusedProperty().addListener((obs, wasFocused, isFocused) ->
+        {
+            if(!isFocused)
+            {
+                commitPortEditor(spinner);
+            }
+        });
+    }
+
+    static void commitPortEditor(Spinner<Integer> spinner)
+    {
+        Integer port = parsePort(spinner.getEditor().getText());
+
+        if(port != null)
+        {
+            spinner.getValueFactory().setValue(port);
+        }
+        else
+        {
+            spinner.getEditor().setText(spinner.getValueFactory().getConverter()
+                .toString(spinner.getValue()));
+        }
+    }
+
+    static Integer parsePort(String text)
+    {
+        try
+        {
+            int port = Integer.parseInt(text.trim());
+            return port >= 1024 && port <= 65535 ? port : null;
+        }
+        catch(NullPointerException | NumberFormatException e)
+        {
+            return null;
+        }
     }
 
     private TextArea codeBox(String code, double prefHeight)
