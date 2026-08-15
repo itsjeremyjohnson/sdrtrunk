@@ -44,6 +44,7 @@ public class Dispatcher<E> implements Listener<E>
     private final LinkedTransferQueue<E> mQueue = new LinkedTransferQueue<>();
     private Listener<E> mListener;
     private final AtomicBoolean mRunning = new AtomicBoolean();
+    private final AtomicBoolean mFlushOnStop = new AtomicBoolean();
     private String mThreadName;
     private ScheduledExecutorService mExecutorService;
     private ScheduledFuture<?> mScheduledFuture;
@@ -113,6 +114,8 @@ public class Dispatcher<E> implements Listener<E>
     {
         if(mRunning.compareAndSet(false, true))
         {
+            mFlushOnStop.set(false);
+
             if(mScheduledFuture != null)
             {
                 //Note: this has to be false because downstream implementations may have acquired locks and they must
@@ -139,6 +142,8 @@ public class Dispatcher<E> implements Listener<E>
      */
     public void stop()
     {
+        mFlushOnStop.set(false);
+
         if(mRunning.compareAndSet(true, false))
         {
             if(mScheduledFuture != null)
@@ -163,6 +168,8 @@ public class Dispatcher<E> implements Listener<E>
      */
     public void flushAndStop()
     {
+        mFlushOnStop.set(true);
+
         if(mRunning.compareAndSet(true, false))
         {
             if(mScheduledFuture != null)
@@ -211,6 +218,12 @@ public class Dispatcher<E> implements Listener<E>
                     }
                 }
             }
+
+            mFlushOnStop.set(false);
+        }
+        else
+        {
+            mFlushOnStop.set(false);
         }
     }
 
@@ -235,7 +248,7 @@ public class Dispatcher<E> implements Listener<E>
 
         for(E element: elements)
         {
-            if(listener != null)
+            if(listener != null && (mRunning.get() || mFlushOnStop.get()))
             {
                 try
                 {

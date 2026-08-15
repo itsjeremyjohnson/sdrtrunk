@@ -49,6 +49,7 @@ import java.util.Collections;
 import java.util.HashMap;
 import java.util.HexFormat;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
@@ -170,7 +171,7 @@ public class DecodeQualityTest
         for(File bbFile : basebandFiles)
         {
             long freq = extractFrequency(bbFile.getName());
-            ChannelConfig config = findChannel(channels, freq, bbFile.getName());
+            ChannelConfig config = findChannel(channels, freq, bbFile);
 
             String channelName = config != null ? config.name() : "Unknown";
             String modulation = forceMod != null ? forceMod : (config != null ? config.modulation() : "C4FM");
@@ -251,7 +252,7 @@ public class DecodeQualityTest
             String diagJson = "";
             if(diag != null)
             {
-                diagJson = String.format(
+                diagJson = formatJson(
                     ", \"diag_total_frames\": %d, \"diag_total_errors\": %d, \"diag_uncorrectable_frames\": %d, " +
                     "\"diag_invalid_fundamentals\": %d, \"diag_avg_errors_per_frame\": %.2f, \"diag_max_frame_errors\": %d, " +
                     "\"diag_error_dist\": [%d, %d, %d, %d, %d]",
@@ -261,7 +262,7 @@ public class DecodeQualityTest
                     diag.errorDistribution[2], diag.errorDistribution[3], diag.errorDistribution[4]);
             }
 
-            json.append(String.format(
+            json.append(formatJson(
                 "  {\"file\": \"%s\", \"channel\": \"%s\", \"system\": \"%s\", \"site\": \"%s\", " +
                 "\"modulation\": \"%s\", \"nac\": %d, \"tuner\": \"%s\", \"is_fd\": %s, " +
                 "\"ldu_count\": %d, \"valid_messages\": %d, \"total_messages\": %d, \"sync_blocked\": %d, " +
@@ -1004,7 +1005,7 @@ public class DecodeQualityTest
         return new WaveformAnalysis(silenceCount, artifactCount, speechCount, quality);
     }
 
-    private static void writeMP3(List<float[]> audioBuffers, Path mp3File)
+    static void writeMP3(List<float[]> audioBuffers, Path mp3File)
     {
         try(FileOutputStream fos = new FileOutputStream(mp3File.toFile()))
         {
@@ -1020,7 +1021,10 @@ public class DecodeQualityTest
                 if(chunk != null && chunk.length > 0) fos.write(chunk);
             }
         }
-        catch(IOException e) { System.err.println("  MP3 write error: " + e.getMessage()); }
+        catch(IOException e)
+        {
+            throw new IllegalStateException("MP3 write failed for " + mp3File, e);
+        }
     }
 
     static void invokeOptional(Object target, String methodName, Class<?>[] parameterTypes, Object... arguments)
@@ -1184,10 +1188,22 @@ public class DecodeQualityTest
 
     static ChannelConfig findChannel(List<ChannelConfig> channels, long frequency)
     {
-        return findChannel(channels, frequency, null);
+        return findChannel(channels, frequency, null, null);
+    }
+
+    static ChannelConfig findChannel(List<ChannelConfig> channels, long frequency, File basebandFile)
+    {
+        String parentDirectory = basebandFile.getParentFile() != null ? basebandFile.getParentFile().getName() : null;
+        return findChannel(channels, frequency, basebandFile.getName(), parentDirectory);
     }
 
     static ChannelConfig findChannel(List<ChannelConfig> channels, long frequency, String filename)
+    {
+        return findChannel(channels, frequency, filename, null);
+    }
+
+    static ChannelConfig findChannel(List<ChannelConfig> channels, long frequency, String filename,
+                                     String parentDirectory)
     {
         List<ChannelConfig> matches = channels.stream().filter(channel -> channel.frequency() == frequency).toList();
         if(matches.size() <= 1)
@@ -1195,43 +1211,41 @@ public class DecodeQualityTest
             return matches.isEmpty() ? null : matches.getFirst();
         }
 
-        String[] parts = filename != null ? filename.split("_") : new String[0];
-        if(parts.length >= 6)
+        String[] filenameParts = filename != null ? filename.split("_") : new String[0];
+        String[] parentParts = parentDirectory != null ? parentDirectory.split("_") : new String[0];
+        String system = filenameParts.length >= 6 ? filenameParts[3] : parentParts.length >= 3 ? parentParts[0] : "";
+        String site = filenameParts.length >= 6 ? filenameParts[4] : parentParts.length >= 3 ? parentParts[1] : "";
+        String name = filenameParts.length >= 6 ? filenameParts[5] : parentParts.length >= 3 ? parentParts[2] : "";
+        ChannelConfig bestMatch = null;
+        int bestScore = 0;
+        boolean tied = false;
+
+        for(ChannelConfig match : matches)
         {
-            String system = normalizeChannelField(parts[3]);
-            String site = normalizeChannelField(parts[4]);
-            String name = normalizeChannelField(parts[5]);
-            ChannelConfig bestMatch = null;
-            int bestScore = 0;
-            boolean tied = false;
+            int score = 0;
+            if(normalizeChannelField(match.system()).equals(normalizeChannelField(system))) score += 4;
+            if(normalizeChannelField(match.site()).equals(normalizeChannelField(site))) score += 2;
+            if(normalizeChannelField(match.name()).equals(normalizeChannelField(name))) score += 1;
 
-            for(ChannelConfig match : matches)
+            if(score > bestScore)
             {
-                int score = 0;
-                if(normalizeChannelField(match.system()).equals(system)) score += 4;
-                if(normalizeChannelField(match.site()).equals(site)) score += 2;
-                if(normalizeChannelField(match.name()).equals(name)) score += 1;
-
-                if(score > bestScore)
-                {
-                    bestMatch = match;
-                    bestScore = score;
-                    tied = false;
-                }
-                else if(score == bestScore && score > 0)
-                {
-                    tied = true;
-                }
+                bestMatch = match;
+                bestScore = score;
+                tied = false;
             }
-
-            if(bestScore > 0 && !tied)
+            else if(score == bestScore && score > 0)
             {
-                return bestMatch;
+                tied = true;
             }
         }
 
+        if(bestScore > 0 && !tied)
+        {
+            return bestMatch;
+        }
+
         throw new IllegalArgumentException("Multiple playlist channels match frequency " + frequency +
-                " and filename metadata did not identify one uniquely: " + filename);
+                " and recording metadata did not identify one uniquely: " + filename);
     }
 
     private static String normalizeChannelField(String value)
@@ -1270,6 +1284,11 @@ public class DecodeQualityTest
         {
             throw new IllegalStateException("SHA-256 is unavailable", e);
         }
+    }
+
+    static String formatJson(String format, Object... arguments)
+    {
+        return String.format(Locale.ROOT, format, arguments);
     }
 
     private static String escapeJson(String s)

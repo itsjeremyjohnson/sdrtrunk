@@ -274,10 +274,13 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
             if(mInSilence)
             {
                 mNoiseFloorSampleCount++;
+                boolean establishedFloorRise = mStartupClassificationComplete && mNoiseFloor > 0 &&
+                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO;
                 mNoiseFloor += (mEnergyAverage - mNoiseFloor) * ENERGY_EMA_FACTOR;
 
-                boolean learnedFloorRise = mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
-                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO;
+                boolean learnedFloorRise = establishedFloorRise ||
+                        (mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
+                                mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO);
                 boolean startupClassification = !mStartupClassificationComplete &&
                         mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold;
                 boolean startupSignal = startupClassification && mEnergyAverage >= STARTUP_SIGNAL_ENERGY;

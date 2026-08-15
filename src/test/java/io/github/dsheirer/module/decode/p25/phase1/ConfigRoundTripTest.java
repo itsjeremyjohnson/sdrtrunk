@@ -9,6 +9,7 @@ import io.github.dsheirer.alias.AliasFactory;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.alias.action.beep.BeepAction;
 import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
+import io.github.dsheirer.audio.broadcast.broadcastify.BroadcastifyCallConfiguration;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.map.ChannelMapModel;
 import io.github.dsheirer.module.Module;
@@ -43,6 +44,18 @@ public class ConfigRoundTripTest
         mapper.configure(DeserializationFeature.READ_UNKNOWN_ENUM_VALUES_USING_DEFAULT_VALUE, true);
         mapper.enable(SerializationFeature.INDENT_OUTPUT);
         return mapper;
+    }
+
+    @Test
+    void repeatedUnknownBroadcastPropertiesAccumulate()
+    {
+        BroadcastifyCallConfiguration configuration = new BroadcastifyCallConfiguration();
+
+        configuration.setUnknownProperty("futureChild", "first");
+        configuration.setUnknownProperty("futureChild", "second");
+
+        assertEquals(java.util.List.of("first", "second"),
+                configuration.getUnknownProperties().get("futureChild"));
     }
 
     @Test

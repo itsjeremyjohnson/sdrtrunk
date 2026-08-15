@@ -21,6 +21,53 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class DispatcherTest
 {
     @Test
+    void ordinaryStopAbandonsRemainingInFlightBatch() throws Exception
+    {
+        Dispatcher<Integer> dispatcher = new Dispatcher<>("dispatcher ordinary stop test", 10);
+        CountDownLatch firstElementStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirstElement = new CountDownLatch(1);
+        CountDownLatch firstElementCompleted = new CountDownLatch(1);
+        CountDownLatch secondElementDelivered = new CountDownLatch(1);
+        List<Integer> received = new ArrayList<>();
+
+        dispatcher.setListener(element -> {
+            if(element == 1)
+            {
+                firstElementStarted.countDown();
+                try
+                {
+                    releaseFirstElement.await(2, TimeUnit.SECONDS);
+                }
+                catch(InterruptedException e)
+                {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            else
+            {
+                secondElementDelivered.countDown();
+            }
+
+            synchronized(received)
+            {
+                received.add(element);
+            }
+            firstElementCompleted.countDown();
+        });
+        dispatcher.start();
+        dispatcher.receive(1);
+        dispatcher.receive(2);
+
+        assertTrue(firstElementStarted.await(2, TimeUnit.SECONDS));
+        dispatcher.stop();
+        releaseFirstElement.countDown();
+
+        assertTrue(firstElementCompleted.await(2, TimeUnit.SECONDS));
+        assertEquals(false, secondElementDelivered.await(100, TimeUnit.MILLISECONDS));
+        assertEquals(List.of(1), received);
+    }
+
+    @Test
     void flushAndStopWaitsForInFlightBatch() throws Exception
     {
         Dispatcher<Integer> dispatcher = new Dispatcher<>("dispatcher test", 10);

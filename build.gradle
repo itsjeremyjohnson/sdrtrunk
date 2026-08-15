@@ -635,10 +635,10 @@ tasks.register('runDerryAudioRegression', JavaExec) {
 tasks.register('runDecodeScore', JavaExec) {
     dependsOn testClasses
     if(project.hasProperty('decodeMainClasses')) {
-        // Put the selected revision first, but retain current production output as a compatibility fallback for harness-only
-        // classes that did not exist in older revisions. Optional decoder APIs are invoked reflectively by the harness.
+        // Use the selected revision's production classes with the current test harness and dependencies. Exclude the
+        // current main output so a missing production decoder fails instead of silently loading the test revision.
         classpath = files(project.property('decodeMainClasses'), project.findProperty('decodeMainResources')) +
-                sourceSets.test.runtimeClasspath
+                (sourceSets.test.runtimeClasspath - sourceSets.main.output)
     } else {
         classpath = sourceSets.test.runtimeClasspath
     }

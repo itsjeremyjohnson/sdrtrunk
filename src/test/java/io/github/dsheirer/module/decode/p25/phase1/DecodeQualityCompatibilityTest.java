@@ -14,6 +14,7 @@ import java.io.File;
 import java.io.StringReader;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.Locale;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.junit.jupiter.api.Test;
 import org.xml.sax.InputSource;
@@ -98,6 +99,40 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void duplicateFrequencyUsesActivityRecordingParentMetadata()
+    {
+        List<DecodeQualityTest.ChannelConfig> channels = List.of(
+                new DecodeQualityTest.ChannelConfig("Channel One", "System", "North", 155000000,
+                        "C4FM", 1, "N/A"),
+                new DecodeQualityTest.ChannelConfig("Channel Two", "System", "South", 155000000,
+                        "CQPSK", 2, "N/A"));
+        File activityRecording = new File("System_South_Channel-Two_1",
+                "20260815_120000_155000000_12345678_baseband.wav");
+
+        DecodeQualityTest.ChannelConfig match = DecodeQualityTest.findChannel(channels, 155000000,
+                activityRecording);
+
+        assertEquals("Channel Two", match.name());
+        assertEquals("CQPSK", match.modulation());
+        assertEquals(2, match.nac());
+    }
+
+    @Test
+    void scoringJsonUsesLocaleIndependentDecimals()
+    {
+        Locale original = Locale.getDefault();
+        try
+        {
+            Locale.setDefault(Locale.GERMANY);
+            assertEquals("1.25", DecodeQualityTest.formatJson("%.2f", 1.25));
+        }
+        finally
+        {
+            Locale.setDefault(original);
+        }
+    }
+
+    @Test
     void codecResetBoundaryUsesConfiguredTransmissionGap()
     {
         assertEquals(false, DecodeQualityTest.isSegmentBoundary(1000, 1500, 500));
@@ -113,6 +148,13 @@ class DecodeQualityCompatibilityTest
         assertEquals(false, DecodeQualityTest.shouldGateImbeFrames(-1));
         assertEquals(false, DecodeQualityTest.shouldGateImbeFrames(0));
         assertEquals(true, DecodeQualityTest.shouldGateImbeFrames(1));
+    }
+
+    @Test
+    void mp3WriteFailuresPropagate()
+    {
+        assertThrows(IllegalStateException.class,
+                () -> DecodeQualityTest.writeMP3(List.of(), Path.of("build")));
     }
 
     @Test
