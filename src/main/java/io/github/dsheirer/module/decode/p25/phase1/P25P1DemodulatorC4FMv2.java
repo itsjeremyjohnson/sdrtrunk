@@ -133,6 +133,7 @@ public class P25P1DemodulatorC4FMv2
     {
         mMessageFramer = messageFramer;
         mFeedbackDecoder = feedbackDecoder;
+        setGardnerBandwidth(0.01f);
     }
 
     public void setConfiguredNAC(int nac)
@@ -170,6 +171,11 @@ public class P25P1DemodulatorC4FMv2
     boolean isGardnerEnabled()
     {
         return mGardnerEnabled;
+    }
+
+    boolean hasGardnerLoopGains()
+    {
+        return mGardnerAlpha > 0.0 && mGardnerBeta > 0.0;
     }
 
     boolean isAfcEnabled()

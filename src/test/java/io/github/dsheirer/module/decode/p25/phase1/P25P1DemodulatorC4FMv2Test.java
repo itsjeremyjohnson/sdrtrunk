@@ -23,6 +23,7 @@ class P25P1DemodulatorC4FMv2Test
                 new P25P1DemodulatorC4FMv2(new P25P1MessageFramer(), null);
 
         assertTrue(demodulator.isGardnerEnabled());
+        assertTrue(demodulator.hasGardnerLoopGains());
         assertTrue(demodulator.isAfcEnabled());
     }
 

@@ -184,7 +184,8 @@ public class P25P1AudioModule extends ImbeAudioModule
                     }
                     // Fix B: Continuously monitor encryption state — if a valid LDU2 says unencrypted,
                     // immediately flip back (handles single corrupted LDU2 that falsely set encrypted)
-                    if(ldu instanceof LDU2Message ldu2 && ldu2.getEncryptionSyncParameters().isValid())
+                    if(!mIgnoreEncryptionState && ldu instanceof LDU2Message ldu2 &&
+                            ldu2.getEncryptionSyncParameters().isValid())
                     {
                         updateEncryptionState(ldu2.getEncryptionSyncParameters().isEncryptedAudio());
                     }
@@ -262,6 +263,14 @@ public class P25P1AudioModule extends ImbeAudioModule
 
     void updateEncryptionState(boolean encrypted)
     {
+        if(mIgnoreEncryptionState)
+        {
+            mConsecutiveEncryptedLDU2 = 0;
+            mEncryptedCallStateEstablished = true;
+            mEncryptedCall = false;
+            return;
+        }
+
         if(encrypted)
         {
             mConsecutiveEncryptedLDU2++;

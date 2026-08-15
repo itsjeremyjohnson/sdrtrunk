@@ -192,6 +192,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private static final LoggingSuppressor LOGGING_SUPPRESSOR = new LoggingSuppressor(LOGGER);
     private final Channel mChannel;
     private final Modulation mModulation;
+    private final boolean mIgnoreEncryptionState;
     private final PatchGroupManager mPatchGroupManager = new PatchGroupManager();
     private final P25P1NetworkConfigurationMonitor mNetworkConfigurationMonitor;
     private final Listener<ChannelEvent> mChannelEventListener;
@@ -231,7 +232,9 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     public P25P1DecoderState(Channel channel, P25TrafficChannelManager trafficChannelManager)
     {
         mChannel = channel;
-        mModulation = ((DecodeConfigP25Phase1)channel.getDecodeConfiguration()).getModulation();
+        DecodeConfigP25Phase1 configuration = (DecodeConfigP25Phase1)channel.getDecodeConfiguration();
+        mModulation = configuration.getModulation();
+        mIgnoreEncryptionState = configuration.isIgnoreEncryptionState();
         mNetworkConfigurationMonitor = new P25P1NetworkConfigurationMonitor(mModulation);
 
         if(trafficChannelManager != null)
@@ -923,7 +926,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 mTrafficChannelManager.processP1TrafficCallStart(getCurrentFrequency(), talkgroup, radio,
                         headerData.getEncryptionKey(), mCurrentServiceOptions, getCurrentChannel(), message.getTimestamp());
 
-                if(headerData.isEncryptedAudio())
+                if(!mIgnoreEncryptionState && headerData.isEncryptedAudio())
                 {
                     mEncryptedCall = true;
                     mConsecutiveEncryptedLDU2 = ENCRYPTION_CONFIRMATION_THRESHOLD;
@@ -950,6 +953,12 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
     boolean updateEncryptionState(boolean encrypted)
     {
+        if(mIgnoreEncryptionState)
+        {
+            resetEncryptionConfirmation();
+            return false;
+        }
+
         if(encrypted)
         {
             mConsecutiveEncryptedLDU2++;
@@ -1019,7 +1028,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 {
                     getIdentifierCollection().update(esp.getIdentifiers());
 
-                    if(esp.isEncryptedAudio())
+                    boolean encrypted = !mIgnoreEncryptionState && esp.isEncryptedAudio();
+                    if(encrypted)
                     {
                         mTrafficChannelManager.processP1TrafficCurrentUser(getCurrentFrequency(), esp.getEncryptionKey(),
                                 message.getTimestamp(), ldu2.toString());
@@ -1031,7 +1041,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                                 message.getTimestamp(), ldu2.toString());
                     }
 
-                    State state = updateEncryptionState(esp.isEncryptedAudio()) ? State.ENCRYPTED : State.CALL;
+                    State state = updateEncryptionState(encrypted) ? State.ENCRYPTED : State.CALL;
                     broadcast(new DecoderStateEvent(this, Event.CONTINUATION, state));
                     validLDUProcessed = true;
                 }
@@ -1212,7 +1222,9 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         }
         else
         {
-            broadcast(new DecoderStateEvent(this, Event.DECODE, State.ACTIVE));
+            // CQPSK terminators are ignored because mid-call false decodes are common. Preserve the current call and
+            // encryption state so squelch and audio segmentation remain continuous.
+            broadcast(new DecoderStateEvent(this, Event.CONTINUATION, getCallState()));
         }
     }
 

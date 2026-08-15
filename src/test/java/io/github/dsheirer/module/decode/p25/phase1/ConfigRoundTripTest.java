@@ -481,6 +481,18 @@ public class ConfigRoundTripTest
     }
 
     @Test
+    void legacyCqpskDoesNotAdvertiseUnsupportedAudioHoldover()
+    {
+        DecodeConfigP25Phase1 config = new DecodeConfigP25Phase1();
+
+        config.setModulation(Modulation.CQPSK);
+        assertFalse(config.supportsAudioHoldover());
+
+        config.setModulation(Modulation.CQPSK_V2);
+        assertTrue(config.supportsAudioHoldover());
+    }
+
+    @Test
     void testSetModulationClearsRaw() throws Exception
     {
         DecodeConfigP25Phase1 p1 = new DecodeConfigP25Phase1();

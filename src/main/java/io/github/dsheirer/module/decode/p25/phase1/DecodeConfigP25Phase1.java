@@ -207,6 +207,14 @@ public class DecodeConfigP25Phase1 extends DecodeConfigP25
     }
 
     /**
+     * Legacy CQPSK does not expose carrier-presence energy needed for safe holdover decisions.
+     */
+    public boolean supportsAudioHoldover()
+    {
+        return mModulation != Modulation.CQPSK;
+    }
+
+    /**
      * Sets the audio holdover period in milliseconds. When set to 0, holdover is disabled.
      * Values above MAX_AUDIO_HOLDOVER_MS will be clamped to the maximum.
      *

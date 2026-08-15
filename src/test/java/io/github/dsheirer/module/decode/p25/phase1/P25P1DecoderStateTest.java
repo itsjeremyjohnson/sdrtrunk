@@ -162,6 +162,20 @@ class P25P1DecoderStateTest
     }
 
     @Test
+    void ignoredEncryptionStateNeverEstablishesEncryptedCall()
+    {
+        P25P1DecoderState state = createState(new ArrayList<>(), Modulation.C4FM, true);
+
+        for(int x = 0; x < state.getEncryptionConfirmationThreshold(); x++)
+        {
+            assertFalse(state.updateEncryptionState(true));
+        }
+
+        assertEquals(State.CALL, state.getCallState());
+        state.stop();
+    }
+
+    @Test
     void requestResetClearsHoldoverTimestamp() throws Exception
     {
         P25P1DecoderState state = createState(new ArrayList<>());
@@ -232,7 +246,8 @@ class P25P1DecoderStateTest
 
         assertFalse(state.isTDUCallEnd());
         assertTrue(state.updateEncryptionState(true));
-        assertEquals(State.ACTIVE, events.getLast().getState());
+        assertEquals(DecoderStateEvent.Event.CONTINUATION, events.getLast().getEvent());
+        assertEquals(State.ENCRYPTED, events.getLast().getState());
         state.stop();
     }
 
@@ -263,9 +278,16 @@ class P25P1DecoderStateTest
 
     private P25P1DecoderState createState(List<DecoderStateEvent> events, Modulation modulation)
     {
+        return createState(events, modulation, false);
+    }
+
+    private P25P1DecoderState createState(List<DecoderStateEvent> events, Modulation modulation,
+                                          boolean ignoreEncryptionState)
+    {
         Channel channel = new Channel("Holdover Test");
         DecodeConfigP25Phase1 configuration = new DecodeConfigP25Phase1();
         configuration.setModulation(modulation);
+        configuration.setIgnoreEncryptionState(ignoreEncryptionState);
         channel.setDecodeConfiguration(configuration);
         P25P1DecoderState state = new P25P1DecoderState(channel);
         state.setDecoderStateListener(events::add);

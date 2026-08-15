@@ -73,6 +73,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
     private Spinner<Integer> mNACSpinner;
     private Label mNACLabel;
+    private Label mAudioHoldoverLabel;
     private Spinner<Integer> mAudioHoldoverMsSpinner;
     private SegmentedButton mModulationSegmentedButton;
     private ToggleButton mC4FMToggleButton;
@@ -189,11 +190,11 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(getNACSpinner(), 1, 1);
             gridPane.getChildren().add(getNACSpinner());
 
-            Label audioHoldoverLabel = new Label("Audio Holdover (ms)");
-            audioHoldoverLabel.setTooltip(new Tooltip("Keep an active P25 call open across short decode gaps while carrier remains present. 0 disables holdover."));
-            GridPane.setHalignment(audioHoldoverLabel, HPos.RIGHT);
-            GridPane.setConstraints(audioHoldoverLabel, 2, 1);
-            gridPane.getChildren().add(audioHoldoverLabel);
+            mAudioHoldoverLabel = new Label("Audio Holdover (ms)");
+            mAudioHoldoverLabel.setTooltip(new Tooltip("Keep an active P25 call open across short decode gaps while carrier remains present. 0 disables holdover."));
+            GridPane.setHalignment(mAudioHoldoverLabel, HPos.RIGHT);
+            GridPane.setConstraints(mAudioHoldoverLabel, 2, 1);
+            gridPane.getChildren().add(mAudioHoldoverLabel);
 
             GridPane.setConstraints(getAudioHoldoverMsSpinner(), 3, 1);
             gridPane.getChildren().add(getAudioHoldoverMsSpinner());
@@ -552,14 +553,17 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     }
 
     /**
-     * Updates modulation-specific option visibility. Decoder-independent audio and BCH controls remain visible for every
-     * modulation because their configured values are applied by DecoderFactory regardless of the selected demodulator.
+     * Updates modulation-specific option visibility. Legacy CQPSK does not expose carrier-presence energy, so audio
+     * holdover is unavailable for that modulation.
      */
     private void updateLSMv2OptionsVisibility()
     {
         boolean showLsmV2Options = getLSMv2ToggleButton().isSelected();
         boolean showCmaOptions = showLsmV2Options;
         boolean showC4fmV2Options = getC4FMv2ToggleButton().isSelected();
+        boolean showAudioHoldover = !getLSMToggleButton().isSelected();
+
+        setOptionVisibility(mAudioHoldoverLabel, getAudioHoldoverMsSpinner(), showAudioHoldover);
 
         if(mIgnoreEncryptionLabel != null)
         {

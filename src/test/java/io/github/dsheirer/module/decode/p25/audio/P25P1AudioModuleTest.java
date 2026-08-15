@@ -55,4 +55,18 @@ class P25P1AudioModuleTest
 
         assertTrue(module.isEncryptedCall());
     }
+
+    @Test
+    void ignoredEncryptionStateRemainsClearAcrossLdu2Updates()
+    {
+        P25P1AudioModule module = new P25P1AudioModule(new UserPreferences(), new AliasList("test"));
+        module.setIgnoreEncryptionState(true);
+
+        for(int x = 0; x < module.getEncryptionConfirmationThreshold(); x++)
+        {
+            module.updateEncryptionState(true);
+        }
+
+        assertFalse(module.isEncryptedCall());
+    }
 }

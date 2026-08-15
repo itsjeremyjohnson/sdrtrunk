@@ -359,10 +359,10 @@ public class DecoderFactory
         // Wire signal energy provider, holdover, and voice-only channel configuration
         if(channel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 p1Config)
         {
-            if(signalEnergyProvider != null && decoderState != null)
+            if(decoderState != null)
             {
                 decoderState.setSignalEnergyProvider(signalEnergyProvider);
-                decoderState.setHoldoverMs(p1Config.getAudioHoldoverMs());
+                decoderState.setHoldoverMs(p1Config.supportsAudioHoldover() ? p1Config.getAudioHoldoverMs() : 0);
             }
         }
 
