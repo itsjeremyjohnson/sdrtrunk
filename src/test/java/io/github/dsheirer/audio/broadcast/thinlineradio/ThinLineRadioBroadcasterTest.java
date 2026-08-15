@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ThinLineRadioBroadcasterTest
 {
@@ -35,6 +36,20 @@ class ThinLineRadioBroadcasterTest
         assertFalse(recording.hasPendingReplays());
         assertEquals(0, broadcaster.getAudioQueueSize());
         assertEquals(1, broadcaster.getAgedOffAudioCount());
+    }
+
+    @Test
+    void retainsTransientUploadFailureWithinMaximumAge()
+    {
+        ThinLineRadioConfiguration configuration = new ThinLineRadioConfiguration();
+        configuration.setMaximumRecordingAge(10_000);
+        ThinLineRadioBroadcaster broadcaster = broadcaster(configuration);
+        AudioRecording recording = recording(System.currentTimeMillis(), 1000);
+
+        broadcaster.retryOrAgeOff(recording);
+
+        assertTrue(recording.hasPendingReplays());
+        assertEquals(1, broadcaster.getAudioQueueSize());
     }
 
     @Test

@@ -147,6 +147,12 @@ public class AudioSegmentRouter
             return;
         }
 
+        if(audioSegment.isDoNotMonitor())
+        {
+            removePendingSegment(audioSegment);
+            return;
+        }
+
         // Get the alias for this audio segment
         Alias alias = getAlias(audioSegment);
 
@@ -201,6 +207,21 @@ public class AudioSegmentRouter
         if(listener != null)
         {
             audioSegment.removeIdentifierUpdateNotificationListener(listener);
+        }
+    }
+
+    private void evictOutputLine(String deviceName, SourceDataLine outputLine)
+    {
+        mAudioOutputLines.remove(deviceName, outputLine);
+        mRecentlyActiveLines.remove(deviceName);
+        try
+        {
+            outputLine.stop();
+            outputLine.close();
+        }
+        catch(Exception e)
+        {
+            mLog.debug("Error closing failed output line for: " + deviceName, e);
         }
     }
 
@@ -301,6 +322,9 @@ public class AudioSegmentRouter
                         catch(Exception e)
                         {
                             mLog.debug("Error writing initial silence burst", e);
+                            evictOutputLine(deviceName, outputLine);
+                            aborted = true;
+                            return;
                         }
 
                         mLog.debug("Marked completion time for segment with " + totalBuffersRouted + " buffers");
@@ -318,6 +342,8 @@ public class AudioSegmentRouter
                         catch(Exception e)
                         {
                             mLog.debug("Error writing cooldown silence", e);
+                            evictOutputLine(deviceName, outputLine);
+                            aborted = true;
                         }
                     }
                 }
@@ -347,6 +373,8 @@ public class AudioSegmentRouter
             catch(Exception e)
             {
                 mLog.error("Error routing buffers for " + aliasName, e);
+                evictOutputLine(deviceName, outputLine);
+                aborted = true;
             }
         }
 

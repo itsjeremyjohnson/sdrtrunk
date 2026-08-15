@@ -7,9 +7,12 @@ package io.github.dsheirer.module.decode.nbfm;
 
 import io.github.dsheirer.identifier.ctcss.CTCSSIdentifier;
 import io.github.dsheirer.identifier.dcs.DCSIdentifier;
+import io.github.dsheirer.dsp.squelch.SquelchTailRemover;
 import io.github.dsheirer.module.decode.config.ChannelToneFilter;
 import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import io.github.dsheirer.module.decode.dcs.DCSCode;
+import java.lang.reflect.Field;
+import java.lang.reflect.Method;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -65,6 +68,35 @@ class NBFMToneFilterTest
         state.setDetectedDCS(DCSCode.N023);
         state.setDCSLost();
         assertFalse(state.getIdentifierCollection().getIdentifiers().stream().anyMatch(DCSIdentifier.class::isInstance));
+    }
+
+    @Test
+    void closingCombinedToneGateDiscardsBufferedSquelchTail() throws Exception
+    {
+        NBFMDecoder decoder = new NBFMDecoder(new DecodeConfigNBFM());
+        SquelchTailRemover remover = new SquelchTailRemover(100, 0);
+        AtomicInteger outputSamples = new AtomicInteger();
+        remover.setOutputListener(audio -> outputSamples.addAndGet(audio.length));
+        remover.squelchOpen();
+        remover.process(new float[400]);
+        setField(decoder, "mSquelchTailRemover", remover);
+        setField(decoder, "mToneMatch", true);
+        setField(decoder, "mCTCSSMatch", false);
+        setField(decoder, "mDCSMatch", false);
+        Method updateToneMatch = NBFMDecoder.class.getDeclaredMethod("updateToneMatch");
+        updateToneMatch.setAccessible(true);
+
+        updateToneMatch.invoke(decoder);
+        remover.flush();
+
+        assertEquals(0, outputSamples.get());
+    }
+
+    private static void setField(Object target, String name, Object value) throws Exception
+    {
+        Field field = target.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(target, value);
     }
 
     @Test

@@ -368,6 +368,8 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         {
             case NOTIFICATION_FREQUENCY_CHANGE:
             case NOTIFICATION_FREQUENCY_CORRECTION_CHANGE:
+                mIQImbalanceCorrector.reset();
+                mNoiseBlanker.reset();
                 mSymbolProcessor.resetPLL();
                 break;
             case NOTIFICATION_SAMPLE_RATE_CHANGE:

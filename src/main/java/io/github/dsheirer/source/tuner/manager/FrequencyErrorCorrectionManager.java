@@ -53,6 +53,7 @@ public class FrequencyErrorCorrectionManager
      * (all measurements accepted until the first correction is applied).
      */
     private double mBaselinePPM = Double.NaN;
+    private boolean mBaselineAcquired;
 
     private long mObservationPeriodStart;
     private double mPPMRequired;
@@ -119,6 +120,11 @@ public class FrequencyErrorCorrectionManager
         return mBaselinePPM;
     }
 
+    boolean isSanityClampActive()
+    {
+        return mBaselineAcquired;
+    }
+
     /**
      * Applies a PPM adjustment value to the tuner's current PPM setting, when auto-correction is enabled.
      */
@@ -136,7 +142,7 @@ public class FrequencyErrorCorrectionManager
                 // Update the baseline with this accepted correction value using a slow EMA.
                 // This allows the baseline to track legitimate long-term drift while still
                 // rejecting sudden large jumps from poorly-locked decoders.
-                if(Double.isNaN(mBaselinePPM))
+                if(!mBaselineAcquired || Double.isNaN(mBaselinePPM))
                 {
                     mBaselinePPM = frequencyCorrection;
                 }
@@ -144,6 +150,7 @@ public class FrequencyErrorCorrectionManager
                 {
                     mBaselinePPM = mBaselinePPM * 0.8 + frequencyCorrection * 0.2;
                 }
+                mBaselineAcquired = true;
                 reset();
             }
             catch(SourceException se)
@@ -164,7 +171,8 @@ public class FrequencyErrorCorrectionManager
         // The primary fix is in each decoder (gate on carrier lock), but this catches any future cases.
         double proposedCorrection = mTunerController != null ? mTunerController.getFrequencyCorrection() - ppm : ppm;
 
-        if(!Double.isNaN(mBaselinePPM) && Math.abs(proposedCorrection - mBaselinePPM) > SANITY_CLAMP_PPM)
+        if(mBaselineAcquired && !Double.isNaN(mBaselinePPM) &&
+            Math.abs(proposedCorrection - mBaselinePPM) > SANITY_CLAMP_PPM)
         {
             mLog.debug("Rejecting proposed PPM correction [{} ppm] - deviates more than {} ppm from baseline [{} ppm]",
                 mDecimalFormat.format(proposedCorrection), SANITY_CLAMP_PPM, mDecimalFormat.format(mBaselinePPM));

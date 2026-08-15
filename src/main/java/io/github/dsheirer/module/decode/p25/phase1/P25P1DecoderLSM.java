@@ -360,6 +360,8 @@ public class P25P1DecoderLSM extends FeedbackDecoder implements IByteBufferProvi
         {
             case NOTIFICATION_FREQUENCY_CHANGE:
             case NOTIFICATION_FREQUENCY_CORRECTION_CHANGE:
+                mIQImbalanceCorrector.reset();
+                mNoiseBlanker.reset();
                 mDemodulator.resetPLL();
                 break;
             case NOTIFICATION_SAMPLE_RATE_CHANGE:

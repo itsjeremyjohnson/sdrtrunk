@@ -629,7 +629,13 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
 
     private void updateToneMatch()
     {
+        boolean wasMatched = mToneMatch;
         mToneMatch = mCTCSSMatch || mDCSMatch;
+
+        if(wasMatched && !mToneMatch && mSquelchTailRemover != null)
+        {
+            mSquelchTailRemover.squelchClose();
+        }
     }
 
     /**

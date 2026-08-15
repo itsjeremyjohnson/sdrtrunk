@@ -12,6 +12,7 @@ import java.lang.reflect.Proxy;
 import java.net.http.WebSocket;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
@@ -283,6 +284,148 @@ class ZelloBroadcasterLifecycleTest
         broadcaster.handleWebSocketConnected(webSocket(closes));
 
         assertEquals(1, closes.get());
+    }
+
+    @Test
+    void acceptsWorkLogonResponseImmediatelyAfterOpen() throws Exception
+    {
+        ZelloBroadcaster broadcaster = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
+        WebSocket webSocket = webSocket(new AtomicInteger());
+        WebSocket.Listener listener = listener(broadcaster);
+
+        listener.onOpen(webSocket);
+        listener.onText(webSocket, "{\"success\":true}", true);
+
+        assertTrue(atomicBoolean(broadcaster, "mConnected").get());
+        broadcaster.stop();
+    }
+
+    @Test
+    void acceptsConsumerLogonResponseImmediatelyAfterOpen() throws Exception
+    {
+        ZelloConsumerBroadcaster broadcaster = new ZelloConsumerBroadcaster(new ZelloConsumerConfiguration(), null,
+            null, new AliasModel());
+        WebSocket webSocket = webSocket(new AtomicInteger());
+        WebSocket.Listener listener = listener(broadcaster);
+
+        listener.onOpen(webSocket);
+        listener.onText(webSocket, "{\"success\":true}", true);
+
+        assertTrue(atomicBoolean(broadcaster, "mConnected").get());
+        broadcaster.stop();
+    }
+
+    @Test
+    void stopCancelsInactiveEncoderTasksInBothVariants() throws Exception
+    {
+        ZelloBroadcaster work = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
+        ZelloConsumerBroadcaster consumer = new ZelloConsumerBroadcaster(new ZelloConsumerConfiguration(), null,
+            null, new AliasModel());
+        AtomicBoolean workCancelled = installFuture(work, "mEncoderFuture");
+        AtomicBoolean consumerCancelled = installFuture(consumer, "mEncoderFuture");
+
+        work.stop();
+        consumer.stop();
+
+        assertTrue(workCancelled.get());
+        assertTrue(consumerCancelled.get());
+    }
+
+    @Test
+    void credentialErrorsCloseSocketsAndRemainConfigurationErrors() throws Exception
+    {
+        ZelloBroadcaster work = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
+        ZelloConsumerBroadcaster consumer = new ZelloConsumerBroadcaster(new ZelloConsumerConfiguration(), null,
+            null, new AliasModel());
+        AtomicInteger workCloses = new AtomicInteger();
+        AtomicInteger consumerCloses = new AtomicInteger();
+        WebSocket workSocket = webSocket(workCloses);
+        WebSocket consumerSocket = webSocket(consumerCloses);
+        setConnectionState(work, workSocket);
+        setConnectionState(consumer, consumerSocket);
+        AtomicBoolean workTimeoutCancelled = installFuture(work, "mConnectionTimeoutFuture");
+        AtomicBoolean consumerTimeoutCancelled = installFuture(consumer, "mConnectionTimeoutFuture");
+        AtomicBoolean workReconnectCancelled = installFuture(work, "mReconnectFuture");
+        AtomicBoolean consumerReconnectCancelled = installFuture(consumer, "mReconnectFuture");
+
+        listener(work).onText(workSocket, "{\"error\":\"invalid credentials\"}", true);
+        listener(consumer).onText(consumerSocket, "{\"error\":\"invalid credentials\"}", true);
+
+        assertEquals(BroadcastState.CONFIGURATION_ERROR, work.getBroadcastState());
+        assertEquals(BroadcastState.CONFIGURATION_ERROR, consumer.getBroadcastState());
+        assertEquals(1, workCloses.get());
+        assertEquals(1, consumerCloses.get());
+        assertTrue(workTimeoutCancelled.get());
+        assertTrue(consumerTimeoutCancelled.get());
+        assertTrue(workReconnectCancelled.get());
+        assertTrue(consumerReconnectCancelled.get());
+        work.stop();
+        consumer.stop();
+    }
+
+    @Test
+    void kickedErrorsClearPendingStreamStateInBothVariants() throws Exception
+    {
+        ZelloBroadcaster work = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
+        ZelloConsumerBroadcaster consumer = new ZelloConsumerBroadcaster(new ZelloConsumerConfiguration(), null,
+            null, new AliasModel());
+        WebSocket workSocket = webSocket(new AtomicInteger());
+        WebSocket consumerSocket = webSocket(new AtomicInteger());
+        setConnectionState(work, workSocket);
+        setConnectionState(consumer, consumerSocket);
+        setStreamActive(work, true);
+        setStreamActive(consumer, true);
+        atomicBoolean(work, "mStopPendingAcknowledgement").set(true);
+        atomicBoolean(consumer, "mStopPendingAcknowledgement").set(true);
+        atomicLong(work, "mCurrentStreamId").set(10);
+        atomicLong(consumer, "mCurrentStreamId").set(20);
+        AtomicBoolean workWatchdogCancelled = installFuture(work, "mStartAcknowledgementWatchdogFuture");
+        AtomicBoolean consumerWatchdogCancelled = installFuture(consumer, "mStartAcknowledgementWatchdogFuture");
+
+        listener(work).onText(workSocket, "{\"command\":\"on_error\",\"error\":\"kicked\"}", true);
+        listener(consumer).onText(consumerSocket, "{\"command\":\"on_error\",\"error\":\"kicked\"}", true);
+
+        assertFalse(atomicBoolean(work, "mStreamActive").get());
+        assertFalse(atomicBoolean(consumer, "mStreamActive").get());
+        assertFalse(atomicBoolean(work, "mStopPendingAcknowledgement").get());
+        assertFalse(atomicBoolean(consumer, "mStopPendingAcknowledgement").get());
+        assertEquals(-1, atomicLong(work, "mCurrentStreamId").get());
+        assertEquals(-1, atomicLong(consumer, "mCurrentStreamId").get());
+        assertTrue(workWatchdogCancelled.get());
+        assertTrue(consumerWatchdogCancelled.get());
+        work.stop();
+        consumer.stop();
+    }
+
+    private static AtomicBoolean installFuture(Object broadcaster, String name) throws Exception
+    {
+        AtomicBoolean cancelled = new AtomicBoolean();
+        ScheduledFuture<?> future = (ScheduledFuture<?>)Proxy.newProxyInstance(ScheduledFuture.class.getClassLoader(),
+            new Class[]{ScheduledFuture.class}, (proxy, method, args) ->
+            {
+                if(method.getName().equals("cancel"))
+                {
+                    cancelled.set(true);
+                    return true;
+                }
+                if(method.getReturnType() == boolean.class)
+                {
+                    return false;
+                }
+                if(method.getReturnType() == long.class)
+                {
+                    return 0L;
+                }
+                if(method.getReturnType() == int.class)
+                {
+                    return 0;
+                }
+                return null;
+            });
+        Field field = broadcaster.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        field.set(broadcaster, future);
+        return cancelled;
     }
 
     private static void setStreamActive(Object broadcaster, boolean active) throws Exception

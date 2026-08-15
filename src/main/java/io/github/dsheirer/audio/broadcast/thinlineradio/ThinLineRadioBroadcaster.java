@@ -196,6 +196,21 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
             getBroadcastConfiguration().getMaximumRecordingAge();
     }
 
+    void retryOrAgeOff(AudioRecording audioRecording)
+    {
+        if(isValid(audioRecording))
+        {
+            mAudioRecordingQueue.offer(audioRecording);
+            broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_QUEUE_CHANGE));
+        }
+        else
+        {
+            audioRecording.removePendingReplay();
+            incrementAgedOffAudioCount();
+            broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_AGED_OFF_COUNT_CHANGE));
+        }
+    }
+
     void processRecordingQueue()
     {
         while(connected() && !mAudioRecordingQueue.isEmpty())
@@ -288,7 +303,7 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                                     incrementErrorAudioCount();
                                     broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
                                         BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
-                                    audioRecording.removePendingReplay();
+                                    retryOrAgeOff(audioRecording);
                                 }
                                 else
                                 {
@@ -314,7 +329,7 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                                         incrementErrorAudioCount();
                                         broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
                                             BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
-                                        audioRecording.removePendingReplay();
+                                        retryOrAgeOff(audioRecording);
                                     }
                                 }
                             });

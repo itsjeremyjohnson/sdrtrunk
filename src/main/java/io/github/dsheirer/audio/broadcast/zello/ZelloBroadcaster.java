@@ -201,6 +201,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
         cancelStartAcknowledgementWatchdog();
         if(mRelaxationFuture != null) { mRelaxationFuture.cancel(false); mRelaxationFuture = null; }
         if(mStreamActive.get()) doStopRealTimeStream();
+        cancelEncoderTask();
         if(mReconnectFuture != null) { mReconnectFuture.cancel(true); mReconnectFuture = null; }
         mKicked.set(false);
         mKickedCount.set(0);
@@ -343,15 +344,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
             mRelaxationFuture = null;
         }
 
-        // Cancel the encoder future and wait for it to finish to avoid
-        // concurrent access to mResampleBuffer and the Opus encoder
-        if(mEncoderFuture != null)
-        {
-            mEncoderFuture.cancel(false);
-            try { Thread.sleep(15); } // Allow in-flight execution to complete
-            catch(InterruptedException ignored) { Thread.currentThread().interrupt(); }
-            mEncoderFuture = null;
-        }
+        cancelEncoderTask();
 
         long streamId = mCurrentStreamId.get();
         if(streamId <= 0 && mConnected.get())
@@ -363,6 +356,17 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
         }
 
         finalizeStoppedStream(streamId);
+    }
+
+    private void cancelEncoderTask()
+    {
+        if(mEncoderFuture != null)
+        {
+            mEncoderFuture.cancel(false);
+            try { Thread.sleep(15); }
+            catch(InterruptedException ignored) { Thread.currentThread().interrupt(); }
+            mEncoderFuture = null;
+        }
     }
 
     private synchronized void finalizeStoppedStream(long streamId)
@@ -641,6 +645,10 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
             catch(Exception e)
             {
                 // Connection may already be closed.
+            }
+            if(mWebSocket == webSocket)
+            {
+                mWebSocket = null;
             }
             return;
         }
@@ -981,6 +989,46 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
         scheduleReconnect();
     }
 
+    private synchronized void handleConfigurationError()
+    {
+        cancelConnectionTimeout();
+        cancelStartAcknowledgementWatchdog();
+        cancelEncoderTask();
+        if(mReconnectFuture != null)
+        {
+            mReconnectFuture.cancel(false);
+            mReconnectFuture = null;
+        }
+        mReconnecting.set(false);
+        mConnected.set(false);
+        mChannelOnline.set(false);
+        mStreamActive.set(false);
+        mStopPendingAcknowledgement.set(false);
+        mCurrentStreamId.set(-1);
+        mAudioQueue.clear();
+        mResampleBufferPos = 0;
+        WebSocket webSocket = mWebSocket;
+        mWebSocket = null;
+        if(webSocket != null)
+        {
+            try { webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "configuration error"); }
+            catch(Exception e) { /* Connection may already be closed. */ }
+        }
+        setBroadcastState(BroadcastState.CONFIGURATION_ERROR);
+    }
+
+    private synchronized void handleKicked()
+    {
+        cancelConnectionTimeout();
+        cancelStartAcknowledgementWatchdog();
+        cancelEncoderTask();
+        mStreamActive.set(false);
+        mStopPendingAcknowledgement.set(false);
+        mCurrentStreamId.set(-1);
+        mAudioQueue.clear();
+        mResampleBufferPos = 0;
+    }
+
     private void sendAudioPacket(long streamId, byte[] opusData)
     {
         if(mWebSocket == null) return;
@@ -1023,7 +1071,13 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
     {
         private StringBuilder mTextBuffer = new StringBuilder();
 
-        @Override public void onOpen(WebSocket ws) { mLog.debug("{}WebSocket opened", ch()); ws.request(1); }
+        @Override
+        public void onOpen(WebSocket ws)
+        {
+            mLog.debug("{}WebSocket opened", ch());
+            mWebSocket = ws;
+            ws.request(1);
+        }
 
         @Override
         public CompletionStage<?> onText(WebSocket ws, CharSequence data, boolean last)
@@ -1176,7 +1230,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
                     mLog.error("{}Zello [{}]: error=\"{}\" seq={} command={}",
                         ch(), bridgeCode, errorMsg, seq, originCmd != null ? originCmd : "unknown");
                     setLastErrorDetail("[" + bridgeCode + "] " + errorMsg);
-                    setBroadcastState(BroadcastState.CONFIGURATION_ERROR);
+                    handleConfigurationError();
                     return;
                 }
 
@@ -1253,6 +1307,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
                             mKickedCount.incrementAndGet();
                             mConnected.set(false);
                             mChannelOnline.set(false);
+                            handleKicked();
                             // Close the WebSocket ourselves to prevent onClose from also scheduling
                             if(mWebSocket != null)
                             {

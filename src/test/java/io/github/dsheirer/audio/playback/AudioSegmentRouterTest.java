@@ -87,6 +87,45 @@ class AudioSegmentRouterTest
     }
 
     @Test
+    void doNotMonitorBlocksInitialCustomRoutingEligibility()
+    {
+        AudioSegment segment = new AudioSegment(new AliasList("test"), 0);
+        segment.monitorPriorityProperty().set(io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR);
+
+        assertFalse(AudioPlaybackManager.isRoutingEligible(segment, false));
+    }
+
+    @Test
+    void lateAliasDoesNotRouteSegmentMarkedDoNotMonitor() throws Exception
+    {
+        AliasList aliasList = new AliasList("test");
+        Alias alias = new Alias("late routed radio");
+        alias.addAliasID(new Radio(Protocol.APCO25, 200));
+        alias.setAudioOutputDevice("test-device");
+        aliasList.addAlias(alias);
+        AudioSegment segment = new AudioSegment(aliasList, 0);
+        segment.addIdentifier(APCO25Talkgroup.create(100));
+        AtomicInteger lineLookups = new AtomicInteger();
+        AudioSegmentRouter router = new AudioSegmentRouter()
+        {
+            @Override
+            SourceDataLine getOrCreateOutputLine(String deviceName)
+            {
+                lineLookups.incrementAndGet();
+                return null;
+            }
+        };
+
+        router.route(segment);
+        segment.monitorPriorityProperty().set(io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR);
+        segment.receive(new IdentifierUpdateNotification(APCO25RadioIdentifier.createFrom(200),
+            IdentifierUpdateNotification.Operation.ADD, 0));
+
+        assertEquals(0, lineLookups.get());
+        router.dispose();
+    }
+
+    @Test
     void selectsAliasWithConfiguredOutputDevice()
     {
         AliasList aliasList = new AliasList("test");
@@ -171,6 +210,49 @@ class AudioSegmentRouterTest
         assertEquals(0, segment.getAudioBufferCount());
         assertNotEquals(io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR,
             segment.monitorPriorityProperty().get());
+        router.dispose();
+    }
+
+    @Test
+    void writeFailureAbortsRouteAndReleasesSegment()
+    {
+        AliasList aliasList = new AliasList("test");
+        Alias alias = new Alias("routed");
+        alias.addAliasID(new Talkgroup(Protocol.APCO25, 100));
+        alias.setAudioOutputDevice("failing-device");
+        aliasList.addAlias(alias);
+        AudioSegment segment = new AudioSegment(aliasList, 0);
+        segment.addIdentifier(APCO25Talkgroup.create(100));
+        segment.addAudio(new float[160]);
+        segment.incrementConsumerCount();
+        AudioFormat format = new AudioFormat(8000.0f, 16, 1, true, false);
+        SourceDataLine line = (SourceDataLine)Proxy.newProxyInstance(SourceDataLine.class.getClassLoader(),
+            new Class[]{SourceDataLine.class}, (proxy, method, args) ->
+            {
+                if(method.getName().equals("getFormat"))
+                {
+                    return format;
+                }
+                if(method.getName().equals("write"))
+                {
+                    throw new IllegalStateException("output failed");
+                }
+                return method.getReturnType() == boolean.class;
+            });
+        AudioSegmentRouter router = new AudioSegmentRouter()
+        {
+            @Override
+            SourceDataLine getOrCreateOutputLine(String deviceName)
+            {
+                return line;
+            }
+        };
+
+        router.route(segment);
+        segment.decrementConsumerCount();
+        router.processActiveSegments();
+
+        assertEquals(0, segment.getAudioBufferCount());
         router.dispose();
     }
 

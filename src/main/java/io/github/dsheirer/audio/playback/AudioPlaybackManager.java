@@ -100,7 +100,8 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
 
     static boolean isRoutingEligible(AudioSegment audioSegment, boolean duplicateSuppressionEnabled)
     {
-        return audioSegment != null && (!audioSegment.isDuplicate() || !duplicateSuppressionEnabled);
+        return audioSegment != null && !audioSegment.isDoNotMonitor() &&
+            (!audioSegment.isDuplicate() || !duplicateSuppressionEnabled);
     }
 
     /**
