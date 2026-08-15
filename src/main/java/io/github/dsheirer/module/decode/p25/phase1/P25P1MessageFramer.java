@@ -906,6 +906,11 @@ public class P25P1MessageFramer
 
     public int getDuidCorrectionCount() { return mDuidCorrectionCount; }
 
+    void setPreviousDataUnitID(P25P1DataUnitID dataUnitID)
+    {
+        mPreviousDataUnitID = dataUnitID;
+    }
+
     /**
      * Sets the maximum number of consecutive DUID corrections before accepting TDU as-is.
      * After a missed TDU, mPreviousDataUnitID stays as LDU, causing infinite correction cycle
@@ -938,7 +943,7 @@ public class P25P1MessageFramer
         //
         //Consecutive correction limit: After a missed TDU, mPreviousDataUnitID stays as LDU, causing
         //infinite correction cycle from noise. When the limit is reached, accept TDU and reset.
-        if(mDetectedDataUnitID == P25P1DataUnitID.TERMINATOR_DATA_UNIT)
+        if(mDetectedDataUnitID == P25P1DataUnitID.TERMINATOR_DATA_UNIT && detectedBitErrors > 0)
         {
             if(mConsecutiveDuidCorrections < mMaxConsecutiveDuidCorrections)
             {

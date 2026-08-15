@@ -34,10 +34,16 @@ public class StateMonitoringSquelchController implements IStateMachineListener, 
     private SquelchState mSquelchState = SquelchState.SQUELCH;
     private Listener<SquelchStateEvent> mSquelchStateListener;
     private int mTimeslot;
+    private String mDiagnosticsChannelName;
 
     public StateMonitoringSquelchController(int timeslot)
     {
         mTimeslot = timeslot;
+    }
+
+    public void setDiagnosticsChannelName(String channelName)
+    {
+        mDiagnosticsChannelName = channelName;
     }
 
     public void setSquelchStateListener(Listener<SquelchStateEvent> listener)
@@ -60,9 +66,9 @@ public class StateMonitoringSquelchController implements IStateMachineListener, 
     {
         if(mSquelchState != squelchState)
         {
-            if(P25PipelineDiagnostics.isEnabled())
+            if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
             {
-                P25PipelineDiagnostics.log("SQUELCH", "SQUELCH_CTRL", squelchState.name(),
+                P25PipelineDiagnostics.log(mDiagnosticsChannelName, "SQUELCH_CTRL", squelchState.name(),
                     "from=" + mSquelchState + " to=" + squelchState);
             }
             mSquelchState = squelchState;

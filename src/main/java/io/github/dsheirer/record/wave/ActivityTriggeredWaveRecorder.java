@@ -26,12 +26,14 @@ import io.github.dsheirer.sample.complex.ComplexSamples;
 import io.github.dsheirer.sample.complex.IComplexSamplesListener;
 import io.github.dsheirer.source.ISourceEventListener;
 import io.github.dsheirer.source.SourceEvent;
+import io.github.dsheirer.util.Dispatcher;
 import io.github.dsheirer.util.StringUtils;
 import io.github.dsheirer.util.TimeStamp;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -60,6 +62,8 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     private final long mChannelFrequency;
     private final float mSquelchThresholdDb;
     private final Path mRecordingBaseDir;
+    private final Dispatcher<ComplexSamples> mBufferProcessor =
+            new Dispatcher<>("sdrtrunk activity wave recorder", 250);
 
     private float mSampleRate;
     private AudioFormat mAudioFormat;
@@ -125,24 +129,28 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     }
 
     @Override
-    public void start()
+    public synchronized void start()
     {
         mRunning = true;
         mErrorState = false;
         mRecordingState = RecordingState.IDLE;
         mSmoothedPowerDb = -100.0f;
         initCircularBuffer();
+        mBufferProcessor.setListener(this::process);
+        mBufferProcessor.start();
     }
 
     @Override
-    public void stop()
+    public synchronized void stop()
     {
+        mBufferProcessor.flushAndStop();
+        mBufferProcessor.setListener(null);
         mRunning = false;
         closeActiveRecording();
     }
 
     @Override
-    public void reset()
+    public synchronized void reset()
     {
         closeActiveRecording();
         mRecordingState = RecordingState.IDLE;
@@ -156,6 +164,11 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
 
     @Override
     public void receive(ComplexSamples complexSamples)
+    {
+        mBufferProcessor.receive(complexSamples);
+    }
+
+    private synchronized void process(ComplexSamples complexSamples)
     {
         if(!mRunning || mErrorState)
         {
@@ -184,7 +197,6 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
                 {
                     startRecording();
                     writePreTriggerBuffer();
-                    writeSamples(complexSamples);
                 }
                 break;
 
@@ -261,10 +273,10 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
                 Files.createDirectories(mRecordingDirectory);
             }
 
-            // Build filename: timestamp_frequency_baseband.wav
-            String filename = TimeStamp.getTimeStamp("_") + "_" + mChannelFrequency + "_baseband.wav";
+            // Include a random identifier so concurrent recorders cannot select the same path.
+            String filename = TimeStamp.getTimeStamp("_") + "_" + mChannelFrequency + "_" +
+                    UUID.randomUUID() + "_baseband.wav";
             Path filePath = mRecordingDirectory.resolve(filename);
-
             mWaveWriter = new WaveWriter(mAudioFormat, filePath);
             mRecordingState = RecordingState.RECORDING;
 
@@ -360,23 +372,26 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     {
         return sourceEvent ->
         {
-            if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_SAMPLE_RATE_CHANGE)
+            synchronized(ActivityTriggeredWaveRecorder.this)
             {
-                float newRate = sourceEvent.getValue().floatValue();
-
-                if(newRate != mSampleRate)
+                if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_SAMPLE_RATE_CHANGE)
                 {
-                    mSampleRate = newRate;
-                    mAudioFormat = new AudioFormat(newRate, 16, 2, true, false);
+                    float newRate = sourceEvent.getValue().floatValue();
 
-                    // If recording, close and restart with new format
-                    if(mRecordingState != RecordingState.IDLE)
+                    if(newRate != mSampleRate)
                     {
-                        closeActiveRecording();
-                        mRecordingState = RecordingState.IDLE;
-                    }
+                        mSampleRate = newRate;
+                        mAudioFormat = new AudioFormat(newRate, 16, 2, true, false);
 
-                    initCircularBuffer();
+                        // If recording, close and restart with new format
+                        if(mRecordingState != RecordingState.IDLE)
+                        {
+                            closeActiveRecording();
+                            mRecordingState = RecordingState.IDLE;
+                        }
+
+                        initCircularBuffer();
+                    }
                 }
             }
         };

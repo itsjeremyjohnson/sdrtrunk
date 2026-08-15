@@ -91,6 +91,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         {
             mCTCSSDetector = new CTCSSDetector(ctcssFrequency.getFrequency());
             mCTCSSDetector.setToneDetectedListener(this::notifyToneDetected);
+            mCTCSSDetector.setToneLostListener(this::notifyCallEnd);
         }
         else
         {

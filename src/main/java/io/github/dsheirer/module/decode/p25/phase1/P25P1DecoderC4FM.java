@@ -99,6 +99,7 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     private boolean mInSilence = true;
     private int mSilenceSampleCount = 0;
     private int mSilenceSamplesThreshold = 2500; // ~100ms at 25kHz decimated rate, updated in setSampleRate()
+    private String mDiagnosticsChannelName;
 
     @Override
     public DecoderType getDecoderType()
@@ -125,6 +126,11 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         }
         mMessageProcessor.setMessageListener(getMessageListener());
         mSymbolProcessor = new P25P1DemodulatorC4FM(mMessageFramer, this);
+    }
+
+    public void setDiagnosticsChannelName(String channelName)
+    {
+        mDiagnosticsChannelName = channelName;
     }
 
     @Override
@@ -235,9 +241,9 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
                 if(mSilenceSampleCount >= mSilenceSamplesThreshold && !mInSilence)
                 {
                     mInSilence = true;
-                    if(P25PipelineDiagnostics.isEnabled())
+                    if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
                     {
-                        P25PipelineDiagnostics.log("C4FM", "BOUNDARY", "ENTER_SILENCE",
+                        P25PipelineDiagnostics.log(mDiagnosticsChannelName, "BOUNDARY", "ENTER_SILENCE",
                             String.format("energy=%.2e peak=%.2e", mEnergyAverage, mPeakEnergy));
                     }
                 }
@@ -246,9 +252,9 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
             {
                 if(mInSilence && mPeakEnergy > 0)
                 {
-                    if(P25PipelineDiagnostics.isEnabled())
+                    if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
                     {
-                        P25PipelineDiagnostics.log("C4FM", "BOUNDARY", "SILENCE_TO_SIGNAL",
+                        P25PipelineDiagnostics.log(mDiagnosticsChannelName, "BOUNDARY", "SILENCE_TO_SIGNAL",
                             String.format("energy=%.2e peak=%.2e threshold=%.2e silenceSamples=%d",
                                 mEnergyAverage, mPeakEnergy, mPeakEnergy * ENERGY_SILENCE_RATIO, mSilenceSampleCount));
                     }

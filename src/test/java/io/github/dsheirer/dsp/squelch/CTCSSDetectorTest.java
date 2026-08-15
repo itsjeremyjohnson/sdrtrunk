@@ -18,8 +18,10 @@
  */
 package io.github.dsheirer.dsp.squelch;
 
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -144,6 +146,18 @@ public class CTCSSDetectorTest
         float[] silence = new float[(int)(SAMPLE_RATE * 1.0)];
         mDetector.process(silence);
         assertFalse(mDetector.isToneDetected(), "Should lose detection after 1 second of silence");
+    }
+
+    @Test
+    void testToneLossNotifiesListener()
+    {
+        AtomicInteger toneLossCount = new AtomicInteger();
+        mDetector.setToneLostListener(toneLossCount::incrementAndGet);
+        mDetector.process(generateTone(TARGET_FREQUENCY, TONE_AMPLITUDE, 1.0));
+        mDetector.process(new float[(int)(SAMPLE_RATE * 1.0)]);
+
+        assertFalse(mDetector.isToneDetected());
+        assertEquals(1, toneLossCount.get(), "Tone loss listener should run once");
     }
 
     @Test

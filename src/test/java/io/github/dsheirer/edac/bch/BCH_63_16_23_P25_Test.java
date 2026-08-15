@@ -24,6 +24,8 @@ import io.github.dsheirer.bits.IntField;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Tests for the BCH decoder for APCO25 NID fragments protected by a BCH(63,16,23) code
@@ -159,6 +161,42 @@ public class BCH_63_16_23_P25_Test
         }
 
         return Collections.emptyList();
+    }
+
+    @Test
+    void rejectedCandidateDoesNotPoisonLaterAttempt()
+    {
+        int configuredNAC = 0x293;
+        CorrectedBinaryMessage message = create(configuredNAC, 5);
+        message.setInt(~configuredNAC & 0xFFF, NAC_FIELD);
+        for(int bit = 16; bit < 24; bit++)
+        {
+            message.flip(bit);
+        }
+        CorrectedBinaryMessage received = new CorrectedBinaryMessage(message);
+
+        new BCH_63_16_23_P25().decode(message, configuredNAC, 3);
+
+        assertEquals(BCH.MESSAGE_NOT_CORRECTED, message.getCorrectedBitCount());
+        assertEquals(received.toString(), message.toString());
+    }
+
+    @Test
+    void acceptsForcedCandidateWithinThreshold()
+    {
+        int configuredNAC = 0x293;
+        CorrectedBinaryMessage message = create(configuredNAC, 5);
+        message.setInt(~configuredNAC & 0xFFF, NAC_FIELD);
+        for(int bit = 16; bit < 24; bit++)
+        {
+            message.flip(bit);
+        }
+
+        new BCH_63_16_23_P25().decode(message, configuredNAC, 11);
+
+        assertEquals(configuredNAC, message.getInt(NAC_FIELD));
+        assertEquals(5, message.getInt(DUID_FIELD));
+        assertEquals(8, message.getCorrectedBitCount());
     }
 
     public static void main(String[] args)

@@ -46,6 +46,7 @@ public class CTCSSDetector
     private int mHysteresisOpenThreshold = DEFAULT_HYSTERESIS_OPEN;
     private int mHysteresisCloseThreshold = DEFAULT_HYSTERESIS_CLOSE;
     private Runnable mToneDetectedListener;
+    private Runnable mToneLostListener;
 
     /**
      * Constructs an instance
@@ -103,6 +104,15 @@ public class CTCSSDetector
     public void setToneDetectedListener(Runnable listener)
     {
         mToneDetectedListener = listener;
+    }
+
+    /**
+     * Sets a listener that is notified each time the tone transitions from detected to not-detected.
+     * @param listener to invoke on tone loss, or null to remove.
+     */
+    public void setToneLostListener(Runnable listener)
+    {
+        mToneLostListener = listener;
     }
 
     /**
@@ -183,6 +193,11 @@ public class CTCSSDetector
         else if(mToneDetected && mHysteresisCount <= 0)
         {
             mToneDetected = false;
+
+            if(mToneLostListener != null)
+            {
+                mToneLostListener.run();
+            }
         }
     }
 

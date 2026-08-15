@@ -110,10 +110,12 @@ public class MultiChannelState extends AbstractChannelState implements IDecoderS
             mutableIdentifierCollection.setIdentifierUpdateListener(mIdentifierUpdateNotificationProxy);
 
             StateMachine stateMachine = new StateMachine(timeslot, State.MULTI_CHANNEL_ACTIVE_STATES);
+            stateMachine.setDiagnosticsChannelName(channel.getName());
             mStateMachineMap.put(timeslot, stateMachine);
             stateMachine.addListener(this);
 
             StateMonitoringSquelchController squelchController = new StateMonitoringSquelchController(timeslot);
+            squelchController.setDiagnosticsChannelName(channel.getName());
             mSquelchControllerMap.put(timeslot, squelchController);
             stateMachine.addListener(squelchController);
 

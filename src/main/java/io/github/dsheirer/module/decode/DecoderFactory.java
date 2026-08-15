@@ -281,6 +281,7 @@ public class DecoderFactory
             {
                 case C4FM:
                     P25P1DecoderC4FM c4fmDecoder = new P25P1DecoderC4FM();
+                    c4fmDecoder.setDiagnosticsChannelName(channel.getName());
                     if(p1.hasConfiguredNAC())
                     {
                         c4fmDecoder.setConfiguredNAC(p1.getConfiguredNAC());
@@ -361,6 +362,7 @@ public class DecoderFactory
 
         // Create audio module and configure channel options
         P25P1AudioModule audioModule = new P25P1AudioModule(userPreferences, aliasList);
+        audioModule.setDiagnosticsChannelName(channel.getName());
         if(channel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 p1Config)
         {
             audioModule.setIgnoreEncryptionState(p1Config.isIgnoreEncryptionState());

@@ -48,6 +48,7 @@ public class StateMachine
     private Channel.ChannelType mChannelType = Channel.ChannelType.STANDARD;
     private List<IStateMachineListener> mStateMachineListeners = new ArrayList<>();
     private Listener<IdentifierUpdateNotification> mIdentifierUpdateListener;
+    private String mDiagnosticsChannelName;
 
     /**
      * Constructs an instance
@@ -59,6 +60,11 @@ public class StateMachine
     {
         mTimeslot = timeslot;
         mActiveStates = activeStates;
+    }
+
+    public void setDiagnosticsChannelName(String channelName)
+    {
+        mDiagnosticsChannelName = channelName;
     }
 
     /**
@@ -131,9 +137,9 @@ public class StateMachine
         }
         else if(mState.canChangeTo(state))
         {
-            if(P25PipelineDiagnostics.isEnabled())
+            if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
             {
-                P25PipelineDiagnostics.log("STATE_MACHINE", "STATE_TRANS", mState + "→" + state,
+                P25PipelineDiagnostics.log(mDiagnosticsChannelName, "STATE_TRANS", mState + "→" + state,
                     "thread=" + Thread.currentThread().getName());
             }
 

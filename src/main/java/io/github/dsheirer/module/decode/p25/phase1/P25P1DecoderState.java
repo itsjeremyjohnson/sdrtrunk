@@ -326,7 +326,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     {
         if(iMessage instanceof P25P1Message message)
         {
-            if(P25PipelineDiagnostics.isEnabled())
+            if(P25PipelineDiagnostics.isEnabled(mChannel.getName()))
             {
                 P25PipelineDiagnostics.log(mChannel.getName(), "DECODER_STATE", "MSG_RECV",
                     message.getDUID().name() + " valid=" + message.isValid() + " nac=" + message.getNAC());
@@ -916,7 +916,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
                 if(headerData.isEncryptedAudio())
                 {
-                    if(P25PipelineDiagnostics.isEnabled())
+                    if(P25PipelineDiagnostics.isEnabled(mChannel.getName()))
                     {
                         P25PipelineDiagnostics.log(mChannel.getName(), "DECODER_STATE", "HDU_ENCRYPTED", "START/ENCRYPTED");
                     }
@@ -925,7 +925,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 else
                 {
                     mDiagCallStartCount++;
-                    if(P25PipelineDiagnostics.isEnabled())
+                    if(P25PipelineDiagnostics.isEnabled(mChannel.getName()))
                     {
                         P25PipelineDiagnostics.log(mChannel.getName(), "DECODER_STATE", "HDU_CALL_START", "START/CALL tg=" + headerData.getTalkgroup());
                     }
@@ -1137,7 +1137,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
         if(tduFadeC4FM && (mModulation == Modulation.C4FM || mModulation == Modulation.C4FM_V2))
         {
-            if(P25PipelineDiagnostics.isEnabled())
+            if(P25PipelineDiagnostics.isEnabled(mChannel.getName()))
             {
                 P25PipelineDiagnostics.log(mChannel.getName(), "DECODER_STATE", "TDU_FADE", "C4FM TDU→END/FADE");
             }
@@ -2395,6 +2395,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     {
         super.stop();
         stopPeriodicHoldoverCheck();
+        P25PipelineDiagnostics.disableChannel(mChannel.getName());
     }
 
     @Override

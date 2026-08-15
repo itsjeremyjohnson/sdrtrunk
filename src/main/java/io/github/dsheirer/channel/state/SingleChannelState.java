@@ -100,6 +100,8 @@ public class SingleChannelState extends AbstractChannelState implements IDecoder
     {
         super(channel);
         mChannelMetadata = new ChannelMetadata(aliasModel);
+        mStateMachine.setDiagnosticsChannelName(channel.getName());
+        mSquelchController.setDiagnosticsChannelName(channel.getName());
         mIdentifierCollection.setIdentifierUpdateListener(mIdentifierUpdateNotificationProxy);
         createConfigurationIdentifiers(channel);
 

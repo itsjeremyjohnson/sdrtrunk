@@ -77,10 +77,16 @@ public class P25P1AudioModule extends ImbeAudioModule
     private SquelchStateListener mSquelchStateListener = new SquelchStateListener();
     private NonClippingGain mGain = new NonClippingGain(5.0f, 0.95f);
     private List<LDUMessage> mCachedLDUMessages = new ArrayList<>();
+    private String mDiagnosticsChannelName;
 
     public P25P1AudioModule(UserPreferences userPreferences, AliasList aliasList)
     {
         super(userPreferences, aliasList);
+    }
+
+    public void setDiagnosticsChannelName(String channelName)
+    {
+        mDiagnosticsChannelName = channelName;
     }
 
     /**
@@ -170,33 +176,25 @@ public class P25P1AudioModule extends ImbeAudioModule
             {
                 if(message instanceof LDUMessage ldu)
                 {
-                    if(P25PipelineDiagnostics.isEnabled())
+                    if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
                     {
-                        P25PipelineDiagnostics.log("AUDIO", "AUDIO_MOD", "LDU_PROCESS",
+                        P25PipelineDiagnostics.log(mDiagnosticsChannelName, "AUDIO_MOD", "LDU_PROCESS",
                             ldu.getDUID().name() + " encrypted=" + mEncryptedCall + " duidCorrected=" + ldu.isDuidCorrected());
                     }
                     // Fix B: Continuously monitor encryption state — if a valid LDU2 says unencrypted,
                     // immediately flip back (handles single corrupted LDU2 that falsely set encrypted)
                     if(ldu instanceof LDU2Message ldu2 && ldu2.getEncryptionSyncParameters().isValid())
                     {
-                        if(ldu2.getEncryptionSyncParameters().isEncryptedAudio())
-                        {
-                            mConsecutiveEncryptedLDU2++;
-                        }
-                        else
-                        {
-                            mConsecutiveEncryptedLDU2 = 0;
-                            mEncryptedCall = false;
-                        }
+                        updateEncryptionState(ldu2.getEncryptionSyncParameters().isEncryptedAudio());
                     }
                     processAudio(ldu);
                 }
             }
             else
             {
-                if(P25PipelineDiagnostics.isEnabled() && (message instanceof LDUMessage || message instanceof HDUMessage))
+                if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName) && (message instanceof LDUMessage || message instanceof HDUMessage))
                 {
-                    P25PipelineDiagnostics.log("AUDIO", "AUDIO_MOD", "ENCRYPT_PENDING",
+                    P25PipelineDiagnostics.log(mDiagnosticsChannelName, "AUDIO_MOD", "ENCRYPT_PENDING",
                         message.getClass().getSimpleName() + " cached=" + mCachedLDUMessages.size() +
                         " established=" + mEncryptedCallStateEstablished);
                 }
@@ -205,9 +203,9 @@ public class P25P1AudioModule extends ImbeAudioModule
                 {
                     mEncryptedCallStateEstablished = true;
                     mEncryptedCall = hdu.getHeaderData().isEncryptedAudio();
-                    if(P25PipelineDiagnostics.isEnabled())
+                    if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
                     {
-                        P25PipelineDiagnostics.log("AUDIO", "AUDIO_MOD", "HDU_ENCRYPT_SET",
+                        P25PipelineDiagnostics.log(mDiagnosticsChannelName, "AUDIO_MOD", "HDU_ENCRYPT_SET",
                             "encrypted=" + mEncryptedCall);
                     }
                 }
@@ -241,20 +239,10 @@ public class P25P1AudioModule extends ImbeAudioModule
                         boolean encrypted = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
 
                         // Fix B: Require multiple consecutive encrypted LDU2s before declaring encrypted
-                        if(encrypted)
+                        updateEncryptionState(encrypted);
+                        if(!encrypted || mEncryptedCall)
                         {
-                            mConsecutiveEncryptedLDU2++;
-                            if(mConsecutiveEncryptedLDU2 >= ENCRYPTION_CONFIRMATION_THRESHOLD)
-                            {
-                                mEncryptedCallStateEstablished = true;
-                                mEncryptedCall = true;
-                            }
-                        }
-                        else
-                        {
-                            mConsecutiveEncryptedLDU2 = 0;
                             mEncryptedCallStateEstablished = true;
-                            mEncryptedCall = false;
                         }
                     }
 
@@ -287,6 +275,33 @@ public class P25P1AudioModule extends ImbeAudioModule
                 }
             }
         }
+    }
+
+    void updateEncryptionState(boolean encrypted)
+    {
+        if(encrypted)
+        {
+            mConsecutiveEncryptedLDU2++;
+            if(mConsecutiveEncryptedLDU2 >= ENCRYPTION_CONFIRMATION_THRESHOLD)
+            {
+                mEncryptedCall = true;
+            }
+        }
+        else
+        {
+            mConsecutiveEncryptedLDU2 = 0;
+            mEncryptedCall = false;
+        }
+    }
+
+    boolean isEncryptedCall()
+    {
+        return mEncryptedCall;
+    }
+
+    int getEncryptionConfirmationThreshold()
+    {
+        return ENCRYPTION_CONFIRMATION_THRESHOLD;
     }
 
     /**
@@ -452,9 +467,9 @@ public class P25P1AudioModule extends ImbeAudioModule
         @Override
         public void receive(SquelchStateEvent event)
         {
-            if(P25PipelineDiagnostics.isEnabled())
+            if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
             {
-                P25PipelineDiagnostics.log("AUDIO", "SQUELCH_RECV", event.getSquelchState().name(),
+                P25PipelineDiagnostics.log(mDiagnosticsChannelName, "SQUELCH_RECV", event.getSquelchState().name(),
                     "encryptEstablished=" + mEncryptedCallStateEstablished + " cached=" + mCachedLDUMessages.size());
             }
             if(event.getSquelchState() == SquelchState.SQUELCH)

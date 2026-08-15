@@ -87,13 +87,15 @@ public class BCH_63_16_23_P25 extends BCH_63
         }
 
         // Standard BCH failed. Try NAC-assisted correction.
-        // Save original NAC and DUID bits (BCH decode does not modify bits on failure)
+        // Save the complete NID (BCH decode does not modify bits on failure).
+        CorrectedBinaryMessage originalMessage = new CorrectedBinaryMessage(message);
         int originalNAC = message.getInt(NAC_FIELD);
         int originalDUID = message.getInt(DUID_FIELD);
 
         // First try: force configured NAC, keep original DUID (most likely to succeed)
         if(originalNAC != configuredNAC)
         {
+            restore(message, originalMessage);
             message.setInt(configuredNAC, NAC_FIELD);
             decode(message);
 
@@ -120,6 +122,7 @@ public class BCH_63_16_23_P25 extends BCH_63
                 continue; // Already tried this DUID with forced NAC above
             }
 
+            restore(message, originalMessage);
             message.setInt(configuredNAC, NAC_FIELD);
             message.setInt(duid, DUID_FIELD);
             decode(message);
@@ -135,9 +138,13 @@ public class BCH_63_16_23_P25 extends BCH_63
             }
         }
 
-        // All attempts failed. Restore original information bits.
-        message.setInt(originalNAC, NAC_FIELD);
-        message.setInt(originalDUID, DUID_FIELD);
+        // All attempts failed. Restore the complete original NID.
+        restore(message, originalMessage);
+    }
+
+    private void restore(CorrectedBinaryMessage message, CorrectedBinaryMessage originalMessage)
+    {
+        message.load(0, originalMessage);
         message.setCorrectedBitCount(BCH.MESSAGE_NOT_CORRECTED);
     }
 }
