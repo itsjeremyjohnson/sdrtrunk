@@ -133,20 +133,30 @@ public class RecorderFactory
                         }
                     }
                     break;
+                case ACTIVITY_BASEBAND:
+                    recorderModules.add(getActivityTriggeredRecorder(userPreferences, channel, frequency));
+                    break;
             }
         }
 
-        // Activity-triggered baseband recording (independent of RecorderType list)
-        if(channel.getRecordConfiguration().isActivityTriggeredRecording())
+        // Retain the dedicated activity configuration used by the playlist editor without creating a duplicate when
+        // the equivalent recorder enum is selected by a playlist or API client.
+        if(channel.getRecordConfiguration().isActivityTriggeredRecording() &&
+                !channel.getRecordConfiguration().contains(RecorderType.ACTIVITY_BASEBAND))
         {
-            long frequency = getFrequency(channel);
-            float threshold = channel.getRecordConfiguration().getActivitySquelchThreshold();
-            Path recordingDir = getRecordingBasePath(userPreferences);
-            recorderModules.add(new ActivityTriggeredWaveRecorder(BASEBAND_SAMPLE_RATE,
-                    channel.toString(), frequency, threshold, recordingDir));
+            recorderModules.add(getActivityTriggeredRecorder(userPreferences, channel, getFrequency(channel)));
         }
 
         return recorderModules;
+    }
+
+    private static ActivityTriggeredWaveRecorder getActivityTriggeredRecorder(UserPreferences userPreferences,
+                                                                               Channel channel, long frequency)
+    {
+        float threshold = channel.getRecordConfiguration().getActivitySquelchThreshold();
+        Path recordingDir = getRecordingBasePath(userPreferences);
+        return new ActivityTriggeredWaveRecorder(BASEBAND_SAMPLE_RATE, channel.toString(), frequency, threshold,
+                recordingDir);
     }
 
     /**

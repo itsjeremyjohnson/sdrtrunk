@@ -82,6 +82,7 @@ public class P25P1MessageFramer
     private P25P1DataUnitID mPreviousDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
     private P25P1DataUnitID mDetectedDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
     private int mDetectedNAC = 0;
+    private boolean mNacDetected = false;
     private int mDetectedSyncBitErrors = 0;
     private final P25P1ChannelStatusProcessor mChannelStatusProcessor = new P25P1ChannelStatusProcessor();
     private PDUSequence mPDUSequence;
@@ -365,7 +366,7 @@ public class P25P1MessageFramer
                 mFlywheelAssembly = false;
             }
             //Strategy 5: Flywheel — predict DUID when sync is lost but frame timing is known
-            else if(mFlywheelActive && mFlywheelConsecutiveMisses < MAX_FLYWHEEL_MISSES && mDetectedNAC > 0 &&
+            else if(mFlywheelActive && mFlywheelConsecutiveMisses < MAX_FLYWHEEL_MISSES && mNacDetected &&
                     (mEnergyProvider == null || mEnergyProvider.isSignalPresent()))
             {
                 P25P1DataUnitID predicted = predictNextDUID(mPreviousDataUnitID);
@@ -389,7 +390,7 @@ public class P25P1MessageFramer
                     mFlywheelActive = false;
                 }
             }
-            else if(mDetectedNAC > 0)
+            else if(mNacDetected)
             {
                 //Start a placeholder message assembly.  If it completes before another sync detect, throw it away
                 mDetectedDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
@@ -984,6 +985,7 @@ public class P25P1MessageFramer
         if(mDetectedDataUnitID != P25P1DataUnitID.PLACE_HOLDER)
         {
             mDetectedNAC = nac;
+            mNacDetected = true;
         }
 
         mDetectedSyncBitErrors = detectedBitErrors;
@@ -1067,6 +1069,7 @@ public class P25P1MessageFramer
     public void coldStartReset()
     {
         mDetectedNAC = 0;
+        mNacDetected = false;
         mDetectedDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
         mPreviousDataUnitID = P25P1DataUnitID.PLACE_HOLDER;
         mFlywheelActive = false;

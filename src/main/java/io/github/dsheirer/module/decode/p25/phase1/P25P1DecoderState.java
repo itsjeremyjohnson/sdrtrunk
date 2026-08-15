@@ -209,9 +209,10 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private int mDiagCallStartCount = 0;
 
     // Audio continuity holdover state
-    private long mLastValidLDUTimestamp = 0;
-    private int mHoldoverMs = DecodeConfigP25Phase1.DEFAULT_AUDIO_HOLDOVER_MS;
+    private volatile long mLastValidLDUTimestamp = 0;
+    private volatile int mHoldoverMs = DecodeConfigP25Phase1.DEFAULT_AUDIO_HOLDOVER_MS;
     private boolean mHoldoverActive = false;
+    private final Object mHoldoverLock = new Object();
 
     // Periodic holdover check for extended call continuity
     private static final int HOLDOVER_CHECK_INTERVAL_MS = 100;
@@ -280,6 +281,11 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     public void setHoldoverMs(int holdoverMs)
     {
         mHoldoverMs = Math.max(0, Math.min(holdoverMs, DecodeConfigP25Phase1.MAX_AUDIO_HOLDOVER_MS));
+
+        if(mHoldoverMs == 0)
+        {
+            stopPeriodicHoldoverCheck();
+        }
     }
 
 
@@ -1058,7 +1064,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private void processSyncLoss(SyncLossMessage syncLoss)
     {
         // Only apply holdover during sync loss if enabled and we have an active call
-        if(mSignalEnergyProvider == null || mLastValidLDUTimestamp == 0)
+        if(mHoldoverMs <= 0 || mSignalEnergyProvider == null || mLastValidLDUTimestamp == 0)
         {
             return;
         }
@@ -1087,18 +1093,22 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private void processTDU(P25P1Message message)
     {
         mDiagTduCount++;
-        // Reset holdover state - transmission explicitly ended
-        mLastValidLDUTimestamp = 0;
-        mHoldoverActive = false;
-        stopPeriodicHoldoverCheck();
 
-        mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDU:" + message);
+        synchronized(mHoldoverLock)
+        {
+            // Reset holdover state and broadcast the explicit end atomically with periodic holdover continuations.
+            mLastValidLDUTimestamp = 0;
+            mHoldoverActive = false;
+            stopPeriodicHoldoverCheck();
 
-        // Fix D: Modulation-aware TDU transition
-        // System property p25.tdu.fade.c4fm: true = C4FM TDU triggers FADE (default), false = disabled
-        // C4FM: TDU reliably indicates end of transmission — trigger FADE to end the call
-        // CQPSK/LSM: Mid-call TDU mis-decodes are common — keep ACTIVE to avoid killing real calls
-        broadcastTDUStateEvent();
+            mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDU:" + message);
+
+            // Fix D: Modulation-aware TDU transition
+            // System property p25.tdu.fade.c4fm: true = C4FM TDU triggers FADE (default), false = disabled
+            // C4FM: TDU reliably indicates end of transmission — trigger FADE to end the call
+            // CQPSK/LSM: Mid-call TDU mis-decodes are common — keep ACTIVE to avoid killing real calls
+            broadcastTDUStateEvent();
+        }
     }
 
     /**
@@ -1109,21 +1119,25 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
      */
     private void processTDULC(P25P1Message message)
     {
-        // Reset holdover state - transmission explicitly ended
-        mLastValidLDUTimestamp = 0;
-        mHoldoverActive = false;
-        stopPeriodicHoldoverCheck();
+        LinkControlWord lcw = message instanceof TDULCMessage tdulc ? tdulc.getLinkControlWord() : null;
 
-        if(message instanceof TDULCMessage tdulc)
+        synchronized(mHoldoverLock)
         {
-            LinkControlWord lcw = tdulc.getLinkControlWord();
+            // Reset holdover state and broadcast the explicit end atomically with periodic holdover continuations.
+            mLastValidLDUTimestamp = 0;
+            mHoldoverActive = false;
+            stopPeriodicHoldoverCheck();
 
             if(lcw != null && lcw.isValid())
             {
                 mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDULC:" + message);
                 broadcastTDUStateEvent();
-                processLC(lcw, message.getTimestamp(), true);
             }
+        }
+
+        if(lcw != null && lcw.isValid())
+        {
+            processLC(lcw, message.getTimestamp(), true);
         }
     }
 
@@ -2411,9 +2425,9 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
      */
     private void startPeriodicHoldoverCheck()
     {
-        if(mSignalEnergyProvider == null)
+        if(mHoldoverMs <= 0 || mSignalEnergyProvider == null)
         {
-            return; // No point running without signal energy provider
+            return; // No point running when holdover is disabled or no signal energy provider is available
         }
 
         if(mHoldoverExecutor == null)
@@ -2462,13 +2476,17 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     {
         try
         {
-            if(mSignalEnergyProvider == null || mLastValidLDUTimestamp == 0)
+            ISignalEnergyProvider energyProvider = mSignalEnergyProvider;
+            long lastValidLDUTimestamp = mLastValidLDUTimestamp;
+            int holdoverMs = mHoldoverMs;
+
+            if(holdoverMs <= 0 || energyProvider == null || lastValidLDUTimestamp == 0)
             {
                 return;
             }
 
-            long timeSinceLastValidLDU = System.currentTimeMillis() - mLastValidLDUTimestamp;
-            int extendedHoldoverMs = mHoldoverMs + EXTENDED_HOLDOVER_GRACE_MS;
+            long timeSinceLastValidLDU = System.currentTimeMillis() - lastValidLDUTimestamp;
+            int extendedHoldoverMs = holdoverMs + EXTENDED_HOLDOVER_GRACE_MS;
 
             if(timeSinceLastValidLDU > extendedHoldoverMs)
             {
@@ -2480,11 +2498,18 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 return;
             }
 
-            // Only keep the call alive while carrier energy is still present.
-            if(mSignalEnergyProvider.isSignalPresent())
+            // Revalidate the same active call after checking carrier energy so an explicit terminator cannot be
+            // followed by a stale continuation from an already-running task.
+            if(energyProvider.isSignalPresent())
             {
-                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
-                mHoldoverActive = true;
+                synchronized(mHoldoverLock)
+                {
+                    if(mHoldoverMs > 0 && mLastValidLDUTimestamp == lastValidLDUTimestamp)
+                    {
+                        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
+                        mHoldoverActive = true;
+                    }
+                }
             }
         }
         catch(Exception e)

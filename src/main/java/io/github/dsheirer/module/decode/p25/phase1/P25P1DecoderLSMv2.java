@@ -284,6 +284,7 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
                     mBoundaryResetCount++;
                     mInSilence = false;
                     mSilenceSampleCount = 0;
+                    mPeakEnergy = mEnergyAverage;
                     mPreviousEnergyAverage = mEnergyAverage;
                     mFadeWindowSampleCount = 0;
                     return idx;

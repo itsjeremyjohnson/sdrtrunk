@@ -284,6 +284,7 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
                     mBoundaryResetCount++;
                     mInSilence = false;
                     mSilenceSampleCount = 0;
+                    mPeakEnergy = mEnergyAverage;
                     return idx;
                 }
             }

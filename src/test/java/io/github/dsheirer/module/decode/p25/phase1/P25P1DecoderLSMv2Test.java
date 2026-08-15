@@ -43,10 +43,45 @@ class P25P1DecoderLSMv2Test
         assertTrue(boundary >= 0);
     }
 
+    @Test
+    void weakerCarrierRemainsPresentAfterLsmBoundaryReset()
+    {
+        P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
+        assertWeakerCarrierRemainsPresent(decoder::detectTransmissionBoundary, decoder::isSignalPresent);
+    }
+
+    @Test
+    void weakerCarrierRemainsPresentAfterC4fmBoundaryReset()
+    {
+        P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
+        assertWeakerCarrierRemainsPresent(decoder::detectTransmissionBoundary, decoder::isSignalPresent);
+    }
+
+    private void assertWeakerCarrierRemainsPresent(BoundaryDetector detector, SignalPresence signalPresence)
+    {
+        detector.detect(samples(4000, 0.001f), samples(4000, 0.0f));
+        detector.detect(samples(4000, 1.0f), samples(4000, 0.0f));
+        detector.detect(samples(20000, 0.001f), samples(20000, 0.0f));
+        assertTrue(detector.detect(samples(4000, 0.10f), samples(4000, 0.0f)) >= 0);
+        detector.detect(samples(20000, 0.10f), samples(20000, 0.0f));
+
+        assertTrue(signalPresence.isPresent());
+    }
+
     private float[] samples(int length, float value)
     {
         float[] samples = new float[length];
         Arrays.fill(samples, value);
         return samples;
+    }
+
+    private interface BoundaryDetector
+    {
+        int detect(float[] i, float[] q);
+    }
+
+    private interface SignalPresence
+    {
+        boolean isPresent();
     }
 }

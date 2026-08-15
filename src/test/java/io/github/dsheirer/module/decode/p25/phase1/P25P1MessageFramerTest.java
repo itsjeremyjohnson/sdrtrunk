@@ -86,10 +86,21 @@ class P25P1MessageFramerTest
     @Test
     void flywheelMessagesAreMarkedWhenCarrierIsPresent()
     {
+        assertFlywheelMessageIsCreated(0x293);
+    }
+
+    @Test
+    void flywheelSupportsZeroNac()
+    {
+        assertFlywheelMessageIsCreated(0x000);
+    }
+
+    private void assertFlywheelMessageIsCreated(int nac)
+    {
         List<P25P1Message> messages = new ArrayList<>();
         P25P1MessageFramer framer = createRunningFramer(messages);
         framer.setEnergyProvider(new TestEnergyProvider(true));
-        framer.nidDetected(0x293, P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1, 0);
+        framer.nidDetected(nac, P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1, 0);
         feedUntilMessage(framer, messages, 1);
         int initialCount = messages.size();
 
