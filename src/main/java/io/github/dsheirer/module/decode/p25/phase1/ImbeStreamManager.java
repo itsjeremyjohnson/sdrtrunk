@@ -23,6 +23,8 @@ import java.io.PrintWriter;
 import java.net.ServerSocket;
 import java.net.Socket;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
@@ -46,10 +48,16 @@ public class ImbeStreamManager
     private static ImbeStreamManager sInstance;
 
     private final CopyOnWriteArrayList<ClientWriter> mClients = new CopyOnWriteArrayList<>();
+    private final Map<String, String> mActiveCallStarts = new LinkedHashMap<>();
+    private final Object mBroadcastLock = new Object();
 
     private ImbeStreamManager(ServerSocket serverSocket)
     {
         startAcceptLoop(serverSocket);
+    }
+
+    ImbeStreamManager()
+    {
     }
 
     /**
@@ -77,11 +85,37 @@ public class ImbeStreamManager
      */
     public void broadcast(String json)
     {
+        synchronized(mBroadcastLock)
+        {
+            broadcastLocked(json);
+        }
+    }
+
+    public void broadcastCallStart(String callId, String json)
+    {
+        synchronized(mBroadcastLock)
+        {
+            mActiveCallStarts.put(callId, json);
+            broadcastLocked(json);
+        }
+    }
+
+    public void broadcastCallEnd(String callId, String json)
+    {
+        synchronized(mBroadcastLock)
+        {
+            broadcastLocked(json);
+            mActiveCallStarts.remove(callId);
+        }
+    }
+
+    private void broadcastLocked(String json)
+    {
         Iterator<ClientWriter> it = mClients.iterator();
-        while (it.hasNext())
+        while(it.hasNext())
         {
             ClientWriter writer = it.next();
-            if (!writer.isAlive())
+            if(!writer.isAlive())
             {
                 mClients.remove(writer);
             }
@@ -90,6 +124,22 @@ public class ImbeStreamManager
                 writer.close();
                 mClients.remove(writer);
             }
+        }
+    }
+
+    void addClient(ClientWriter writer)
+    {
+        synchronized(mBroadcastLock)
+        {
+            for(String callStart : mActiveCallStarts.values())
+            {
+                if(!writer.offer(callStart))
+                {
+                    return;
+                }
+            }
+
+            mClients.add(writer);
         }
     }
 
@@ -107,7 +157,7 @@ public class ImbeStreamManager
                     {
                         Socket socket = serverSocket.accept();
                         ClientWriter writer = new ClientWriter(socket);
-                        mClients.add(writer);
+                        addClient(writer);
                         mLog.debug("IMBE stream client connected on port {}: {}",
                                 port, socket.getRemoteSocketAddress());
 
@@ -197,6 +247,11 @@ public class ImbeStreamManager
                 close();
             }
             return accepted;
+        }
+
+        String poll()
+        {
+            return mQueue.poll();
         }
 
         public boolean isAlive()

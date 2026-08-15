@@ -22,6 +22,7 @@ import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.network.HeartbeatEntry;
 import io.github.dsheirer.preference.network.HeartbeatPreference;
 import java.util.Optional;
+import java.util.function.IntConsumer;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.property.SimpleIntegerProperty;
 import javafx.beans.property.SimpleStringProperty;
@@ -337,9 +338,7 @@ public class HeartbeatPreferenceEditor extends HBox
 
         Spinner<Integer> sysIdSpinner = new Spinner<>(
                 new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 65535, working.getSystemId()));
-        sysIdSpinner.setEditable(true);
-        sysIdSpinner.setPrefWidth(120);
-        sysIdSpinner.valueProperty().addListener((obs, o, v) -> { if(v != null) working.setSystemId(v); });
+        configureIntegerSpinner(sysIdSpinner, 120, working::setSystemId);
         Label sysIdHint = smallHint("Decimal — shown in the Details tab as SYSTEM: 291");
         grid.add(rightLabel("System ID:"), 0, row);
         HBox sysRow = new HBox(8, sysIdSpinner, sysIdHint);
@@ -348,9 +347,7 @@ public class HeartbeatPreferenceEditor extends HBox
 
         Spinner<Integer> rfssIdSpinner = new Spinner<>(
                 new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 255, working.getRfssId()));
-        rfssIdSpinner.setEditable(true);
-        rfssIdSpinner.setPrefWidth(120);
-        rfssIdSpinner.valueProperty().addListener((obs, o, v) -> { if(v != null) working.setRfssId(v); });
+        configureIntegerSpinner(rfssIdSpinner, 120, working::setRfssId);
         Label rfssIdHint = smallHint("Decimal — shown in the Details tab as RFSS: 1");
         grid.add(rightLabel("RFSS ID:"), 0, row);
         HBox rfssRow = new HBox(8, rfssIdSpinner, rfssIdHint);
@@ -359,9 +356,7 @@ public class HeartbeatPreferenceEditor extends HBox
 
         Spinner<Integer> siteIdSpinner = new Spinner<>(
                 new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 255, working.getSiteId()));
-        siteIdSpinner.setEditable(true);
-        siteIdSpinner.setPrefWidth(120);
-        siteIdSpinner.valueProperty().addListener((obs, o, v) -> { if(v != null) working.setSiteId(v); });
+        configureIntegerSpinner(siteIdSpinner, 120, working::setSiteId);
         Label siteIdHint = smallHint("Decimal — shown in the Details tab as SITE: 1");
         grid.add(rightLabel("Site ID:"), 0, row);
         HBox siteRow = new HBox(8, siteIdSpinner, siteIdHint);
@@ -388,9 +383,7 @@ public class HeartbeatPreferenceEditor extends HBox
 
         Spinner<Integer> intervalSpinner = new Spinner<>(
                 new SpinnerValueFactory.IntegerSpinnerValueFactory(10, 3600, working.getIntervalSeconds(), 10));
-        intervalSpinner.setEditable(true);
-        intervalSpinner.setPrefWidth(100);
-        intervalSpinner.valueProperty().addListener((obs, o, v) -> { if(v != null) working.setIntervalSeconds(v); });
+        configureIntegerSpinner(intervalSpinner, 100, working::setIntervalSeconds);
         Label intervalHint = smallHint("seconds between pings  (30 recommended; >= Kuma's heartbeat interval)");
         grid.add(rightLabel("Ping Interval:"), 0, row);
         HBox intRow = new HBox(8, intervalSpinner, intervalHint);
@@ -414,9 +407,71 @@ public class HeartbeatPreferenceEditor extends HBox
         rdioField.textProperty().addListener((obs, o, v) -> validate.run());
 
         dialog.setResultConverter(buttonType ->
-                buttonType == saveType ? working : null);
+        {
+            if(buttonType == saveType)
+            {
+                commitIntegerSpinner(sysIdSpinner);
+                commitIntegerSpinner(rfssIdSpinner);
+                commitIntegerSpinner(siteIdSpinner);
+                commitIntegerSpinner(intervalSpinner);
+                return working;
+            }
+
+            return null;
+        });
 
         return dialog.showAndWait();
+    }
+
+    static void configureIntegerSpinner(Spinner<Integer> spinner, double width, IntConsumer setter)
+    {
+        spinner.setEditable(true);
+        spinner.setPrefWidth(width);
+        spinner.valueProperty().addListener((obs, oldValue, newValue) ->
+        {
+            if(newValue != null)
+            {
+                setter.accept(newValue);
+            }
+        });
+        spinner.getEditor().setOnAction(event -> commitIntegerSpinner(spinner));
+        spinner.getEditor().focusedProperty().addListener((obs, wasFocused, isFocused) ->
+        {
+            if(!isFocused)
+            {
+                commitIntegerSpinner(spinner);
+            }
+        });
+    }
+
+    static void commitIntegerSpinner(Spinner<Integer> spinner)
+    {
+        SpinnerValueFactory.IntegerSpinnerValueFactory valueFactory =
+            (SpinnerValueFactory.IntegerSpinnerValueFactory)spinner.getValueFactory();
+        Integer value = parseIntegerEditorValue(spinner.getEditor().getText(), valueFactory.getMin(),
+            valueFactory.getMax());
+
+        if(value != null)
+        {
+            valueFactory.setValue(value);
+        }
+        else
+        {
+            spinner.getEditor().setText(valueFactory.getConverter().toString(spinner.getValue()));
+        }
+    }
+
+    static Integer parseIntegerEditorValue(String text, int minimum, int maximum)
+    {
+        try
+        {
+            int value = Integer.parseInt(text.trim());
+            return value >= minimum && value <= maximum ? value : null;
+        }
+        catch(NullPointerException | NumberFormatException e)
+        {
+            return null;
+        }
     }
 
     private Label sectionHeader(String text)

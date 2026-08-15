@@ -17,6 +17,7 @@ import java.net.ServerSocket;
 import java.net.Socket;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -62,6 +63,27 @@ class NetworkStreamManagerTest
         assertFalse(pcmWriter.offer("call_end"));
         assertFalse(imbeWriter.isAlive());
         assertFalse(pcmWriter.isAlive());
+    }
+
+    @Test
+    void replaysActiveImbeCallStartBeforeLiveFrames() throws IOException
+    {
+        ImbeStreamManager manager = new ImbeStreamManager();
+        manager.broadcastCallStart("call-1", "call_start");
+
+        ImbeStreamManager.ClientWriter writer =
+            new ImbeStreamManager.ClientWriter(new TestSocket(), 4, false);
+        manager.addClient(writer);
+        manager.broadcast("frame");
+
+        assertEquals("call_start", writer.poll());
+        assertEquals("frame", writer.poll());
+
+        manager.broadcastCallEnd("call-1", "call_end");
+        ImbeStreamManager.ClientWriter nextWriter =
+            new ImbeStreamManager.ClientWriter(new TestSocket(), 4, false);
+        manager.addClient(nextWriter);
+        assertNull(nextWriter.poll());
     }
 
     @Test

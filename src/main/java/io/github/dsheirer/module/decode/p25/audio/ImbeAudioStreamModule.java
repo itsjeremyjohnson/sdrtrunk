@@ -35,7 +35,8 @@ import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.util.JsonUtils;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Base64;
@@ -161,21 +162,30 @@ public class ImbeAudioStreamModule extends Module
     /**
      * Opens a new call: generates a callId, resets counters, and broadcasts call_start.
      */
-    private synchronized void openCall()
+    private synchronized void openCall(long timestamp)
     {
-        if (mCallId != null) return; // already open
+        if(mCallId != null)
+        {
+            return;
+        }
+
         mCallId = newCallId();
         mFrameSeq.set(0);
         mFrameCount.set(0);
 
-        String json = "{\"type\":\"call_start\"" +
-                ",\"callId\":\"" + mCallId + "\"" +
-                ",\"system\":\"" + JsonUtils.escape(mSystemName) + "\"" +
-                ",\"talkgroup\":\"" + JsonUtils.escape(currentTalkgroup()) + "\"" +
-                ",\"from\":\"" + JsonUtils.escape(currentFrom()) + "\"" +
-                ",\"timestamp\":\"" + LocalDateTime.now().format(TIMESTAMP_FMT) + "\"}";
+        String json = createCallStartJson(mCallId, mSystemName, currentTalkgroup(), currentFrom(), timestamp);
+        mStreamManager.broadcastCallStart(mCallId, json);
+    }
 
-        mStreamManager.broadcast(json);
+    static String createCallStartJson(String callId, String systemName, String talkgroup, String from, long timestamp)
+    {
+        String formattedTimestamp = Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).format(TIMESTAMP_FMT);
+        return "{\"type\":\"call_start\"" +
+            ",\"callId\":\"" + callId + "\"" +
+            ",\"system\":\"" + JsonUtils.escape(systemName) + "\"" +
+            ",\"talkgroup\":\"" + JsonUtils.escape(talkgroup) + "\"" +
+            ",\"from\":\"" + JsonUtils.escape(from) + "\"" +
+            ",\"timestamp\":\"" + formattedTimestamp + "\"}";
     }
 
     /**
@@ -195,7 +205,7 @@ public class ImbeAudioStreamModule extends Module
                     ",\"talkgroup\":\"" + JsonUtils.escape(currentTalkgroup()) + "\"" +
                     ",\"frames\":" + totalFrames + "}";
 
-            mStreamManager.broadcast(json);
+            mStreamManager.broadcastCallEnd(closingCallId, json);
         }
 
         mIdentifiers.clear();
@@ -211,9 +221,9 @@ public class ImbeAudioStreamModule extends Module
     private void processLdu(LDUMessage ldu)
     {
         // Ensure a call is open before streaming frames
-        if (mCallId == null)
+        if(mCallId == null)
         {
-            openCall();
+            openCall(ldu.getTimestamp());
         }
 
         String callId    = mCallId;

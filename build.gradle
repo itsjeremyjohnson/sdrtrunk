@@ -373,10 +373,12 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
     //Copy only target-compatible HydraSDR libraries into each runtime image before it is archived.
     rt.doFirst {
         def arch = System.getProperty('os.arch').toLowerCase()
-        def currentTarget = os.isWindows() ? 'windows-x86_64' :
-            (os.isMacOsX() ? (arch.contains('aarch64') || arch.contains('arm64') ? 'osx-aarch64' : 'osx-x86_64') :
-                (arch.contains('aarch64') || arch.contains('arm64') ? 'linux-aarch64' : 'linux-x86_64'))
-        def targets = ['linux-aarch64', 'linux-x86_64', 'osx-aarch64', 'osx-x86_64', 'windows-x86_64']
+        def arm64 = arch.contains('aarch64') || arch.contains('arm64')
+        def currentTarget = os.isWindows() ? (arm64 ? 'windows-aarch64' : 'windows-x86_64') :
+            (os.isMacOsX() ? (arm64 ? 'osx-aarch64' : 'osx-x86_64') :
+                (arm64 ? 'linux-aarch64' : 'linux-x86_64'))
+        def targets = ['linux-aarch64', 'linux-x86_64', 'osx-aarch64', 'osx-x86_64',
+                       'windows-aarch64', 'windows-x86_64']
 
         file("${buildDir}/image").eachDir { imageDir ->
             if(imageDir.name.startsWith('sdr-trunk-')) {
