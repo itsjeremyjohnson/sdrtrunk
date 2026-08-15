@@ -107,6 +107,7 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     private float mNoiseFloor;
     private int mNoiseFloorSampleCount;
     private int mBoundaryResetCount;
+    private boolean mStartupClassificationComplete;
     private String mDiagnosticsChannelName;
 
     @Override
@@ -277,11 +278,22 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
 
                 boolean learnedFloorRise = mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
                         mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO;
-                boolean startupSignal = mBoundaryResetCount == 0 &&
-                        mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold &&
-                        mEnergyAverage >= STARTUP_SIGNAL_ENERGY;
+                boolean startupClassification = !mStartupClassificationComplete &&
+                        mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold;
+                boolean startupSignal = startupClassification && mEnergyAverage >= STARTUP_SIGNAL_ENERGY;
 
-                if(learnedFloorRise || startupSignal)
+                if(startupClassification)
+                {
+                    mStartupClassificationComplete = true;
+                }
+
+                if(startupSignal)
+                {
+                    mInSilence = false;
+                    mSilenceSampleCount = 0;
+                    mPeakEnergy = mEnergyAverage;
+                }
+                else if(learnedFloorRise)
                 {
                     if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
                     {
@@ -328,6 +340,18 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     int getBoundaryResetCount()
     {
         return mBoundaryResetCount;
+    }
+
+    private void resetTransmissionDetection()
+    {
+        mEnergyAverage = 0;
+        mPeakEnergy = 0;
+        mSilenceSampleCount = 0;
+        mInSilence = true;
+        mNoiseFloor = 0;
+        mNoiseFloorSampleCount = 0;
+        mBoundaryResetCount = 0;
+        mStartupClassificationComplete = false;
     }
 
     @Override
@@ -466,6 +490,9 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         switch(sourceEvent.getEvent())
         {
             case NOTIFICATION_FREQUENCY_CHANGE:
+                mSymbolProcessor.resetPLL();
+                resetTransmissionDetection();
+                break;
             case NOTIFICATION_FREQUENCY_CORRECTION_CHANGE:
                 mSymbolProcessor.resetPLL();
                 break;

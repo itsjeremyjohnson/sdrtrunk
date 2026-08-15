@@ -151,6 +151,17 @@ public class CTCSSDetectorTest
     }
 
     @Test
+    void toneLossClosesWithinFiveHundredMilliseconds()
+    {
+        mDetector.process(generateTone(TARGET_FREQUENCY, TONE_AMPLITUDE, 1.0));
+        assertTrue(mDetector.isToneDetected());
+
+        mDetector.process(new float[(int)(SAMPLE_RATE * 0.5)]);
+
+        assertFalse(mDetector.isToneDetected());
+    }
+
+    @Test
     void testToneLossNotifiesListener()
     {
         AtomicInteger toneLossCount = new AtomicInteger();

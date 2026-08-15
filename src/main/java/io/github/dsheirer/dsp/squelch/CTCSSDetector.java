@@ -30,7 +30,7 @@ package io.github.dsheirer.dsp.squelch;
 public class CTCSSDetector
 {
     private static final int DEFAULT_HYSTERESIS_OPEN = 2;
-    private static final int DEFAULT_HYSTERESIS_CLOSE = 3;
+    private static final int DEFAULT_HYSTERESIS_CLOSE = 2;
     private static final double DETECTION_THRESHOLD_DB = -10.0;
 
     private final double mTargetFrequency;

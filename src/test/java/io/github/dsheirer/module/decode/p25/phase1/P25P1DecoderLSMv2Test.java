@@ -10,6 +10,7 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import io.github.dsheirer.source.SourceEvent;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -18,18 +19,43 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class P25P1DecoderLSMv2Test
 {
     @Test
-    void carriersPresentAtStartupAreDetectedAcrossEnergyProviders()
+    void carriersPresentAtStartupAreDetectedWithoutColdBoundaryReset()
     {
         P25P1DecoderLSMv2 lsmV2 = new P25P1DecoderLSMv2();
-        assertTrue(lsmV2.detectTransmissionBoundary(samples(3000, 0.10f), samples(3000, 0.0f)) >= 0);
+        assertEquals(-1, lsmV2.detectTransmissionBoundary(samples(3000, 0.10f), samples(3000, 0.0f)));
+        assertTrue(lsmV2.isSignalPresent());
+        assertEquals(0, lsmV2.getBoundaryResetCount());
+
+        P25P1DecoderC4FM c4fm = new P25P1DecoderC4FM();
+        assertEquals(-1, c4fm.detectTransmissionBoundary(samples(3000, 0.10f), samples(3000, 0.0f)));
+        assertTrue(c4fm.isSignalPresent());
+        assertEquals(0, c4fm.getBoundaryResetCount());
+
+        P25P1DecoderC4FMv2 c4fmV2 = new P25P1DecoderC4FMv2();
+        assertEquals(-1, c4fmV2.detectTransmissionBoundary(samples(3000, 0.10f), samples(3000, 0.0f)));
+        assertTrue(c4fmV2.isSignalPresent());
+        assertEquals(0, c4fmV2.getBoundaryResetCount());
+    }
+
+    @Test
+    void frequencyChangesResetTransmissionDetectionAcrossEnergyProviders()
+    {
+        P25P1DecoderLSMv2 lsmV2 = new P25P1DecoderLSMv2();
+        lsmV2.detectTransmissionBoundary(samples(3000, 1.0f), samples(3000, 0.0f));
+        lsmV2.getSourceEventListener().receive(SourceEvent.frequencyChange(null, 155250000));
+        assertEquals(-1, lsmV2.detectTransmissionBoundary(samples(3000, 0.04f), samples(3000, 0.0f)));
         assertTrue(lsmV2.isSignalPresent());
 
         P25P1DecoderC4FM c4fm = new P25P1DecoderC4FM();
-        assertTrue(c4fm.detectTransmissionBoundary(samples(3000, 0.10f), samples(3000, 0.0f)) >= 0);
+        c4fm.detectTransmissionBoundary(samples(3000, 1.0f), samples(3000, 0.0f));
+        c4fm.getSourceEventListener().receive(SourceEvent.frequencyChange(null, 155250000));
+        assertEquals(-1, c4fm.detectTransmissionBoundary(samples(3000, 0.04f), samples(3000, 0.0f)));
         assertTrue(c4fm.isSignalPresent());
 
         P25P1DecoderC4FMv2 c4fmV2 = new P25P1DecoderC4FMv2();
-        assertTrue(c4fmV2.detectTransmissionBoundary(samples(3000, 0.10f), samples(3000, 0.0f)) >= 0);
+        c4fmV2.detectTransmissionBoundary(samples(3000, 1.0f), samples(3000, 0.0f));
+        c4fmV2.getSourceEventListener().receive(SourceEvent.frequencyChange(null, 155250000));
+        assertEquals(-1, c4fmV2.detectTransmissionBoundary(samples(3000, 0.04f), samples(3000, 0.0f)));
         assertTrue(c4fmV2.isSignalPresent());
     }
 

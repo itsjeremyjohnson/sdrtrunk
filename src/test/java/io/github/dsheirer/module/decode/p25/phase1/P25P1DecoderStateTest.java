@@ -62,6 +62,18 @@ class P25P1DecoderStateTest
     }
 
     @Test
+    void requestResetClearsHoldoverTimestamp() throws Exception
+    {
+        P25P1DecoderState state = createState(new ArrayList<>());
+        setLastValidLduTimestamp(state, System.currentTimeMillis());
+
+        state.receiveDecoderStateEvent(new DecoderStateEvent(this, DecoderStateEvent.Event.REQUEST_RESET, State.IDLE));
+
+        assertEquals(0, getLastValidLduTimestamp(state));
+        state.stop();
+    }
+
+    @Test
     void zeroHoldoverDisablesSyncLossAndPeriodicContinuations() throws Exception
     {
         List<DecoderStateEvent> events = new ArrayList<>();

@@ -188,6 +188,34 @@ public class ConfigRoundTripTest
     }
 
     @Test
+    void unknownOnlyLoggerConfigurationSurvivesEditorStyleNullAssignment()
+    {
+        Channel channel = new Channel("test");
+        EventLogConfiguration configuration = channel.getEventLogConfiguration();
+        configuration.setLoggerValues(java.util.List.of("FUTURE_EVENT_LOGGER"));
+        configuration.clear();
+
+        channel.setEventLogConfiguration(null);
+
+        assertEquals(java.util.List.of("FUTURE_EVENT_LOGGER"),
+                channel.getEventLogConfiguration().getLoggerValues());
+    }
+
+    @Test
+    void unknownOnlyAuxConfigurationSurvivesEditorStyleNullAssignment()
+    {
+        Channel channel = new Channel("test");
+        AuxDecodeConfiguration configuration = channel.getAuxDecodeConfiguration();
+        configuration.setAuxDecoderValues(java.util.List.of("FUTURE_AUX_DECODER"));
+        configuration.clearAuxDecoders();
+
+        channel.setAuxDecodeConfiguration(null);
+
+        assertEquals(java.util.List.of("FUTURE_AUX_DECODER"),
+                channel.getAuxDecodeConfiguration().getAuxDecoderValues());
+    }
+
+    @Test
     void channelCopyPreservesActivityRecordingSettings()
     {
         Channel original = new Channel("test");

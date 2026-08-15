@@ -93,6 +93,7 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
     private int mNoiseFloorSampleCount;
     private boolean mInSilence = true;
     private int mBoundaryResetCount = 0;
+    private boolean mStartupClassificationComplete;
 
     // Strategy 3: Fade detection state for TDU recovery
     private float mPreviousEnergyAverage = 0f;
@@ -281,13 +282,25 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
 
                 boolean learnedFloorRise = mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
                         mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO;
-                boolean startupSignal = mBoundaryResetCount == 0 &&
-                        mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold &&
-                        mEnergyAverage >= STARTUP_SIGNAL_ENERGY;
+                boolean startupClassification = !mStartupClassificationComplete &&
+                        mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold;
+                boolean startupSignal = startupClassification && mEnergyAverage >= STARTUP_SIGNAL_ENERGY;
 
-                if(learnedFloorRise || startupSignal)
+                if(startupClassification)
                 {
-                    // A relative rise above idle or sustained startup energy marks a transmission.
+                    mStartupClassificationComplete = true;
+                }
+
+                if(startupSignal)
+                {
+                    mInSilence = false;
+                    mSilenceSampleCount = 0;
+                    mPeakEnergy = mEnergyAverage;
+                    mPreviousEnergyAverage = mEnergyAverage;
+                    mFadeWindowSampleCount = 0;
+                }
+                else if(learnedFloorRise)
+                {
                     mBoundaryResetCount++;
                     mInSilence = false;
                     mSilenceSampleCount = 0;
@@ -436,6 +449,9 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
         switch(sourceEvent.getEvent())
         {
             case NOTIFICATION_FREQUENCY_CHANGE:
+                mDemodulator.resetPLL();
+                resetTransmissionDetection();
+                break;
             case NOTIFICATION_FREQUENCY_CORRECTION_CHANGE:
                 mDemodulator.resetPLL();
                 break;
@@ -478,6 +494,20 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
     int getBoundaryResetCount()
     {
         return mBoundaryResetCount;
+    }
+
+    private void resetTransmissionDetection()
+    {
+        mEnergyAverage = 0;
+        mPeakEnergy = 0;
+        mPreviousEnergyAverage = 0;
+        mSilenceSampleCount = 0;
+        mInSilence = true;
+        mNoiseFloor = 0;
+        mNoiseFloorSampleCount = 0;
+        mFadeWindowSampleCount = 0;
+        mBoundaryResetCount = 0;
+        mStartupClassificationComplete = false;
     }
 
     /**
