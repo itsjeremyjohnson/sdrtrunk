@@ -1159,24 +1159,25 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private void processTDULC(P25P1Message message)
     {
         LinkControlWord lcw = message instanceof TDULCMessage tdulc ? tdulc.getLinkControlWord() : null;
+        processTDULC(message, lcw);
+    }
 
-        synchronized(mHoldoverLock)
+    void processTDULC(P25P1Message message, LinkControlWord lcw)
+    {
+        if(lcw != null && lcw.isValid())
         {
-            // Reset holdover state and broadcast the explicit end atomically with periodic holdover continuations.
-            mLastValidLDUTimestamp = 0;
-            mHoldoverActive = false;
-            stopPeriodicHoldoverCheck();
-            resetEncryptionConfirmation();
-
-            if(lcw != null && lcw.isValid())
+            synchronized(mHoldoverLock)
             {
+                // Reset holdover state and broadcast the explicit end atomically with periodic holdover continuations.
+                mLastValidLDUTimestamp = 0;
+                mHoldoverActive = false;
+                stopPeriodicHoldoverCheck();
+                resetEncryptionConfirmation();
+
                 mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDULC:" + message);
                 broadcastTDUStateEvent();
             }
-        }
 
-        if(lcw != null && lcw.isValid())
-        {
             processLC(lcw, message.getTimestamp(), true);
         }
     }

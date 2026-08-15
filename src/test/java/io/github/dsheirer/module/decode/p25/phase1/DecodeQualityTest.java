@@ -295,7 +295,7 @@ public class DecodeQualityTest
             case "CQPSK_V2" ->
             {
                 P25P1DecoderLSMv2 d = new P25P1DecoderLSMv2();
-                if(nac > 0) d.setConfiguredNAC(nac);
+                if(nac > 0) invokeOptional(d, "setConfiguredNAC", new Class<?>[]{int.class}, nac);
                 if(maxBchErrors < 11) d.getMessageFramer().setMaxBchErrors(maxBchErrors);
                 if(cmaAcqMu > 0 || cmaTrkMu > 0 || cmaShiftMs > 0) d.setCMAConfig(cmaAcqMu, cmaTrkMu, cmaShiftMs);
                 yield new DecoderWrapper()
@@ -311,7 +311,7 @@ public class DecodeQualityTest
             case "C4FM_V2" ->
             {
                 P25P1DecoderC4FMv2 d = new P25P1DecoderC4FMv2();
-                if(nac > 0) d.setConfiguredNAC(nac);
+                if(nac > 0) invokeOptional(d, "setConfiguredNAC", new Class<?>[]{int.class}, nac);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
@@ -325,7 +325,7 @@ public class DecodeQualityTest
             default ->
             {
                 P25P1DecoderC4FM d = new P25P1DecoderC4FM();
-                if(nac > 0) d.setConfiguredNAC(nac);
+                if(nac > 0) invokeOptional(d, "setConfiguredNAC", new Class<?>[]{int.class}, nac);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
@@ -336,19 +336,7 @@ public class DecodeQualityTest
                     public int getSyncBlockedCount() { return extractSyncBlockedReflection(d); }
                     public String getFramerDiagnosticJson()
                     {
-                        var framer = d.getMessageFramer();
-                        var demod = d.getDemodulator();
-                        return String.format(
-                            ", \"framer_sync_detections\": %d, \"framer_nid_success\": %d, \"framer_nid_fail\": %d" +
-                            ", \"framer_sync_blocked\": %d, \"framer_fallback_sync\": %d, \"framer_recovery_sync\": %d" +
-                            ", \"framer_initial_acq_sync\": %d, \"framer_flywheel_attempts\": %d" +
-                            ", \"framer_flywheel_success\": %d, \"framer_flywheel_miss\": %d" +
-                            ", \"demod_nid_valid_success\": %d, \"demod_nid_valid_fail\": %d, \"demod_nid_nac_mismatch\": %d",
-                            framer.getSyncDetectionCount(), framer.getNIDDecodeSuccessCount(), framer.getNIDDecodeFailCount(),
-                            framer.getSyncBlockedCount(), framer.getFallbackSyncCount(), framer.getRecoverySyncCount(),
-                            framer.getInitialAcquisitionSyncCount(), framer.getFlywheelAttemptCount(),
-                            framer.getFlywheelSuccessCount(), framer.getFlywheelMissCount(),
-                            demod.getNidValidationSuccess(), demod.getNidValidationFail(), demod.getNidNacMismatch());
+                        return extractFramerDiagnosticReflection(d);
                     }
                 };
             }
@@ -903,6 +891,61 @@ public class DecodeQualityTest
         catch(IOException e) { System.err.println("  MP3 write error: " + e.getMessage()); }
     }
 
+    static void invokeOptional(Object target, String methodName, Class<?>[] parameterTypes, Object... arguments)
+    {
+        try
+        {
+            target.getClass().getMethod(methodName, parameterTypes).invoke(target, arguments);
+        }
+        catch(ReflectiveOperationException e)
+        {
+            // Historical control revisions may not expose newer optional tuning methods.
+        }
+    }
+
+    private static int invokeIntOptional(Object target, String methodName)
+    {
+        if(target == null)
+        {
+            return 0;
+        }
+
+        try
+        {
+            return ((Number)target.getClass().getMethod(methodName).invoke(target)).intValue();
+        }
+        catch(ReflectiveOperationException e)
+        {
+            return 0;
+        }
+    }
+
+    private static String extractFramerDiagnosticReflection(Object decoder)
+    {
+        try
+        {
+            Object framer = decoder.getClass().getMethod("getMessageFramer").invoke(decoder);
+            Object demodulator = decoder.getClass().getMethod("getDemodulator").invoke(decoder);
+            return String.format(
+                    ", \"framer_sync_detections\": %d, \"framer_nid_success\": %d, \"framer_nid_fail\": %d" +
+                            ", \"framer_sync_blocked\": %d, \"framer_fallback_sync\": %d, \"framer_recovery_sync\": %d" +
+                            ", \"framer_initial_acq_sync\": %d, \"framer_flywheel_attempts\": %d" +
+                            ", \"framer_flywheel_success\": %d, \"framer_flywheel_miss\": %d" +
+                            ", \"demod_nid_valid_success\": %d, \"demod_nid_valid_fail\": %d, \"demod_nid_nac_mismatch\": %d",
+                    invokeIntOptional(framer, "getSyncDetectionCount"), invokeIntOptional(framer, "getNIDDecodeSuccessCount"),
+                    invokeIntOptional(framer, "getNIDDecodeFailCount"), invokeIntOptional(framer, "getSyncBlockedCount"),
+                    invokeIntOptional(framer, "getFallbackSyncCount"), invokeIntOptional(framer, "getRecoverySyncCount"),
+                    invokeIntOptional(framer, "getInitialAcquisitionSyncCount"), invokeIntOptional(framer, "getFlywheelAttemptCount"),
+                    invokeIntOptional(framer, "getFlywheelSuccessCount"), invokeIntOptional(framer, "getFlywheelMissCount"),
+                    invokeIntOptional(demodulator, "getNidValidationSuccess"), invokeIntOptional(demodulator, "getNidValidationFail"),
+                    invokeIntOptional(demodulator, "getNidNacMismatch"));
+        }
+        catch(ReflectiveOperationException e)
+        {
+            return "";
+        }
+    }
+
     private static int extractSyncBlockedReflection(Object decoder)
     {
         try
@@ -915,7 +958,7 @@ public class DecodeQualityTest
                     Field f = clazz.getDeclaredField("mMessageFramer");
                     f.setAccessible(true);
                     Object framer = f.get(decoder);
-                    if(framer instanceof P25P1MessageFramer mf) return mf.getSyncBlockedCount();
+                    return invokeIntOptional(framer, "getSyncBlockedCount");
                 }
                 catch(NoSuchFieldException e) { clazz = clazz.getSuperclass(); }
             }

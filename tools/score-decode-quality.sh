@@ -87,7 +87,7 @@ echo "Output:   $OUTPUT_DIR"
 
 # Handle --control-ref: create worktree
 if [[ -n "$CONTROL_REF" ]]; then
-    WORKTREE_PATH="/tmp/sdrtrunk-control-$(echo "$CONTROL_REF" | tr '/' '-')"
+    WORKTREE_PATH="$REPO_DIR/build/decode-quality-control-$(echo "$CONTROL_REF" | tr '/' '-')"
     echo ""
     echo "Creating worktree for control at: $WORKTREE_PATH (ref: $CONTROL_REF)"
 

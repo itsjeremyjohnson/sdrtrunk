@@ -78,6 +78,19 @@ class P25P1DecoderStateTest
     }
 
     @Test
+    void invalidTdulcDoesNotClearCallHoldover() throws Exception
+    {
+        P25P1DecoderState state = createState(new ArrayList<>());
+        long timestamp = System.currentTimeMillis();
+        setLastValidLduTimestamp(state, timestamp);
+
+        state.processTDULC(null, null);
+
+        assertEquals(timestamp, getLastValidLduTimestamp(state));
+        state.stop();
+    }
+
+    @Test
     void endedCallIsNotReopenedAfterCarrierCheck() throws Exception
     {
         List<DecoderStateEvent> events = new ArrayList<>();
@@ -111,6 +124,13 @@ class P25P1DecoderStateTest
         Field field = P25P1DecoderState.class.getDeclaredField("mLastValidLDUTimestamp");
         field.setAccessible(true);
         field.setLong(state, timestamp);
+    }
+
+    private long getLastValidLduTimestamp(P25P1DecoderState state) throws Exception
+    {
+        Field field = P25P1DecoderState.class.getDeclaredField("mLastValidLDUTimestamp");
+        field.setAccessible(true);
+        return field.getLong(state);
     }
 
     private void invokePeriodicHoldoverCheck(P25P1DecoderState state) throws Exception

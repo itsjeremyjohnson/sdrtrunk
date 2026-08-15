@@ -133,8 +133,8 @@ public class IMBEFrameDiagnostic
         byte[] padded = new byte[18];
         System.arraycopy(frameData, 0, padded, 0, Math.min(frameData.length, 18));
 
-        // Convert bytes to BinaryMessage using MSB-first byte ordering (matches JMBE's fromBytes LITTLE_ENDIAN)
-        BinaryMessage frame = BinaryMessage.from(padded);
+        // BitSet.toByteArray() stores bit zero as the least-significant bit of each byte.
+        BinaryMessage frame = fromLittleEndianBytes(padded);
 
         // Step 1: Deinterleave
         deinterleave(frame);
@@ -172,6 +172,24 @@ public class IMBEFrameDiagnostic
         boolean fundamentalValid = isFundamentalValid(frame);
 
         return new FrameErrors(errors, totalErrors, uncorrectable, fundamentalValid);
+    }
+
+    static BinaryMessage fromLittleEndianBytes(byte[] bytes)
+    {
+        BinaryMessage message = new BinaryMessage(bytes.length * 8);
+
+        for(int byteIndex = 0; byteIndex < bytes.length; byteIndex++)
+        {
+            for(int bitIndex = 0; bitIndex < 8; bitIndex++)
+            {
+                if((bytes[byteIndex] & (1 << bitIndex)) != 0)
+                {
+                    message.set((byteIndex * 8) + bitIndex);
+                }
+            }
+        }
+
+        return message;
     }
 
     /**
