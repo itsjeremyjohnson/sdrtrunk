@@ -140,7 +140,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     }
 
     /**
-     * Cancels any pending delayed close.  Called when new audio arrives during hangtime.
+     * Cancels any pending delayed close.
      */
     private void cancelPendingClose()
     {
@@ -154,7 +154,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     /**
      * Sets the audio hangtime in milliseconds.  When greater than zero, audio segment
      * close is delayed by this amount to allow remaining audio buffers to flush.
-     * If new audio arrives during the hangtime, the pending close is cancelled.
+     * If new audio arrives during the hangtime, the close is rescheduled after the latest buffer.
      *
      * @param hangtimeMs delay in milliseconds (0 = immediate close)
      */
@@ -217,7 +217,8 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
 
     public synchronized void addAudio(float[] audioBuffer)
     {
-        //Invalidate and cancel any pending hangtime close before obtaining or appending to the current segment.
+        //Invalidate a pending close while appending, then preserve its close intent after the latest tail buffer.
+        boolean closePending = mPendingClose != null;
         mAudioGeneration++;
         cancelPendingClose();
         AudioSegment audioSegment = getAudioSegment();
@@ -236,6 +237,11 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         {
             audioSegment.addAudio(audioBuffer);
             mAudioSampleCount += audioBuffer.length;
+
+            if(closePending)
+            {
+                closeAudioSegment();
+            }
         }
         catch(Exception e)
         {

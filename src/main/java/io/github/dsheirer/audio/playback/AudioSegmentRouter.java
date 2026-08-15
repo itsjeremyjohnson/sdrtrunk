@@ -38,6 +38,7 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
+import java.util.function.BooleanSupplier;
 
 /**
  * Routes audio segments to specific Virtual Audio Cable (VAC) outputs based on alias configuration.
@@ -54,9 +55,16 @@ public class AudioSegmentRouter
     private static final long SILENCE_FEED_DURATION = 3000; // Feed silence for 3 seconds after segment ends
     private ScheduledExecutorService mExecutor;
     private volatile boolean mEnabled = true;
+    private final BooleanSupplier mDuplicateSuppressionEnabled;
 
     public AudioSegmentRouter()
     {
+        this(() -> false);
+    }
+
+    AudioSegmentRouter(BooleanSupplier duplicateSuppressionEnabled)
+    {
+        mDuplicateSuppressionEnabled = duplicateSuppressionEnabled;
         // Start background thread to route audio continuously
         mExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "AudioSegmentRouter");
@@ -147,7 +155,8 @@ public class AudioSegmentRouter
             return;
         }
 
-        if(audioSegment.isDoNotMonitor())
+        if(audioSegment.isDoNotMonitor() ||
+            (audioSegment.isDuplicate() && mDuplicateSuppressionEnabled.getAsBoolean()))
         {
             removePendingSegment(audioSegment);
             return;
@@ -242,6 +251,12 @@ public class AudioSegmentRouter
         mActiveSegments.entrySet().removeIf(entry -> {
             AudioSegment segment = entry.getKey();
             SegmentRouter router = entry.getValue();
+
+            if(segment.isDuplicate() && mDuplicateSuppressionEnabled.getAsBoolean())
+            {
+                segment.decrementConsumerCount();
+                return true;
+            }
 
             // Route any new buffers
             router.routeNewBuffers();

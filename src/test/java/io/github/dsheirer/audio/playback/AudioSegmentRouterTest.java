@@ -256,6 +256,50 @@ class AudioSegmentRouterTest
         router.dispose();
     }
 
+    @Test
+    void asynchronousDuplicateDetectionAbortsActiveCustomRoute()
+    {
+        AliasList aliasList = new AliasList("test");
+        Alias alias = new Alias("routed");
+        alias.addAliasID(new Talkgroup(Protocol.APCO25, 100));
+        alias.setAudioOutputDevice("test-device");
+        aliasList.addAlias(alias);
+        AudioSegment segment = new AudioSegment(aliasList, 0);
+        segment.addIdentifier(APCO25Talkgroup.create(100));
+        segment.addAudio(new float[160]);
+        segment.incrementConsumerCount();
+        AudioFormat format = new AudioFormat(8000.0f, 16, 1, true, false);
+        SourceDataLine line = (SourceDataLine)Proxy.newProxyInstance(SourceDataLine.class.getClassLoader(),
+            new Class[]{SourceDataLine.class}, (proxy, method, args) ->
+            {
+                if(method.getName().equals("getFormat"))
+                {
+                    return format;
+                }
+                if(method.getName().equals("write"))
+                {
+                    return (Integer)args[2];
+                }
+                return method.getReturnType() == boolean.class ? false : null;
+            });
+        AudioSegmentRouter router = new AudioSegmentRouter(() -> true)
+        {
+            @Override
+            SourceDataLine getOrCreateOutputLine(String deviceName)
+            {
+                return line;
+            }
+        };
+
+        router.route(segment);
+        segment.decrementConsumerCount();
+        segment.setDuplicate(true);
+        router.processActiveSegments();
+
+        assertEquals(0, segment.getAudioBufferCount());
+        router.dispose();
+    }
+
     private static class TestMixerInfo extends Mixer.Info
     {
         TestMixerInfo(String name)

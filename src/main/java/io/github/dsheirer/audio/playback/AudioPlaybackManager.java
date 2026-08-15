@@ -58,7 +58,7 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     private final LinkedTransferQueue<AudioSegment> mNewAudioSegmentQueue = new LinkedTransferQueue<>();
     private final ReentrantLock mAudioChannelsLock = new ReentrantLock();
     private final UserPreferences mUserPreferences;
-    private final AudioSegmentRouter mAudioRouter = new AudioSegmentRouter();
+    private final AudioSegmentRouter mAudioRouter;
     private AudioPlaybackDeviceDescriptor mAudioPlaybackDevice;
     private AudioOutput mAudioOutput;
     private ScheduledFuture<?> mProcessingTask;
@@ -71,6 +71,8 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     public AudioPlaybackManager(UserPreferences userPreferences)
     {
         mUserPreferences = userPreferences;
+        mAudioRouter = new AudioSegmentRouter(() -> mUserPreferences.getCallManagementPreference()
+            .isDuplicatePlaybackSuppressionEnabled());
         MyEventBus.getGlobalEventBus().register(this);
         AudioPlaybackDeviceDescriptor device = mUserPreferences.getPlaybackPreference().getAudioPlaybackDevice();
 
