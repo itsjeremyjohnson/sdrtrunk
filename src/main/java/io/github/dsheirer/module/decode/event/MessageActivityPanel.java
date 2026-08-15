@@ -26,6 +26,7 @@ import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.MessageHistory;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderFactory;
+import io.github.dsheirer.preference.NowPlayingPreference;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.swing.JTableColumnWidthMonitor;
 import io.github.dsheirer.sample.Listener;
@@ -72,9 +73,16 @@ public class MessageActivityPanel extends JPanel implements Listener<ProcessingC
         mTable.setRowSorter(mTableRowSorter);
         mTableColumnWidthMonitor = new JTableColumnWidthMonitor(mUserPreferences, mTable, TABLE_PREFERENCE_KEY);
         setLayout(new MigLayout("insets 0 0 0 0", "[][grow,fill]", "[]0[grow,fill]"));
-        mHistoryManagementPanel = new HistoryManagementPanel<>(mMessageModel, "Message Filter Editor");
+        NowPlayingPreference nowPlayingPreference = mUserPreferences.getNowPlayingPreference();
+        mHistoryManagementPanel = new HistoryManagementPanel<>(mMessageModel, "Message Filter Editor",
+            nowPlayingPreference.getMessageHistorySize(), nowPlayingPreference::setMessageHistorySize);
         add(mHistoryManagementPanel, "span,growx");
         add(new JScrollPane(mTable), "span,grow");
+    }
+
+    int getConfiguredHistorySize()
+    {
+        return mMessageModel.getHistorySize();
     }
 
     /**

@@ -37,6 +37,7 @@ import io.github.dsheirer.identifier.decoder.DecoderLogicalChannelNameIdentifier
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderFactory;
+import io.github.dsheirer.module.decode.event.DecodeEventHistory;
 import io.github.dsheirer.module.decode.event.IDecodeEvent;
 import io.github.dsheirer.module.log.EventLogManager;
 import io.github.dsheirer.preference.UserPreferences;
@@ -86,7 +87,15 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
     private Broadcaster<ChannelEvent> mChannelEventBroadcaster = new Broadcaster();
 
     private Map<ProcessingChain, Listener<IDecodeEvent>> mParentDecodeEventHistoryListeners = new ConcurrentHashMap<>();
-    private Map<ProcessingChain, Listener<IDecodeEvent>> mChildDecodeEventHistoryListeners = new ConcurrentHashMap<>();
+    private Map<ProcessingChain, ChildHistoryRegistration> mChildDecodeEventHistoryListeners = new ConcurrentHashMap<>();
+
+    record ChildHistoryRegistration(DecodeEventHistory source, Listener<IDecodeEvent> listener)
+    {
+        void remove()
+        {
+            source.removeListener(listener);
+        }
+    }
 
     private ChannelMapModel mChannelMapModel;
     private ChannelMetadataModel mChannelMetadataModel;
@@ -436,8 +445,10 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
         else if(request.hasChildDecodeEventHistory())
         {
             Listener<IDecodeEvent> childListener = processingChain.getDecodeEventHistory();
-            request.getChildDecodeEventHistory().addListener(childListener);
-            mChildDecodeEventHistoryListeners.put(processingChain, childListener);
+            DecodeEventHistory childHistory = request.getChildDecodeEventHistory();
+            childHistory.addListener(childListener);
+            mChildDecodeEventHistoryListeners.put(processingChain,
+                new ChildHistoryRegistration(childHistory, childListener));
         }
 
         //Register to receive event bus requests/notifications
@@ -699,10 +710,11 @@ public class ChannelProcessingManager implements Listener<ChannelEvent>
                     processingChain.getDecodeEventHistory().removeListener(parentListener);
                 }
 
-                Listener<IDecodeEvent> childListener = mChildDecodeEventHistoryListeners.remove(processingChain);
-                if(childListener != null)
+                ChildHistoryRegistration childRegistration =
+                    mChildDecodeEventHistoryListeners.remove(processingChain);
+                if(childRegistration != null)
                 {
-                    processingChain.getDecodeEventHistory().removeListener(childListener);
+                    childRegistration.remove();
                 }
 
                 //Unregister for event bus requests and notifications

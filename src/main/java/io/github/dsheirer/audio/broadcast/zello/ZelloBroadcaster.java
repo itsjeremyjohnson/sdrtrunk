@@ -392,6 +392,15 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
         mLog.info("{}Zello stream stopped", ch());
     }
 
+    synchronized void handleStartStreamRejected()
+    {
+        mCurrentStreamId.set(-2);
+        mStreamActive.set(false);
+        mStopPendingAcknowledgement.set(false);
+        mAudioQueue.clear();
+        mResampleBufferPos = 0;
+    }
+
     synchronized void handleStartStreamAcknowledged(long streamId)
     {
         mCurrentStreamId.set(streamId);
@@ -1175,8 +1184,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
                         mLog.error("{}Zello start_stream failed: error=\"{}\" seq={} command={}",
                             ch(), error, seq, originCmd != null ? originCmd : "start_stream");
                         setLastErrorDetail("[3006] " + error);
-                        mCurrentStreamId.set(-2);
-                        mStreamActive.set(false);
+                        handleStartStreamRejected();
                     }
                 }
             }

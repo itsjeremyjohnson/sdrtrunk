@@ -68,7 +68,12 @@ public class DMRCarrierOffsetProcessor
     private static final int FFT_BIN_SIZE = 128;
     private static final int MEASUREMENT_COUNT_THRESHOLD = 5;
     private static final long CALCULATION_TIME_INTERVAL_MS = 1000;
-    private static final float CENTER_INDEX = FFT_BIN_SIZE / 2.0f - 1; // 63.0
+    private static final float CENTER_INDEX = FFT_BIN_SIZE / 2.0f; // 64.0 after FFT half-swap
+
+    static float getCenterIndex()
+    {
+        return CENTER_INDEX;
+    }
 
     /**
      * DMR 4-FSK symbol frequencies relative to carrier center.

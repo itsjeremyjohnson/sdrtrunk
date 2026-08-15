@@ -16,6 +16,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ZelloBroadcasterLifecycleTest
@@ -86,6 +87,41 @@ class ZelloBroadcasterLifecycleTest
         assertEquals(0, broadcaster.getAudioQueueSize());
         assertTrue(lastText.get().contains("stop_stream"));
         assertTrue(lastText.get().contains("456"));
+        broadcaster.stop();
+    }
+
+    @Test
+    void rejectedWorkStartClearsPendingStopLatch() throws Exception
+    {
+        ZelloConfiguration configuration = new ZelloConfiguration();
+        configuration.setRelaxationTimeMs(0);
+        ZelloBroadcaster broadcaster = new ZelloBroadcaster(configuration, null, null, new AliasModel());
+        setStreamActive(broadcaster, true);
+        broadcaster.receiveRealTimeAudio(new float[10]);
+        broadcaster.stopRealTimeStream();
+
+        broadcaster.handleStartStreamRejected();
+
+        assertFalse(atomicBoolean(broadcaster, "mStopPendingAcknowledgement").get());
+        assertEquals(0, broadcaster.getAudioQueueSize());
+        broadcaster.stop();
+    }
+
+    @Test
+    void rejectedConsumerStartClearsPendingStopLatch() throws Exception
+    {
+        ZelloConsumerConfiguration configuration = new ZelloConsumerConfiguration();
+        configuration.setRelaxationTimeMs(0);
+        ZelloConsumerBroadcaster broadcaster = new ZelloConsumerBroadcaster(configuration, null, null,
+            new AliasModel());
+        setStreamActive(broadcaster, true);
+        broadcaster.receiveRealTimeAudio(new float[10]);
+        broadcaster.stopRealTimeStream();
+
+        broadcaster.handleStartStreamRejected();
+
+        assertFalse(atomicBoolean(broadcaster, "mStopPendingAcknowledgement").get());
+        assertEquals(0, broadcaster.getAudioQueueSize());
         broadcaster.stop();
     }
 

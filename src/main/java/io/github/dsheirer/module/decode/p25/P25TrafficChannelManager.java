@@ -216,6 +216,11 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         mFrequencyBandMap.put(frequencyBand.getIdentifier(), frequencyBand);
     }
 
+    boolean hasFrequencyBand(int identifier)
+    {
+        return mFrequencyBandMap.containsKey(identifier);
+    }
+
     /**
      * Notification that the control channel frequency is updated and removes any traffic channel that may be running
      * against the same frequency.
@@ -248,7 +253,6 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
 
             mTS1ChannelGrantEventMap.clear();
             mTS2ChannelGrantEventMap.clear();
-            mFrequencyBandMap.clear();
 
             //Remove the control channel from the previous frequency
             mAllocatedTrafficChannelMap.remove(previous);

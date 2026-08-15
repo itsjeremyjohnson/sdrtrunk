@@ -20,6 +20,8 @@
 package io.github.dsheirer.audio.broadcast;
 
 import javafx.beans.Observable;
+import javafx.beans.binding.Bindings;
+import javafx.beans.binding.StringBinding;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleObjectProperty;
@@ -106,6 +108,21 @@ public class ConfiguredBroadcast
     public StringProperty lastErrorDetailProperty()
     {
         return mLastErrorDetail;
+    }
+
+    public StringBinding lastErrorDisplayProperty()
+    {
+        return Bindings.createStringBinding(() -> {
+            String detail = mLastErrorDetail.get();
+
+            if(detail != null && !detail.isBlank())
+            {
+                return detail;
+            }
+
+            BroadcastState state = mLastBadBroadcastState.get();
+            return state != null ? state.toString() : "";
+        }, mLastErrorDetail, mLastBadBroadcastState);
     }
 
     /**

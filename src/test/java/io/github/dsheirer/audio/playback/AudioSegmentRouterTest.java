@@ -16,6 +16,8 @@ import io.github.dsheirer.protocol.Protocol;
 import org.junit.jupiter.api.Test;
 
 import javax.sound.sampled.SourceDataLine;
+import java.lang.reflect.Proxy;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -70,6 +72,40 @@ class AudioSegmentRouterTest
         assertEquals(0, segment.getAudioBufferCount());
         assertNotEquals(io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR,
             segment.monitorPriorityProperty().get());
+        router.dispose();
+    }
+
+    @Test
+    void outputLossAbortsActiveRouteAndReleasesSegment()
+    {
+        AliasList aliasList = new AliasList("test");
+        Alias alias = new Alias("routed");
+        alias.addAliasID(new Talkgroup(Protocol.APCO25, 100));
+        alias.setAudioOutputDevice("temporary-device");
+        aliasList.addAlias(alias);
+        AudioSegment segment = new AudioSegment(aliasList, 0);
+        segment.addIdentifier(APCO25Talkgroup.create(100));
+        segment.addAudio(new float[160]);
+        segment.incrementConsumerCount();
+        AtomicInteger lookups = new AtomicInteger();
+        SourceDataLine line = (SourceDataLine)Proxy.newProxyInstance(SourceDataLine.class.getClassLoader(),
+            new Class[]{SourceDataLine.class}, (proxy, method, args) -> null);
+        AudioSegmentRouter router = new AudioSegmentRouter()
+        {
+            @Override
+            SourceDataLine getOrCreateOutputLine(String deviceName)
+            {
+                return lookups.getAndIncrement() == 0 ? line : null;
+            }
+        };
+
+        router.route(segment);
+        segment.decrementConsumerCount();
+        assertEquals(1, segment.getAudioBufferCount());
+
+        router.processActiveSegments();
+
+        assertEquals(0, segment.getAudioBufferCount());
         router.dispose();
     }
 }

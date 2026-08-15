@@ -8,10 +8,12 @@ package io.github.dsheirer.module.decode.event;
 import io.github.dsheirer.filter.Filter;
 import io.github.dsheirer.filter.FilterElement;
 import io.github.dsheirer.filter.FilterSet;
+import io.github.dsheirer.preference.NowPlayingPreference;
 import io.github.dsheirer.preference.UserPreferences;
 import java.util.function.Function;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 
 class MessageActivityPanelTest
@@ -34,6 +36,24 @@ class MessageActivityPanelTest
 
         assertFalse(element.isEnabled());
         preferences.getNowPlayingPreference().setFilterEnabled("Nested Filter.Nested Element", true);
+    }
+
+    @Test
+    void initializesMessagesHistoryFromPreference()
+    {
+        UserPreferences preferences = new UserPreferences();
+        NowPlayingPreference nowPlaying = preferences.getNowPlayingPreference();
+        int previous = nowPlaying.getMessageHistorySize();
+
+        try
+        {
+            nowPlaying.setMessageHistorySize(333);
+            assertEquals(333, new MessageActivityPanel(preferences).getConfiguredHistorySize());
+        }
+        finally
+        {
+            nowPlaying.setMessageHistorySize(previous);
+        }
     }
 
     private static class TestFilter extends Filter<Object,String>

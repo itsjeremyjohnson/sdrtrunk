@@ -74,6 +74,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import javafx.application.Platform;
+import javafx.beans.property.BooleanProperty;
 import javafx.beans.binding.Bindings;
 import javafx.beans.value.ChangeListener;
 import javafx.beans.value.ObservableValue;
@@ -241,12 +242,18 @@ public class AliasItemEditor extends Editor<Alias>
      * marking the editor as modified during this programmatic update, which would otherwise
      * cause a race condition requiring multiple clicks to sync the toggle state.
      */
+    static void restoreModifiedState(BooleanProperty modified, boolean wasModified)
+    {
+        modified.set(wasModified);
+    }
+
     @Subscribe
     public void aliasPriorityChanged(io.github.dsheirer.channel.metadata.AliasPriorityChangedEvent event)
     {
         if(event.getAlias() != null && event.getAlias() == getItem())
         {
             Platform.runLater(() -> {
+                boolean wasModified = modifiedProperty().get();
                 mSuppressModification = true;
 
                 try
@@ -269,7 +276,7 @@ public class AliasItemEditor extends Editor<Alias>
                     mSuppressModification = false;
                 }
 
-                modifiedProperty().set(false);
+                restoreModifiedState(modifiedProperty(), wasModified);
             });
         }
     }

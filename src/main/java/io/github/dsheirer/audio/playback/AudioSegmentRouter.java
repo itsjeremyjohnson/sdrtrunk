@@ -161,7 +161,7 @@ public class AudioSegmentRouter
     /**
      * Processes all active segments and routes their audio buffers
      */
-    private void processActiveSegments()
+    void processActiveSegments()
     {
         if(mActiveSegments.isEmpty())
         {
@@ -175,6 +175,12 @@ public class AudioSegmentRouter
 
             // Route any new buffers
             router.routeNewBuffers();
+
+            if(router.isAborted())
+            {
+                segment.decrementConsumerCount();
+                return true;
+            }
 
             // Remove if segment is complete and all buffers routed
             if(segment.isComplete() && router.isComplete())
@@ -201,6 +207,7 @@ public class AudioSegmentRouter
         private int lastRoutedBufferIndex = -1;
         private int totalBuffersRouted = 0;
         private long completionTime = 0;
+        private boolean aborted;
         private static final long SILENCE_DURATION_MS = 800; // Write silence for 800ms after completion
 
         public SegmentRouter(AudioSegment segment, String deviceName, String aliasName)
@@ -221,7 +228,8 @@ public class AudioSegmentRouter
 
             if(outputLine == null)
             {
-                mLog.warn("Cannot route - output line not available for: " + deviceName);
+                mLog.warn("Cannot continue route - output line not available for: " + deviceName);
+                aborted = true;
                 return;
             }
 
@@ -291,6 +299,11 @@ public class AudioSegmentRouter
             {
                 mLog.error("Error routing buffers for " + aliasName, e);
             }
+        }
+
+        public boolean isAborted()
+        {
+            return aborted;
         }
 
         public boolean isComplete()

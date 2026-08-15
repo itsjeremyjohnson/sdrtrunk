@@ -8,11 +8,18 @@ package io.github.dsheirer.module.carrier;
 import io.github.dsheirer.sample.complex.ComplexSamples;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DMRCarrierOffsetProcessorTest
 {
+    @Test
+    void usesCenterBinAfterFftHalfSwap()
+    {
+        assertEquals(64.0f, DMRCarrierOffsetProcessor.getCenterIndex());
+    }
+
     @Test
     void throttlesAfterUnsuccessfulCarrierAttempt()
     {
