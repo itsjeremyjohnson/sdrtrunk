@@ -259,6 +259,16 @@ public class CTCSSDetectorTest
     }
 
     @Test
+    void highFrequencyToneDetectsAtNegativeToleranceLimit()
+    {
+        CTCSSDetector detector = new CTCSSDetector(192.8);
+        detector.setSampleRate(SAMPLE_RATE);
+        detector.process(generateTone(192.8 * 0.98, TONE_AMPLITUDE, 1.0));
+
+        assertTrue(detector.isToneDetected(), "192.8 Hz must accept its exact -2% tolerance edge");
+    }
+
+    @Test
     void resetRequiresFreshToneDetection()
     {
         mDetector.process(generateTone(TARGET_FREQUENCY, TONE_AMPLITUDE, 1.0));

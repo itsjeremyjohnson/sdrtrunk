@@ -73,6 +73,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
     private Spinner<Integer> mNACSpinner;
     private Label mNACLabel;
+    private Spinner<Integer> mAudioHoldoverMsSpinner;
     private SegmentedButton mModulationSegmentedButton;
     private ToggleButton mC4FMToggleButton;
     private ToggleButton mC4FMv2ToggleButton;
@@ -175,6 +176,15 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
 
             GridPane.setConstraints(getNACSpinner(), 1, 1);
             gridPane.getChildren().add(getNACSpinner());
+
+            Label audioHoldoverLabel = new Label("Audio Holdover (ms)");
+            audioHoldoverLabel.setTooltip(new Tooltip("Keep an active P25 call open across short decode gaps while carrier remains present. 0 disables holdover."));
+            GridPane.setHalignment(audioHoldoverLabel, HPos.RIGHT);
+            GridPane.setConstraints(audioHoldoverLabel, 2, 1);
+            gridPane.getChildren().add(audioHoldoverLabel);
+
+            GridPane.setConstraints(getAudioHoldoverMsSpinner(), 3, 1);
+            gridPane.getChildren().add(getAudioHoldoverMsSpinner());
 
             Label modulationHelpLabel = new Label("C4FM: repeaters and non-simulcast trunked.  C4FM v2: C4FM with equalizer for multipath.  LSM: simulcast trunked.  LSM v2: conventional (PTT) CQPSK channels.");
             GridPane.setConstraints(modulationHelpLabel, 0, 2, 6, 1);
@@ -467,6 +477,31 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         return mNACSpinner;
     }
 
+    private Spinner<Integer> getAudioHoldoverMsSpinner()
+    {
+        if(mAudioHoldoverMsSpinner == null)
+        {
+            mAudioHoldoverMsSpinner = new Spinner<>();
+            mAudioHoldoverMsSpinner.setDisable(true);
+            mAudioHoldoverMsSpinner.setTooltip(new Tooltip(
+                    "P25 call holdover during carrier-present decode gaps.\n" +
+                    "0 = disabled\n" +
+                    DecodeConfigP25Phase1.DEFAULT_AUDIO_HOLDOVER_MS + " = default\n" +
+                    DecodeConfigP25Phase1.MAX_AUDIO_HOLDOVER_MS + " = maximum"));
+            mAudioHoldoverMsSpinner.getStyleClass().add(Spinner.STYLE_CLASS_SPLIT_ARROWS_HORIZONTAL);
+            mAudioHoldoverMsSpinner.setEditable(true);
+            mAudioHoldoverMsSpinner.setPrefWidth(100);
+            SpinnerValueFactory<Integer> svf = new SpinnerValueFactory.IntegerSpinnerValueFactory(0,
+                    DecodeConfigP25Phase1.MAX_AUDIO_HOLDOVER_MS,
+                    DecodeConfigP25Phase1.DEFAULT_AUDIO_HOLDOVER_MS, 20);
+            mAudioHoldoverMsSpinner.setValueFactory(svf);
+            mAudioHoldoverMsSpinner.getValueFactory().valueProperty()
+                    .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mAudioHoldoverMsSpinner;
+    }
+
     /**
      * Updates modulation-specific option visibility. Decoder-independent audio and BCH controls remain visible for every
      * modulation because their configured values are applied by DecoderFactory regardless of the selected demodulator.
@@ -691,6 +726,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         getIgnoreDataCallsButton().setDisable(!enabled);
         getTrafficChannelPoolSizeSpinner().setDisable(!enabled);
         getNACSpinner().setDisable(!enabled);
+        getAudioHoldoverMsSpinner().setDisable(!enabled);
         getIgnoreEncryptionSwitch().setDisable(!enabled);
         getMaxImbeErrorsSpinner().setDisable(!enabled);
         getMaxBchErrorsSpinner().setDisable(!enabled);
@@ -704,6 +740,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
             getNACSpinner().getValueFactory().setValue(decodeConfig.getConfiguredNAC());
+            getAudioHoldoverMsSpinner().getValueFactory().setValue(decodeConfig.getAudioHoldoverMs());
             getPipelineDiagnosticsSwitch().setSelected(decodeConfig.isPipelineDiagnostics());
 
             // LSM v2 options
@@ -740,6 +777,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getIgnoreDataCallsButton().setSelected(false);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(0);
             getNACSpinner().getValueFactory().setValue(DecodeConfigP25Phase1.NAC_AUTODETECT);
+            getAudioHoldoverMsSpinner().getValueFactory().setValue(DecodeConfigP25Phase1.DEFAULT_AUDIO_HOLDOVER_MS);
             getIgnoreEncryptionSwitch().setSelected(false);
             getMaxImbeErrorsSpinner().getValueFactory().setValue(0);
             getMaxBchErrorsSpinner().getValueFactory().setValue(DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT);
@@ -767,6 +805,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setConfiguredNAC(getNACSpinner().getValue());
+        config.setAudioHoldoverMs(getAudioHoldoverMsSpinner().getValue());
         config.setPipelineDiagnostics(getPipelineDiagnosticsSwitch().isSelected());
 
         // LSM v2 options

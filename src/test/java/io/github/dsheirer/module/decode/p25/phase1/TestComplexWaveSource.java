@@ -24,6 +24,7 @@ import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.sample.ConversionUtils;
 import java.io.File;
 import java.io.IOException;
+import java.util.Arrays;
 import javax.sound.sampled.AudioFormat;
 import javax.sound.sampled.AudioInputStream;
 import javax.sound.sampled.AudioSystem;
@@ -96,6 +97,11 @@ public class TestComplexWaveSource implements AutoCloseable
         }
 
         int samplesRead = bytesRead / mBytesPerFrame;
+        if(samplesRead == 0)
+        {
+            return false;
+        }
+        byte[] validBytes = frameAlignedBytes(buffer, bytesRead, mBytesPerFrame);
 
         // Calculate timestamp based on sample position, not wall clock
         // This gives timestamps in milliseconds from start of file
@@ -103,10 +109,16 @@ public class TestComplexWaveSource implements AutoCloseable
 
         mSampleCount += samplesRead;
 
-        float[] samples = ConversionUtils.convertFromSigned16BitSamples(buffer);
+        float[] samples = ConversionUtils.convertFromSigned16BitSamples(validBytes);
         mListener.receive(new FloatNativeBuffer(samples, timestamp, (float)(mSampleRate / 1000.0)));
 
         return true;
+    }
+
+    static byte[] frameAlignedBytes(byte[] buffer, int bytesRead, int bytesPerFrame)
+    {
+        int validLength = Math.min(buffer.length, bytesRead) / bytesPerFrame * bytesPerFrame;
+        return validLength == buffer.length ? buffer : Arrays.copyOf(buffer, validLength);
     }
 
     @Override

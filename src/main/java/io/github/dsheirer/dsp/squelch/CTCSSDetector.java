@@ -115,10 +115,8 @@ public class CTCSSDetector
         }
         mLowerCoefficient = lowerFrequency > 0 ? getCoefficient(lowerFrequency) : 0;
         mUpperCoefficient = upperFrequency > 0 ? getCoefficient(upperFrequency) : 0;
-        mLowerAdjacentLeakageRatio = lowerFrequency > 0 ?
-                getLeakageRatio(lowerFrequency, mTargetFrequency) : 0;
-        mUpperAdjacentLeakageRatio = upperFrequency > 0 ?
-                getLeakageRatio(upperFrequency, mTargetFrequency) : 0;
+        mLowerAdjacentLeakageRatio = lowerFrequency > 0 ? getInBandLeakageRatio(lowerFrequency) : 0;
+        mUpperAdjacentLeakageRatio = upperFrequency > 0 ? getInBandLeakageRatio(upperFrequency) : 0;
         mLowerToleranceCoefficient = getCoefficient(mTargetFrequency * 0.98);
         mUpperToleranceCoefficient = getCoefficient(mTargetFrequency * 1.02);
 
@@ -131,13 +129,15 @@ public class CTCSSDetector
     }
 
     /**
-     * Calculates how much an adjacent tone leaks into the configured target measurement for this block size.
+     * Calculates how much an adjacent tone leaks into any accepted target measurement for this block size.
      */
-    private double getLeakageRatio(double signalFrequency, double detectorFrequency)
+    private double getInBandLeakageRatio(double signalFrequency)
     {
-        double targetResponse = getResponseMagnitude(signalFrequency, detectorFrequency);
+        double inBandResponse = Math.max(getResponseMagnitude(signalFrequency, mTargetFrequency),
+                Math.max(getResponseMagnitude(signalFrequency, mTargetFrequency * 0.98),
+                        getResponseMagnitude(signalFrequency, mTargetFrequency * 1.02)));
         double adjacentResponse = getResponseMagnitude(signalFrequency, signalFrequency);
-        return adjacentResponse > 0 ? targetResponse / adjacentResponse : 0;
+        return adjacentResponse > 0 ? inBandResponse / adjacentResponse : 0;
     }
 
     private double getResponseMagnitude(double signalFrequency, double detectorFrequency)
@@ -286,7 +286,7 @@ public class CTCSSDetector
             double ratio = 10.0 * Math.log10(inBandMagnitude / totalPower);
             double adjacentLeakage = Math.max(lowerMagnitude * mLowerAdjacentLeakageRatio,
                     upperMagnitude * mUpperAdjacentLeakageRatio);
-            tonePresent = ratio > DETECTION_THRESHOLD_DB && magnitude > adjacentLeakage * 1.01;
+            tonePresent = ratio > DETECTION_THRESHOLD_DB && inBandMagnitude > adjacentLeakage * 1.01;
         }
 
         // Apply hysteresis

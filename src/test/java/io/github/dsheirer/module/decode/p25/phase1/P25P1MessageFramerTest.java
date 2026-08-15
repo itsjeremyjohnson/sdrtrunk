@@ -35,9 +35,22 @@ class P25P1MessageFramerTest
     }
 
     @Test
-    void correctsUncertainTerminatorDuringVoiceFrame()
+    void doesNotCorrectUncertainTerminatorWithoutCarrierEvidence()
     {
         P25P1MessageFramer framer = new P25P1MessageFramer();
+        framer.setPreviousDataUnitID(P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1);
+        framer.setMaxConsecutiveDuidCorrections(3);
+
+        framer.nidDetected(0x293, P25P1DataUnitID.TERMINATOR_DATA_UNIT, 8);
+
+        assertEquals(0, framer.getDuidCorrectionCount());
+    }
+
+    @Test
+    void correctsUncertainTerminatorWhenCarrierIsPresent()
+    {
+        P25P1MessageFramer framer = new P25P1MessageFramer();
+        framer.setEnergyProvider(new TestEnergyProvider(true));
         framer.setPreviousDataUnitID(P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1);
         framer.setMaxConsecutiveDuidCorrections(3);
 
@@ -51,6 +64,7 @@ class P25P1MessageFramerTest
     {
         List<P25P1Message> messages = new ArrayList<>();
         P25P1MessageFramer framer = createRunningFramer(messages);
+        framer.setEnergyProvider(new TestEnergyProvider(true));
         framer.nidDetected(0x293, P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1, 0);
         feed(framer, 100);
         framer.setPreviousDataUnitID(P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1);

@@ -959,7 +959,8 @@ public class P25P1MessageFramer
         //
         //Consecutive correction limit: After a missed TDU, mPreviousDataUnitID stays as LDU, causing
         //infinite correction cycle from noise. When the limit is reached, accept TDU and reset.
-        if(mDetectedDataUnitID == P25P1DataUnitID.TERMINATOR_DATA_UNIT && detectedBitErrors > 0)
+        if(mDetectedDataUnitID == P25P1DataUnitID.TERMINATOR_DATA_UNIT && detectedBitErrors > 0 &&
+                mEnergyProvider != null && mEnergyProvider.isSignalPresent())
         {
             if(mConsecutiveDuidCorrections < mMaxConsecutiveDuidCorrections)
             {
@@ -969,8 +970,7 @@ public class P25P1MessageFramer
                 {
                     mDetectedDataUnitID = predicted;
                     mDetectedDuidCorrected = true;
-                    mDetectedDuidCorrectedDuringActiveSignal =
-                            mEnergyProvider == null || mEnergyProvider.isSignalPresent();
+                    mDetectedDuidCorrectedDuringActiveSignal = true;
                     mDuidCorrectionCount++;
                     mConsecutiveDuidCorrections++;
                 }

@@ -96,6 +96,14 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void partialWaveReadDropsUnusedAndIncompleteFrames()
+    {
+        byte[] buffer = new byte[16];
+        assertEquals(8, TestComplexWaveSource.frameAlignedBytes(buffer, 10, 4).length);
+        assertEquals(16, TestComplexWaveSource.frameAlignedBytes(buffer, 16, 4).length);
+    }
+
+    @Test
     void missingHistoricalTuningMethodIsIgnored()
     {
         HistoricalDecoder decoder = new HistoricalDecoder();
