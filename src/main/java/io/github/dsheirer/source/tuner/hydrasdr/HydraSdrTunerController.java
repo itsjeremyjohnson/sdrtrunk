@@ -111,7 +111,12 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	@Override
 	public int getBufferSampleCount()
 	{
-		return 65536;
+		return mNativeBufferFactory.getBufferSampleCount();
+	}
+
+	static long getInitialFrequency(long preferred, long minimum, long maximum)
+	{
+		return Math.max(minimum, Math.min(preferred, maximum));
 	}
 
 	@Override
@@ -180,8 +185,8 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			/* Query available sample rates */
 			determineAvailableSampleRates();
 
-			/* Set default frequency */
-			setFrequency(FREQUENCY_DEFAULT);
+			/* Set a default frequency within the device-reported tuning range. */
+			setFrequency(getInitialFrequency(FREQUENCY_DEFAULT, getMinimumFrequency(), getMaximumFrequency()));
 
 			/* Set default sample rate */
 			if(!mSampleRates.isEmpty())

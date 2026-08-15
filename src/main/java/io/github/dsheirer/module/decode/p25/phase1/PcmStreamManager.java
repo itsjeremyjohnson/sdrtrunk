@@ -27,6 +27,8 @@ import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.util.Base64;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.slf4j.Logger;
@@ -53,12 +55,18 @@ public class PcmStreamManager
     private static PcmStreamManager sInstance;
 
     private final CopyOnWriteArrayList<ClientWriter> mClients = new CopyOnWriteArrayList<>();
+    private final Map<String, String> mActiveCallStarts = new LinkedHashMap<>();
+    private final Object mBroadcastLock = new Object();
     private volatile boolean mRunning = false;
 
     private PcmStreamManager(ServerSocket serverSocket)
     {
         mRunning = true;
         startAcceptLoop(serverSocket);
+    }
+
+    PcmStreamManager()
+    {
     }
 
     /**
@@ -103,11 +111,19 @@ public class PcmStreamManager
      */
     public void broadcast(String json)
     {
+        synchronized(mBroadcastLock)
+        {
+            broadcastLocked(json);
+        }
+    }
+
+    private void broadcastLocked(String json)
+    {
         Iterator<ClientWriter> it = mClients.iterator();
-        while (it.hasNext())
+        while(it.hasNext())
         {
             ClientWriter writer = it.next();
-            if (!writer.isAlive())
+            if(!writer.isAlive())
             {
                 mClients.remove(writer);
             }
@@ -116,6 +132,22 @@ public class PcmStreamManager
                 writer.close();
                 mClients.remove(writer);
             }
+        }
+    }
+
+    void addClient(ClientWriter writer)
+    {
+        synchronized(mBroadcastLock)
+        {
+            for(String callStart : mActiveCallStarts.values())
+            {
+                if(!writer.offer(callStart))
+                {
+                    return;
+                }
+            }
+
+            mClients.add(writer);
         }
     }
 
@@ -137,7 +169,11 @@ public class PcmStreamManager
                 ",\"talkgroup\":\"" + JsonUtils.escape(talkgroup) + "\"" +
                 ",\"from\":\"" + JsonUtils.escape(from) + "\"" +
                 ",\"timestamp\":\"" + JsonUtils.escape(timestamp) + "\"}";
-        broadcast(json);
+        synchronized(mBroadcastLock)
+        {
+            mActiveCallStarts.put(callId, json);
+            broadcastLocked(json);
+        }
     }
 
     /**
@@ -190,7 +226,11 @@ public class PcmStreamManager
                 ",\"site\":\"" + JsonUtils.escape(site) + "\"" +
                 ",\"talkgroup\":\"" + JsonUtils.escape(talkgroup) + "\"" +
                 ",\"frames\":" + frameCount + "}";
-        broadcast(json);
+        synchronized(mBroadcastLock)
+        {
+            broadcastLocked(json);
+            mActiveCallStarts.remove(callId);
+        }
     }
 
     /**
@@ -228,7 +268,7 @@ public class PcmStreamManager
                     {
                         Socket socket = serverSocket.accept();
                         ClientWriter writer = new ClientWriter(socket);
-                        mClients.add(writer);
+                        addClient(writer);
                         mLog.debug("PCM stream client connected on port {}: {}",
                                 port, socket.getRemoteSocketAddress());
 
@@ -318,6 +358,11 @@ public class PcmStreamManager
                 close();
             }
             return accepted;
+        }
+
+        String poll()
+        {
+            return mQueue.poll();
         }
 
         public boolean isAlive()

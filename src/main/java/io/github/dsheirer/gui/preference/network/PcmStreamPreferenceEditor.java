@@ -39,6 +39,8 @@ import org.controlsfx.control.ToggleSwitch;
  */
 public class PcmStreamPreferenceEditor extends HBox
 {
+    static final String VOICE_ID_FORMAT_DESCRIPTION =
+        "// 1. Fast unit ID -- fires once per call, ~180ms after squelch opens (before audio starts)\n";
     private final PcmStreamPreference mPreference;
 
     public PcmStreamPreferenceEditor(UserPreferences userPreferences)
@@ -118,8 +120,7 @@ public class PcmStreamPreferenceEditor extends HBox
         root.getChildren().add(fmtDesc);
 
         String formatExample =
-            "// 1. Fast unit ID -- fires ~180ms after squelch opens (before audio starts)\n" +
-            "//    Repeats on every LDU1 throughout the call -- deduplicate by talkgroup+from\n" +
+            VOICE_ID_FORMAT_DESCRIPTION +
             "{\"type\":\"voice_id\",\"system\":\"MySystem\",\"site\":\"MySite\",\"talkgroup\":\"12345\",\"from\":\"1234567\",\"timestamp\":\"2026-01-01 12:00:00\"}\n\n" +
             "// 2. Call started -- emitted once when the audio pipeline opens (~360ms after squelch)\n" +
             "{\"type\":\"call_start\",\"callId\":\"a1b2c3d\",\"system\":\"MySystem\",\"site\":\"MySite\",\"talkgroup\":\"12345\",\"from\":\"1234567\",\"timestamp\":\"2026-01-01 12:00:00\"}\n\n" +

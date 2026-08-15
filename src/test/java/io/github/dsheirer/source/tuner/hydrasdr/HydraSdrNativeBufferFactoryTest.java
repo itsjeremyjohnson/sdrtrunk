@@ -26,6 +26,17 @@ class HydraSdrNativeBufferFactoryTest
 	}
 
 	@Test
+	void reportsActualOutputBufferSize()
+	{
+		HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(128_000);
+		assertEquals(65536, factory.getBufferSampleCount());
+
+		float[] samples = new float[100];
+		factory.get(samples, samples, samples.length, 1_000);
+		assertEquals(128, factory.getBufferSampleCount());
+	}
+
+	@Test
 	void clearsResidualSamplesAtStreamAndSampleRateBoundaries()
 	{
 		HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(128_000);

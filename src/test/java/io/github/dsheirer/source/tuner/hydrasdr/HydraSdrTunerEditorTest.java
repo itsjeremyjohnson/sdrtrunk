@@ -26,6 +26,17 @@ class HydraSdrTunerEditorTest
     }
 
     @Test
+    void clampsInitialFrequencyToReportedRange()
+    {
+        assertEquals(101_100_000,
+            HydraSdrTunerController.getInitialFrequency(101_100_000, 1_000_000, 2_000_000_000));
+        assertEquals(200_000_000,
+            HydraSdrTunerController.getInitialFrequency(101_100_000, 200_000_000, 2_000_000_000));
+        assertEquals(50_000_000,
+            HydraSdrTunerController.getInitialFrequency(101_100_000, 1_000_000, 50_000_000));
+    }
+
+    @Test
     void preservesSupportedModes()
     {
         assertEquals(HydraSdrTunerController.GAIN_MODE_LINEARITY,

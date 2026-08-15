@@ -22,6 +22,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NetworkStreamManagerTest
 {
@@ -82,6 +83,27 @@ class NetworkStreamManagerTest
         manager.broadcastCallEnd("call-1", "call_end");
         ImbeStreamManager.ClientWriter nextWriter =
             new ImbeStreamManager.ClientWriter(new TestSocket(), 4, false);
+        manager.addClient(nextWriter);
+        assertNull(nextWriter.poll());
+    }
+
+    @Test
+    void replaysActivePcmCallStartBeforeLiveAudio() throws IOException
+    {
+        PcmStreamManager manager = new PcmStreamManager();
+        manager.broadcastCallStart("call-1", "system", "site", "1001", "1234", "timestamp");
+
+        PcmStreamManager.ClientWriter writer =
+            new PcmStreamManager.ClientWriter(new TestSocket(), 4, false);
+        manager.addClient(writer);
+        manager.broadcast("pcm");
+
+        assertTrue(writer.poll().contains("\"type\":\"call_start\""));
+        assertEquals("pcm", writer.poll());
+
+        manager.broadcastCallEnd("call-1", "system", "site", "1001", 1);
+        PcmStreamManager.ClientWriter nextWriter =
+            new PcmStreamManager.ClientWriter(new TestSocket(), 4, false);
         manager.addClient(nextWriter);
         assertNull(nextWriter.poll());
     }

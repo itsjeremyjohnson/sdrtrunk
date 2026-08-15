@@ -39,7 +39,7 @@ public class HydraSdrNativeBufferFactory
 	private long mResidualTimestamp;
 	private double mFractionalMsAccumulator = 0.0;
 	private int mIncomingBufferLength = 0;
-	private int mOptimalBufferLength = 128;
+	private int mOptimalBufferLength = 65536;
 	private float mSamplesPerMillisecond;
 
 	/**
@@ -76,7 +76,15 @@ public class HydraSdrNativeBufferFactory
 		mResidualTimestamp = 0;
 		mFractionalMsAccumulator = 0.0;
 		mIncomingBufferLength = 0;
-		mOptimalBufferLength = 128;
+		mOptimalBufferLength = 65536;
+	}
+
+	/**
+	 * Number of complex samples in each buffer produced by this factory.
+	 */
+	public synchronized int getBufferSampleCount()
+	{
+		return mOptimalBufferLength;
 	}
 
 	/**
