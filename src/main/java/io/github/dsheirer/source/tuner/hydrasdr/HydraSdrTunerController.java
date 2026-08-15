@@ -297,6 +297,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			mLog.warn("HydraSDR dropped samples: " + (droppedSamples - mLastDroppedSamples) +
 				" (total: " + droppedSamples + ")");
 			mLastDroppedSamples = droppedSamples;
+			mNativeBufferFactory.reset();
 		}
 
 		long tFactory = System.nanoTime();
