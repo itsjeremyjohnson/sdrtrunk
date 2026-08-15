@@ -35,6 +35,7 @@ import io.github.dsheirer.source.config.SourceConfigTuner;
 import io.github.dsheirer.util.FxThreads;
 import java.time.Duration;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.CancellationException;
@@ -344,7 +345,7 @@ public class ClickToTuneController
         mUICallbacks.showPending(freqHz, bwHz);
 
         ClassificationRequest request = ClassificationRequest.forFrequency(freqHz, bwHz,
-            "redetect@" + freqHz);
+            discoveryCandidateDecoders(), "redetect@" + freqHz);
 
         CompletableFuture<ClassificationResult> future = mSignalClassifier.classify(request);
         mPendingFuture.set(future);
@@ -539,14 +540,14 @@ public class ClickToTuneController
             }
         };
 
-        classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix, totalDeadline,
+        classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix,
             searchDeadlineNanos, 0, null);
         return searchFuture;
     }
 
     private void classifyNextSearchOffset(CompletableFuture<ClassificationResult> searchFuture,
                                            AtomicReference<CompletableFuture<ClassificationResult>> activeProbeFuture,
-                                           long centerFreqHz, int bwHz, String labelPrefix, Duration totalDeadline,
+                                           long centerFreqHz, int bwHz, String labelPrefix,
                                            long searchDeadlineNanos, int offsetIndex, ClassificationResult bestMiss)
     {
         if(searchFuture.isDone())
@@ -560,7 +561,7 @@ public class ClickToTuneController
             return;
         }
 
-        Duration probeDeadline = offsetIndex == 0 ? totalDeadline : remainingSearchDeadline(searchDeadlineNanos);
+        Duration probeDeadline = partitionedProbeDeadline(searchDeadlineNanos, offsetIndex);
 
         if(probeDeadline == null)
         {
@@ -572,7 +573,7 @@ public class ClickToTuneController
 
         if(probeFreqHz <= 0)
         {
-            classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix, totalDeadline,
+            classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix,
                 searchDeadlineNanos, offsetIndex + 1, bestMiss);
             return;
         }
@@ -617,7 +618,7 @@ public class ClickToTuneController
                 return;
             }
 
-            classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix, totalDeadline,
+            classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix,
                 searchDeadlineNanos, offsetIndex + 1, selectBestMiss(bestMiss, result));
         });
     }
@@ -638,21 +639,32 @@ public class ClickToTuneController
         return deadline;
     }
 
-    private static Duration remainingSearchDeadline(long searchDeadlineNanos)
+    private static Duration partitionedProbeDeadline(long searchDeadlineNanos, int offsetIndex)
     {
         long remainingNanos = searchDeadlineNanos - System.nanoTime();
-        return remainingNanos > 0 ? Duration.ofNanos(remainingNanos) : null;
+        int remainingOffsets = CLICK_SEARCH_OFFSETS_HZ.size() - offsetIndex;
+        return remainingNanos > 0 && remainingOffsets > 0 ?
+            Duration.ofNanos(Math.max(1L, remainingNanos / remainingOffsets)) : null;
     }
 
-    private static ClassificationRequest buildSearchRequest(long probeFreqHz, int bwHz, String label,
-                                                            Duration deadline)
+    private ClassificationRequest buildSearchRequest(long probeFreqHz, int bwHz, String label,
+                                                     Duration deadline)
     {
-        if(deadline != null)
+        return ClassificationRequest.forFrequency(probeFreqHz, bwHz, discoveryCandidateDecoders(), label, deadline);
+    }
+
+    private EnumSet<DecoderType> discoveryCandidateDecoders()
+    {
+        EnumSet<DecoderType> candidates = EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
+        candidates.removeAll(mUserPreferences.getDiscoveryPreference().getExcludedDecoders());
+
+        if(candidates.isEmpty())
         {
-            return ClassificationRequest.forFrequency(probeFreqHz, bwHz, null, label, deadline);
+            mLog.info("All discovery decoders are excluded; using the primary decoder set");
+            return EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
         }
 
-        return ClassificationRequest.forFrequency(probeFreqHz, bwHz, label);
+        return candidates;
     }
 
     private static String buildSearchLabel(String labelPrefix, long centerFreqHz, long probeFreqHz)

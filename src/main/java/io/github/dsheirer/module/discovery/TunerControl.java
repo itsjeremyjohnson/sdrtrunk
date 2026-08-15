@@ -41,6 +41,17 @@ import io.github.dsheirer.source.SourceException;
 public interface TunerControl
 {
     /**
+     * Pins this control to one concrete tuner identity for a complete survey operation.
+     * Test and already-fixed implementations may return themselves.
+     *
+     * @return control whose operations all target the same tuner
+     */
+    default TunerControl pin()
+    {
+        return this;
+    }
+
+    /**
      * Registers a listener for the tuner's full-rate wideband I/Q sample stream.
      *
      * <p>This is the same stream the live spectrum display taps.  Samples arrive

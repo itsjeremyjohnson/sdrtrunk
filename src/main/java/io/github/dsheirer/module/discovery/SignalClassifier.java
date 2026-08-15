@@ -270,6 +270,38 @@ public class SignalClassifier implements Classifier
      */
     private record WatcherSnapshot(SignalKind kind, String summary, Map<String, String> metadata) {}
 
+    /**
+     * Builds one source allocation that is wide enough for every requested decoder and the
+     * operator-observed bandwidth.  Probe chains still apply their decoder-specific filtering.
+     */
+    static ChannelSpecification buildSharedChannelSpecification(ClassificationRequest request)
+    {
+        double minimumSampleRate = 0.0;
+        int bandwidth = 0;
+        double passFrequency = 0.0;
+        double stopFrequency = 0.0;
+
+        for(DecoderType decoderType : request.candidateDecoders())
+        {
+            DecodeConfiguration decodeConfiguration = DecoderFactory.getDecodeConfiguration(decoderType);
+            ChannelSpecification specification = decodeConfiguration.getChannelSpecification();
+            minimumSampleRate = Math.max(minimumSampleRate, specification.getMinimumSampleRate());
+            bandwidth = Math.max(bandwidth, specification.getBandwidth());
+            passFrequency = Math.max(passFrequency, specification.getPassFrequency());
+            stopFrequency = Math.max(stopFrequency, specification.getStopFrequency());
+        }
+
+        if(request.approximateBandwidthHz() > bandwidth)
+        {
+            bandwidth = request.approximateBandwidthHz();
+            passFrequency = Math.max(passFrequency, bandwidth / 2.0);
+            stopFrequency = Math.max(stopFrequency, passFrequency + 1_000.0);
+        }
+
+        minimumSampleRate = Math.max(minimumSampleRate, stopFrequency * 2.0);
+        return new ChannelSpecification(minimumSampleRate, bandwidth, passFrequency, stopFrequency);
+    }
+
     private ClassificationResult doClassifyInternal(ClassificationRequest request,
                                                      long freqHz,
                                                      AtomicBoolean cancelledFlag)
@@ -280,9 +312,7 @@ public class SignalClassifier implements Classifier
         SourceConfigTuner sourceConfig = new SourceConfigTuner();
         sourceConfig.setFrequency(freqHz);
 
-        // Use a conservative channel spec (12.5 kHz bandwidth) as default
-        DecodeConfiguration tempConfig = DecoderFactory.getDecodeConfiguration(DecoderType.NBFM);
-        ChannelSpecification channelSpec = tempConfig.getChannelSpecification();
+        ChannelSpecification channelSpec = buildSharedChannelSpecification(request);
 
         ComplexSource realSource;
 

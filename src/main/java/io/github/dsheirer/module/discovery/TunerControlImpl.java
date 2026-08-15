@@ -31,12 +31,10 @@ import java.util.function.Supplier;
 /**
  * Production binding of {@link TunerControl} over a {@link TunerController}.
  *
- * <p>The constructor takes a {@link Supplier}{@code <TunerController>} so that
- * {@link #isAvailable()} and every operation always operate on <em>whatever tuner the
- * spectral display is currently showing</em>, even after the operator switches tuners.
- * The supplier is queried on each call; it may return {@code null} if no tuner is
- * currently displayed, in which case {@link #isAvailable()} returns {@code false} and
- * any mutating call throws {@link IllegalStateException}.</p>
+ * <p>The constructor takes a {@link Supplier}{@code <TunerController>} so availability checks
+ * can track whichever tuner the spectral display is currently showing.  A survey calls
+ * {@link #pin()} before doing any work, producing a control whose operations all target the
+ * concrete tuner selected at that moment.</p>
  *
  * <h3>Wideband tap</h3>
  * <p>{@link #addWidebandSampleListener(Listener)} registers an adapter on the tuner
@@ -100,6 +98,13 @@ public class TunerControlImpl implements TunerControl
             throw new IllegalStateException("No tuner controller available (no tuner currently displayed)");
         }
         return tc;
+    }
+
+    @Override
+    public TunerControl pin()
+    {
+        TunerController pinnedController = requireController();
+        return new TunerControlImpl(() -> pinnedController);
     }
 
     @Override

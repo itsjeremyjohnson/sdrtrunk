@@ -453,8 +453,8 @@ public class BandScanController
      */
     public void addAllAtLeast(int minConfidencePips)
     {
-        // Snapshot the list to avoid ConcurrentModificationException
-        List<Discovery> snapshot = new ArrayList<>(mDiscoveryModel.getDiscoveries());
+        // Take a lock-protected snapshot for safe iteration from any caller thread.
+        List<Discovery> snapshot = mDiscoveryModel.snapshot();
 
         for(Discovery d : snapshot)
         {
@@ -788,7 +788,7 @@ public class BandScanController
 
             // Also re-probe any watched+UNIDENTIFIED rows that did NOT appear in the survey
             // (the signal may be intermittent — keep trying as long as the operator watches it)
-            for(Discovery d : new ArrayList<>(mDiscoveryModel.getDiscoveries()))
+            for(Discovery d : mDiscoveryModel.snapshot())
             {
                 if(d.isWatched() && d.getState() == DiscoveryState.UNIDENTIFIED
                     && !toProbeLater.contains(d))
@@ -1270,7 +1270,10 @@ public class BandScanController
         long peakMin = peak.centerFrequencyHz() - peak.occupiedBandwidthHz() / 2L;
         long peakMax = peak.centerFrequencyHz() + peak.occupiedBandwidthHz() / 2L;
 
-        return !mChannelModel.getChannelsInFrequencyRange(peakMin, peakMax).isEmpty();
+        AtomicBoolean known = new AtomicBoolean();
+        FxThreads.runAndWait(() ->
+            known.set(!mChannelModel.getChannelsInFrequencyRange(peakMin, peakMax).isEmpty()));
+        return known.get();
     }
 
     /**
@@ -1408,9 +1411,8 @@ public class BandScanController
 
         Channel deleted = event.getChannel();
 
-        // Snapshot to avoid ConcurrentModificationException when DiscoveryModel marshals
-        // adds/removes on the FX thread while we iterate
-        for(Discovery d : new ArrayList<>(mDiscoveryModel.getDiscoveries()))
+        // Take a lock-protected snapshot because channel events can arrive off the FX thread.
+        for(Discovery d : mDiscoveryModel.snapshot())
         {
             if(deleted.equals(d.getCreatedChannel()))
             {

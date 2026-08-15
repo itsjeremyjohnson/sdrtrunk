@@ -76,9 +76,10 @@ public class DiscoveryChannelFactory
         channel.setTemporaryLive(true);
         channel.setSourceConfiguration(buildSourceConfig(result.centerFrequencyHz()));
 
-        // Always use a fresh decode config — never share the object in the result
-        DecodeConfiguration freshConfig = DecoderFactory.getDecodeConfiguration(result.bestDecoder());
-        channel.setDecodeConfiguration(freshConfig);
+        // Always use a fresh decode config while preserving detected settings such as analog bandwidth.
+        DecodeConfiguration freshConfig = DecoderFactory.copy(result.bestDecodeConfig());
+        channel.setDecodeConfiguration(freshConfig != null ? freshConfig :
+            DecoderFactory.getDecodeConfiguration(result.bestDecoder()));
 
         if(defaultAliasListName != null && !defaultAliasListName.isBlank())
         {

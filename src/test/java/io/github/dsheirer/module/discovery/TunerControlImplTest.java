@@ -25,6 +25,25 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 class TunerControlImplTest
 {
     @Test
+    void pin_keepsUsingSelectedControllerAfterSupplierChanges()
+    {
+        RecordingTunerController first = new RecordingTunerController();
+        RecordingTunerController second = new RecordingTunerController();
+        AtomicReference<TunerController> current = new AtomicReference<>(first);
+        TunerControl pinned = new TunerControlImpl(current::get).pin();
+        current.set(second);
+        Listener<ComplexSamples> listener = samples -> {};
+
+        pinned.addWidebandSampleListener(listener);
+        pinned.removeWidebandSampleListener(listener);
+
+        assertEquals(1, first.mAddCount);
+        assertEquals(1, first.mRemoveCount);
+        assertEquals(0, second.mAddCount);
+        assertEquals(0, second.mRemoveCount);
+    }
+
+    @Test
     void removeWidebandSampleListener_usesControllerThatRegisteredAdapter()
     {
         RecordingTunerController first = new RecordingTunerController();

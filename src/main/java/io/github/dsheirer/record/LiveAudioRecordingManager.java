@@ -440,7 +440,7 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
             if(to != null)
             {
                 addPart(keyParts, "to", to.getProtocol() + "-" + to.getForm() + "-" + to.getValue());
-                addPart(fileParts, "TO", to.toString());
+                addPart(fileParts, "TO", to.toString() + "-" + to.getProtocol() + "-" + to.getForm());
             }
             else if(channel != null)
             {

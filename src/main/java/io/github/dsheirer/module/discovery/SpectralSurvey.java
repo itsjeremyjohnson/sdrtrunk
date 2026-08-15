@@ -179,7 +179,18 @@ public class SpectralSurvey implements SpectralSurveyApi
             return failed;
         }
 
-        if(tunerControl == null || !tunerControl.isAvailable())
+        TunerControl pinnedTunerControl;
+
+        try
+        {
+            pinnedTunerControl = tunerControl != null ? tunerControl.pin() : null;
+        }
+        catch(RuntimeException e)
+        {
+            pinnedTunerControl = null;
+        }
+
+        if(pinnedTunerControl == null || !pinnedTunerControl.isAvailable())
         {
             CompletableFuture<List<EnergyPeak>> failed = new CompletableFuture<>();
             failed.completeExceptionally(new RuntimeException(
@@ -187,6 +198,7 @@ public class SpectralSurvey implements SpectralSurveyApi
             return failed;
         }
 
+        TunerControl operationTunerControl = pinnedTunerControl;
         AtomicBoolean cancelledFlag = new AtomicBoolean(false);
         AtomicReference<Future<?>> workerFutureRef = new AtomicReference<>();
 
@@ -211,7 +223,7 @@ public class SpectralSurvey implements SpectralSurveyApi
             try
             {
                 List<EnergyPeak> result = doSurvey(
-                    minHz, maxHz, dwell, thresholdDb, progress, tunerControl, cancelledFlag);
+                    minHz, maxHz, dwell, thresholdDb, progress, operationTunerControl, cancelledFlag);
 
                 if(!cancelledFlag.get())
                 {

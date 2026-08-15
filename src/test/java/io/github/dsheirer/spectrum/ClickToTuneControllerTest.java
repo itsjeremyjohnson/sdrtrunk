@@ -39,6 +39,7 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.function.Consumer;
 import java.util.function.Function;
@@ -66,6 +67,7 @@ class ClickToTuneControllerTest
     private FakeChannelModel mFakeChannelModel;
     private FakeChannelProcessingManager mFakeCpm;
     private FakeUICallbacks mFakeUI;
+    private UserPreferences mUserPreferences;
     private ClickToTuneController mController;
 
     // -------------------------------------------------------------------------
@@ -245,13 +247,15 @@ class ClickToTuneControllerTest
         mFakeChannelModel = new FakeChannelModel();
         mFakeCpm = new FakeChannelProcessingManager();
         mFakeUI = new FakeUICallbacks();
+        mUserPreferences = new UserPreferences();
+        mUserPreferences.getDiscoveryPreference().setExcludedDecoders(Set.of());
 
         mController = new ClickToTuneController(
             mFakeClassifier,
             mFakeChannelModel,
             mFakeCpm,
             new DiscoveryChannelFactory(),
-            new UserPreferences(),
+            mUserPreferences,
             mFakeUI
         );
     }
@@ -313,6 +317,25 @@ class ClickToTuneControllerTest
                 .map(io.github.dsheirer.module.discovery.ClassificationRequest::centerFrequencyHz)
                 .toList(),
             "Auto-detect should sweep around the clicked frequency before reporting a miss");
+    }
+
+    @Test
+    void classifyAndTune_partitionsDeadlineAcrossOffsetsAndAppliesExclusions() throws Exception
+    {
+        mUserPreferences.getDiscoveryPreference().setExcludedDecoders(Set.of(DecoderType.DMR));
+        mFakeClassifier.setNextResult(ClassificationResult.noSignal(FREQ, Double.NaN));
+
+        mController.classifyAndTune(FREQ, 12_500);
+        drainEdt();
+
+        List<io.github.dsheirer.module.discovery.ClassificationRequest> requests =
+            mFakeClassifier.getReceivedRequests();
+        assertEquals(expectedSearchFrequencies(FREQ).size(), requests.size());
+        assertTrue(requests.get(0).overallDeadline().compareTo(
+            io.github.dsheirer.module.discovery.ClassificationRequest.DEFAULT_DEADLINE) < 0,
+            "The first offset must receive only its share of the total search deadline");
+        assertTrue(requests.stream().allMatch(request ->
+            !request.candidateDecoders().contains(DecoderType.DMR)));
     }
 
     @Test
@@ -534,7 +557,8 @@ class ClickToTuneControllerTest
         Channel channel = mFakeChannelModel.mAdded.get(0);
         assertEquals(DecoderType.NBFM, channel.getDecodeConfiguration().getDecoderType());
 
-        // Re-detect: classifier now returns DMR
+        // Re-detect: classifier now returns DMR and honors discovery exclusions
+        mUserPreferences.getDiscoveryPreference().setExcludedDecoders(Set.of(DecoderType.P25_PHASE1));
         mFakeClassifier.setNextResult(ClassificationResult.identified(
             FREQ,
             List.of(new Candidate(DecoderType.DMR, LockState.LOCKED, 0.95, null)),
@@ -559,6 +583,8 @@ class ClickToTuneControllerTest
 
         // Channel should have been restarted (1 start from classifyAndTune + 1 from redetect)
         assertEquals(2, mFakeCpm.mStarted.size(), "Channel should be restarted after re-detect");
+        assertFalse(mFakeClassifier.getReceivedRequests().getLast().candidateDecoders()
+            .contains(DecoderType.P25_PHASE1));
         assertTrue(mController.getClickToTuneChannels().contains(channel));
     }
 
@@ -742,6 +768,7 @@ class ClickToTuneControllerTest
     {
         // First call: no signal -> miss popup shown
         int selectedBandwidthHz = 35_000;
+        mUserPreferences.getDiscoveryPreference().setExcludedDecoders(Set.of(DecoderType.DMR));
         mFakeClassifier.setNextResult(ClassificationResult.noSignal(FREQ, Double.NaN));
         mController.classifyAndTune(FREQ, selectedBandwidthHz);
         drainEdt();
@@ -768,20 +795,21 @@ class ClickToTuneControllerTest
 
         io.github.dsheirer.module.discovery.ClassificationRequest keepListeningRequest = keepListeningRequests.get(0);
 
-        // The keep-listening deadline should be >= default (12 s) and match prefs
-        Duration defaultDeadline = io.github.dsheirer.module.discovery.ClassificationRequest.DEFAULT_DEADLINE;
-        Duration expectedDeadline = new UserPreferences().getDiscoveryPreference().getKeepListeningDuration();
+        // Each offset receives a bounded share, and the extended keep-listening search still
+        // receives a larger first share than the default search.
+        Duration expectedDeadline = mUserPreferences.getDiscoveryPreference().getKeepListeningDuration();
+        Duration initialFirstDeadline = requests.get(0).overallDeadline();
 
-        assertTrue(
-            keepListeningRequest.overallDeadline().compareTo(defaultDeadline) >= 0,
-            "Keep-listening request deadline (" + keepListeningRequest.overallDeadline()
-                + ") should be >= default deadline (" + defaultDeadline + ")");
-
-        assertEquals(expectedDeadline, keepListeningRequest.overallDeadline(),
-            "Keep-listening request should use the preference keep-listening duration as its deadline");
+        assertTrue(keepListeningRequest.overallDeadline().compareTo(initialFirstDeadline) > 0,
+            "Keep-listening should allocate a larger per-offset budget than the default search");
+        assertTrue(keepListeningRequest.overallDeadline().compareTo(expectedDeadline) < 0,
+            "No single offset may consume the full keep-listening deadline");
         assertTrue(keepListeningRequests.stream().allMatch(
                 request -> request.approximateBandwidthHz() == selectedBandwidthHz),
             "Keep-listening must preserve the operator-selected bandwidth across all search offsets");
+        assertTrue(keepListeningRequests.stream().allMatch(
+                request -> !request.candidateDecoders().contains(DecoderType.DMR)),
+            "Keep-listening must preserve discovery decoder exclusions");
 
         // The bandwidth should NOT be the duration-as-seconds (that was the old bug)
         long badBandwidth = expectedDeadline.getSeconds();

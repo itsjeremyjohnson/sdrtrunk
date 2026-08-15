@@ -27,6 +27,7 @@ import io.github.dsheirer.identifier.configuration.ChannelNameConfigurationIdent
 import io.github.dsheirer.identifier.configuration.FrequencyConfigurationIdentifier;
 import io.github.dsheirer.identifier.configuration.SystemConfigurationIdentifier;
 import io.github.dsheirer.message.TimeslotMessage;
+import io.github.dsheirer.module.decode.dmr.identifier.DMRTalkgroup;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import io.github.dsheirer.preference.UserPreferences;
 import java.io.IOException;
@@ -96,6 +97,26 @@ class LiveAudioRecordingManagerTest
                 return false;
             }
         }));
+    }
+
+    @Test
+    void sameDisplayTalkgroupAcrossProtocolsUsesDistinctFilenames() throws IOException
+    {
+        LiveAudioRecordingManager manager = new LiveAudioRecordingManager(mUserPreferences);
+
+        manager.startRecording();
+        receive(manager, talkgroupSegment(100));
+        AudioSegment dmr = baseSegment();
+        dmr.addIdentifier(new DMRTalkgroup(100));
+        dmr.completeProperty().set(true);
+        receive(manager, dmr);
+        manager.processAudioSegments();
+        manager.stopRecording();
+
+        List<Path> recordings = recordings();
+        assertEquals(2, recordings.size());
+        assertTrue(recordings.stream().anyMatch(path -> path.getFileName().toString().contains("APCO-25")));
+        assertTrue(recordings.stream().anyMatch(path -> path.getFileName().toString().contains("DMR")));
     }
 
     @Test

@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.controller.channel;
 
+import io.github.dsheirer.util.FxThreads;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,7 +83,7 @@ public final class ChannelActions
             }
         }
 
-        channelModel.removeChannel(channel);
+        FxThreads.runAndWait(() -> channelModel.removeChannel(channel));
     }
 
     /**

@@ -33,6 +33,7 @@ import io.github.dsheirer.sample.complex.ComplexSamples;
 import io.github.dsheirer.source.ComplexSource;
 import io.github.dsheirer.source.SourceEvent;
 import io.github.dsheirer.source.SourceException;
+import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.EnumSet;
@@ -257,6 +258,22 @@ class SignalClassifierTest
             mUserPreferences.getDiscoveryPreference(),
             mExecutor
         );
+    }
+
+    @Test
+    void sharedChannelSpecification_coversCandidatesAndRequestedBandwidth()
+    {
+        ClassificationRequest request = new ClassificationRequest(
+            FREQ, 35_000, EnumSet.of(DecoderType.NBFM, DecoderType.P25_PHASE1),
+            Duration.ofSeconds(10), false, "shared-spec");
+
+        ChannelSpecification specification = SignalClassifier.buildSharedChannelSpecification(request);
+
+        assertEquals(35_000, specification.getBandwidth());
+        assertTrue(specification.getMinimumSampleRate() >= 50_000.0);
+        assertTrue(specification.getMinimumSampleRate() >= specification.getBandwidth());
+        assertTrue(specification.getPassFrequency() >= 17_500.0);
+        assertTrue(specification.getStopFrequency() > specification.getPassFrequency());
     }
 
     // -------------------------------------------------------------------------

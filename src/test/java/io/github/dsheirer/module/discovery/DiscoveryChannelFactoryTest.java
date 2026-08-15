@@ -21,7 +21,9 @@ package io.github.dsheirer.module.discovery;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog.Bandwidth;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
+import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.source.config.SourceConfigTuner;
 import java.util.List;
 import java.util.Map;
@@ -95,6 +97,34 @@ class DiscoveryChannelFactoryTest
         assertTrue(channel.getName().endsWith("(control)"),
             "CONTROL signal should have (control) suffix, was: " + channel.getName());
         assertNull(channel.getAliasListName(), "null alias list should remain null");
+    }
+
+    @Test
+    void createFromResult_preservesDetectedAnalogBandwidth()
+    {
+        DecodeConfigNBFM detectedConfig = new DecodeConfigNBFM();
+        detectedConfig.setBandwidth(Bandwidth.BW_25_0);
+        ClassificationResult result = ClassificationResult.identified(
+            FREQ, List.of(), DecoderType.NBFM, detectedConfig, SignalKind.CONVENTIONAL,
+            "wide NBFM", Map.of(), -75.0);
+
+        Channel channel = mFactory.createChannel(result, null);
+        DecodeConfigNBFM channelConfig = (DecodeConfigNBFM)channel.getDecodeConfiguration();
+
+        assertNotSame(detectedConfig, channelConfig);
+        assertEquals(Bandwidth.BW_25_0, channelConfig.getBandwidth());
+    }
+
+    @Test
+    void createFromResult_nullDetectedConfig_fallsBackToDefault()
+    {
+        ClassificationResult result = ClassificationResult.identified(
+            FREQ, List.of(), DecoderType.NBFM, null, SignalKind.CONVENTIONAL,
+            "NBFM", Map.of(), -75.0);
+
+        Channel channel = mFactory.createChannel(result, null);
+
+        assertEquals(DecoderType.NBFM, channel.getDecodeConfiguration().getDecoderType());
     }
 
     @Test

@@ -97,10 +97,9 @@ public class DiscoveryModel
     /**
      * Returns an unmodifiable view of the discovery list.
      *
-     * <p>Phase-4 table bindings should use the underlying {@link ObservableList}
-     * directly via this method — the list is updated on the FX thread so bindings
-     * receive proper change notifications.  Non-UI callers that iterate the list
-     * should take a snapshot: {@code new ArrayList<>(model.getDiscoveries())}.</p>
+     * <p>JavaFX table bindings should use the live {@link ObservableList} returned by this method.
+     * Non-UI callers that iterate the list must use {@link #snapshot()} so the copy is made while
+     * holding the model's mutation lock.</p>
      *
      * @return unmodifiable view of the live observable list
      */
