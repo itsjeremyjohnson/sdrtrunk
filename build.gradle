@@ -308,11 +308,13 @@ tasks.named('distTar') { dependsOn 'buildHydraSdrJni' }
 distributions {
     main {
         contents {
-            from(hydraSdrJniDir) {
-                include '*.dll'
-                include '*.so'
-                include '*.dylib'
-                into 'lib/native'
+            if(!crossTargetRuntimeRequested || hostNativePackagingRequested) {
+                from(hydraSdrJniDir) {
+                    include '*.dll'
+                    include '*.so'
+                    include '*.dylib'
+                    into 'lib/native'
+                }
             }
         }
     }
