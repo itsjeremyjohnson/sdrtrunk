@@ -31,6 +31,7 @@ import io.github.dsheirer.identifier.ctcss.CTCSSIdentifier;
 import io.github.dsheirer.identifier.radio.RadioIdentifier;
 import io.github.dsheirer.identifier.talkgroup.TalkgroupIdentifier;
 import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
+import io.github.dsheirer.module.decode.p25.identifier.APCO25Nac;
 import io.github.dsheirer.module.decode.p25.identifier.radio.APCO25FullyQualifiedRadioIdentifier;
 import io.github.dsheirer.module.decode.p25.identifier.radio.APCO25RadioIdentifier;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25FullyQualifiedTalkgroupIdentifier;
@@ -324,6 +325,21 @@ public class P25AliasTest
         Nac nacCopy = (Nac)AliasFactory.copyOf(nac);
         assertNotSame(nac, nacCopy);
         assertEquals(0, nacCopy.getNacValue());
+    }
+
+    @Test
+    void aliasesNetworkAccessCodeIdentifier()
+    {
+        AliasList aliasList = new AliasList("Test Alias List");
+        Alias alias = new Alias("NAC Alias");
+        Nac nac = new Nac();
+        nac.setNacValue(0x293);
+        alias.addAliasID(nac);
+        aliasList.addAlias(alias);
+
+        List<Alias> aliases = aliasList.getAliases(new APCO25Nac(0x293));
+        assertEquals(1, aliases.size());
+        assertEquals("NAC Alias", aliases.getFirst().getName());
     }
 
     @Test

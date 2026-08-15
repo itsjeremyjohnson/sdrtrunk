@@ -549,7 +549,9 @@ public class AliasList
                             return toList(mDCSCodeAliasMap.get(dcsCode));
                         }
                     }
-                    else if(identifier instanceof APCO25Nac nacIdentifier)
+                    break;
+                case NETWORK_ACCESS_CODE:
+                    if(identifier instanceof APCO25Nac nacIdentifier)
                     {
                         return toList(mNACValueAliasMap.get(nacIdentifier.getValue()));
                     }

@@ -40,6 +40,7 @@ import io.github.dsheirer.module.decode.am.AMDecoder;
 import io.github.dsheirer.module.decode.am.AMDecoderState;
 import io.github.dsheirer.module.decode.am.DecodeConfigAM;
 import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
+import io.github.dsheirer.module.decode.config.ChannelToneFilter;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.dcs.DCSDecoder;
 import io.github.dsheirer.module.decode.dcs.DCSDecoderState;
@@ -765,6 +766,19 @@ public class DecoderFactory
         }
     }
 
+    private static void copyP25Settings(DecodeConfigP25 original, DecodeConfigP25 copy)
+    {
+        copy.setIgnoreDataCalls(original.getIgnoreDataCalls());
+        copy.setIgnoreUnaliasedTalkgroups(original.getIgnoreUnaliasedTalkgroups());
+        copy.setTrafficChannelPoolSize(original.getTrafficChannelPoolSize());
+        copy.setAllowedNACs(new ArrayList<>(original.getAllowedNACs()));
+        copy.setNacFilterEnabled(original.isNacFilterEnabled());
+        copy.setTalkgroup(original.getTalkgroup());
+        copy.setGraphicEQEnabled(original.isGraphicEQEnabled());
+        copy.setGraphicEQBandGains(original.getGraphicEQBandGains().clone());
+        copy.setAudioHangtimeMs(original.getAudioHangtimeMs());
+    }
+
     /**
      * Creates a copy of the configuration
      */
@@ -783,7 +797,16 @@ public class DecoderFactory
                     copyAM.setSquelchAutoTrack(origAM.isSquelchAutoTrack());
                     return copyAM;
                 case DMR:
-                    return new DecodeConfigDMR();
+                    DecodeConfigDMR originalDMR = (DecodeConfigDMR)config;
+                    DecodeConfigDMR copyDMR = new DecodeConfigDMR();
+                    copyDMR.setIgnoreDataCalls(originalDMR.getIgnoreDataCalls());
+                    copyDMR.setIgnoreUnaliasedTalkgroups(originalDMR.getIgnoreUnaliasedTalkgroups());
+                    copyDMR.setIgnoreCRCChecksums(originalDMR.getIgnoreCRCChecksums());
+                    copyDMR.setUseCompressedTalkgroups(originalDMR.isUseCompressedTalkgroups());
+                    copyDMR.setTrafficChannelPoolSize(originalDMR.getTrafficChannelPoolSize());
+                    copyDMR.setAudioHangtimeMs(originalDMR.getAudioHangtimeMs());
+                    originalDMR.getTimeslotMap().forEach(timeslot -> copyDMR.addTimeslotFrequency(timeslot.copy()));
+                    return copyDMR;
                 case LTR_NET:
                     DecodeConfigLTRNet originalLTRNet = (DecodeConfigLTRNet)config;
                     DecodeConfigLTRNet copyLTRNet = new DecodeConfigLTRNet();
@@ -812,17 +835,45 @@ public class DecoderFactory
                     copyNBFM.setSquelchNoiseOpenThreshold(origNBFM.getSquelchNoiseOpenThreshold());
                     copyNBFM.setSquelchNoiseCloseThreshold(origNBFM.getSquelchNoiseCloseThreshold());
                     copyNBFM.setTalkgroup(origNBFM.getTalkgroup());
+                    copyNBFM.setAudioHangtimeMs(origNBFM.getAudioHangtimeMs());
+                    copyNBFM.setToneFilterEnabled(origNBFM.isToneFilterEnabled());
+                    List<ChannelToneFilter> toneFilters = new ArrayList<>();
+                    for(ChannelToneFilter filter: origNBFM.getToneFilters())
+                    {
+                        toneFilters.add(new ChannelToneFilter(filter.getToneType(), filter.getValue(), filter.getLabel()));
+                    }
+                    copyNBFM.setToneFilters(toneFilters);
+                    copyNBFM.setSquelchTailRemovalEnabled(origNBFM.isSquelchTailRemovalEnabled());
+                    copyNBFM.setSquelchTailRemovalMs(origNBFM.getSquelchTailRemovalMs());
+                    copyNBFM.setSquelchHeadRemovalMs(origNBFM.getSquelchHeadRemovalMs());
+                    copyNBFM.setDeemphasisEnabled(origNBFM.isDeemphasisEnabled());
+                    copyNBFM.setDeemphasisTimeConstant(origNBFM.getDeemphasisTimeConstant());
+                    copyNBFM.setLowPassEnabled(origNBFM.isLowPassEnabled());
+                    copyNBFM.setLowPassCutoff(origNBFM.getLowPassCutoff());
+                    copyNBFM.setBassBoostEnabled(origNBFM.isBassBoostEnabled());
+                    copyNBFM.setBassBoostDb(origNBFM.getBassBoostDb());
+                    copyNBFM.setNoiseGateEnabled(origNBFM.isNoiseGateEnabled());
+                    copyNBFM.setNoiseGateThreshold(origNBFM.getNoiseGateThreshold());
+                    copyNBFM.setNoiseGateReduction(origNBFM.getNoiseGateReduction());
+                    copyNBFM.setNoiseGateHoldTime(origNBFM.getNoiseGateHoldTime());
+                    copyNBFM.setAgcEnabled(origNBFM.isAgcEnabled());
+                    copyNBFM.setAgcTargetLevel(origNBFM.getAgcTargetLevel());
+                    copyNBFM.setAgcMaxGain(origNBFM.getAgcMaxGain());
+                    copyNBFM.setHissReductionEnabled(origNBFM.isHissReductionEnabled());
+                    copyNBFM.setHissReductionDb(origNBFM.getHissReductionDb());
+                    copyNBFM.setHissReductionCornerHz(origNBFM.getHissReductionCornerHz());
                     return copyNBFM;
                 case P25_PHASE1:
                     DecodeConfigP25Phase1 originalP25 = (DecodeConfigP25Phase1)config;
                     DecodeConfigP25Phase1 copyP25 = new DecodeConfigP25Phase1();
-                    copyP25.setIgnoreDataCalls(originalP25.getIgnoreDataCalls());
+                    copyP25Settings(originalP25, copyP25);
                     copyP25.setModulation(originalP25.getModulation());
-                    copyP25.setTrafficChannelPoolSize(originalP25.getTrafficChannelPoolSize());
                     return copyP25;
                 case P25_PHASE2:
                     DecodeConfigP25Phase2 originalP25P2 = (DecodeConfigP25Phase2)config;
                     DecodeConfigP25Phase2 copyP25P2 = new DecodeConfigP25Phase2();
+                    copyP25Settings(originalP25P2, copyP25P2);
+                    copyP25P2.setAutoDetectScrambleParameters(originalP25P2.isAutoDetectScrambleParameters());
 
                     if(originalP25P2.getScrambleParameters() != null)
                     {

@@ -30,7 +30,9 @@ public class NoiseBlanker
     private static final float THRESHOLD = 15.0f; // Blanking threshold as multiplier of average power
                                                    // Was 6.0 but too aggressive for strong nearby signals
                                                    // where legitimate voice peaks exceed 36x average power
+    private static final int MAX_CONSECUTIVE_BLANKED_SAMPLES = 4;
     private double mAveragePower = 0.001;
+    private int mConsecutiveBlankedSamples = 0;
     private long mBlankedCount = 0;
     private long mTotalCount = 0;
 
@@ -62,16 +64,18 @@ public class NoiseBlanker
             mTotalCount++;
 
             // Check if this sample is an impulse spike
-            if(power > mAveragePower * THRESHOLD * THRESHOLD && mAveragePower > 1e-10)
+            if(power > mAveragePower * THRESHOLD * THRESHOLD && mAveragePower > 1e-10 &&
+                mConsecutiveBlankedSamples < MAX_CONSECUTIVE_BLANKED_SAMPLES)
             {
-                // Blank the spike by zeroing both I and Q
+                // Blank short impulse bursts, but do not suppress a sustained carrier onset indefinitely.
                 iSamples[x] = 0.0f;
                 qSamples[x] = 0.0f;
                 mBlankedCount++;
+                mConsecutiveBlankedSamples++;
             }
             else
             {
-                // Update running average power with non-spike samples only
+                mConsecutiveBlankedSamples = 0;
                 mAveragePower = (1.0 - ALPHA) * mAveragePower + ALPHA * power;
             }
         }
@@ -83,6 +87,7 @@ public class NoiseBlanker
     public void reset()
     {
         mAveragePower = 0.001;
+        mConsecutiveBlankedSamples = 0;
         mBlankedCount = 0;
         mTotalCount = 0;
     }

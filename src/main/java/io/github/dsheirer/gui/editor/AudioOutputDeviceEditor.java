@@ -78,18 +78,7 @@ public class AudioOutputDeviceEditor extends HBox
             {
                 if(!mUpdating && mAlias != null)
                 {
-                    if(newValue != null && !newValue.equals("System Default"))
-                    {
-                        mAlias.setAudioOutputDevice(newValue);
-                        mLog.info("Set audio output device for alias [" + mAlias.getName() + "] to: " + newValue);
-                    }
-                    else
-                    {
-                        mAlias.setAudioOutputDevice(null);
-                        mLog.info("Set audio output device for alias [" + mAlias.getName() + "] to system default");
-                    }
-
-                    // IMPORTANT: Trigger modified flag so Save button enables
+                    // Stage the selection until the parent alias editor is saved.
                     mModified.set(true);
                 }
             }
@@ -153,17 +142,25 @@ public class AudioOutputDeviceEditor extends HBox
     }
 
     /**
+     * Selected audio output device, or null for the system default.
+     */
+    public String getSelectedAudioOutputDevice()
+    {
+        String selected = mDeviceComboBox.getSelectionModel().getSelectedItem();
+        return selected == null || selected.equals("System Default") ? null : selected;
+    }
+
+    /**
      * Sets the alias to edit
      * @param alias to edit
      */
     public void setAlias(Alias alias)
     {
         mAlias = alias;
+        mUpdating = true;
 
         if(mAlias != null)
         {
-            mUpdating = true;
-
             String deviceName = mAlias.getAudioOutputDevice();
 
             if(deviceName != null && !deviceName.isEmpty())
@@ -193,9 +190,14 @@ public class AudioOutputDeviceEditor extends HBox
                 mDeviceComboBox.getSelectionModel().select("System Default");
             }
 
-            mModified.set(false); // Reset modified flag after loading
-            mUpdating = false;
         }
+        else
+        {
+            mDeviceComboBox.getSelectionModel().select("System Default");
+        }
+
+        mModified.set(false);
+        mUpdating = false;
     }
 
     /**

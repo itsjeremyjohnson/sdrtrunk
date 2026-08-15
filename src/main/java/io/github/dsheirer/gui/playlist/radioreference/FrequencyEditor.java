@@ -515,6 +515,22 @@ public class FrequencyEditor extends VBox
      * @param config the NBFM decode configuration to modify
      * @param tone the tone string from Radio Reference
      */
+    static String normalizeDcsCode(String code)
+    {
+        String normalized = code.toUpperCase().trim();
+
+        if(normalized.matches("D\\d{3}[NI]"))
+        {
+            normalized = normalized.substring(4) + normalized.substring(1, 4);
+        }
+        else if(normalized.matches("\\d+"))
+        {
+            normalized = "N" + String.format("%03d", Integer.parseInt(normalized));
+        }
+
+        return normalized;
+    }
+
     private void configureToneFilter(DecodeConfigNBFM config, String tone)
     {
         // Skip carrier squelch
@@ -541,11 +557,7 @@ public class FrequencyEditor extends VBox
             // Extract the numeric code: "125 DPL" → "125", "D023N DPL" → "D023N"
             String codeStr = upperTone.replace("DPL", "").replace("DCS", "").trim();
 
-            // If it's just a number like "074", convert to DCSCode format "N074" (normal polarity)
-            if(codeStr.matches("\\d+"))
-            {
-                codeStr = "N" + String.format("%03d", Integer.parseInt(codeStr));
-            }
+            codeStr = normalizeDcsCode(codeStr);
 
             try
             {
@@ -564,10 +576,11 @@ public class FrequencyEditor extends VBox
                 mLog.debug("DCS code not recognized: {}", codeStr);
             }
         }
-        // Also check for "N023" or "I023" format without DPL/DCS suffix
-        else if((upperTone.startsWith("N") || upperTone.startsWith("I")) && upperTone.length() >= 4)
+        // Also check for polarity-first or RadioReference D-prefixed format without a DPL/DCS suffix.
+        else if((upperTone.startsWith("N") || upperTone.startsWith("I") || upperTone.startsWith("D")) &&
+            upperTone.length() >= 4)
         {
-            String dcsStr = upperTone.split("\\s+")[0];
+            String dcsStr = normalizeDcsCode(upperTone.split("\\s+")[0]);
             try
             {
                 DCSCode dcsCode = DCSCode.valueOf(dcsStr);

@@ -224,7 +224,7 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
     @Override
     public boolean isRealTimeReady()
     {
-        return mConnected.get() && mChannelOnline.get() && !mStreamActive.get();
+        return mConnected.get() && mChannelOnline.get() && (!mStreamActive.get() || mRelaxationFuture != null);
     }
 
     @Override

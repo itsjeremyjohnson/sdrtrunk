@@ -394,6 +394,7 @@ public class AliasItemEditor extends Editor<Alias>
             {
                 alias.setRecordable(getRecordAudioToggleSwitch().isSelected());
                 alias.setColor(ColorUtil.toInteger(getColorPicker().getValue()));
+                alias.setAudioOutputDevice(getAudioOutputDeviceEditor().getSelectedAudioOutputDevice());
 
                 Icon icon = getIconNodeComboBox().getSelectionModel().getSelectedItem();
                 alias.setIconName(icon != null ? icon.getName() : null);

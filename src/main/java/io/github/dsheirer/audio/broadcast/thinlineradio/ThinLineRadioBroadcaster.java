@@ -299,6 +299,10 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                                         mLog.error("ThinLine Radio API file upload fail [" +
                                             fileResponse.statusCode() + "] response [" +
                                             fileResponse.body() + "]");
+                                        incrementErrorAudioCount();
+                                        broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
+                                            BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                        audioRecording.removePendingReplay();
                                     }
                                 }
                             });
