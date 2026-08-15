@@ -20,6 +20,7 @@
 package io.github.dsheirer.source.tuner.hydrasdr;
 
 import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.source.SourceException;
 import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
 import io.github.dsheirer.source.tuner.manager.TunerStatus;
@@ -128,11 +129,13 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		getFrequencyPanel().updateControls();
 		getSampleRateCombo().setEnabled(hasTuner() && !getTuner().getTunerController().isLockedSampleRate());
 		getTunerInfoButton().setEnabled(hasTuner());
-		getBiasTCheckBox().setEnabled(hasTuner());
+		HydraSdrDeviceInfo deviceInfo = hasTuner() ? getTuner().getController().getDeviceInfo() : null;
+		boolean supportsBiasT = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_BIAS_TEE);
+		getBiasTCheckBox().setEnabled(supportsBiasT);
 
-		if(hasTuner() && hasConfiguration())
+		if(hasConfiguration())
 		{
-			getBiasTCheckBox().setSelected(getConfiguration().isBiasT());
+			getBiasTCheckBox().setSelected(supportsBiasT && getConfiguration().isBiasT());
 		}
 
 		updateGainControls();
@@ -496,6 +499,12 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 					/* Apply the mode change to the device */
 					try
 					{
+						HydraSdrTunerController controller = getTuner().getController();
+						if(!controller.supportsGainMode(mode))
+						{
+							throw new SourceException("Gain mode is not supported by this device");
+						}
+
 						if(mode == 0)
 						{
 							/* Linearity: disable AGCs, apply preset */
@@ -516,12 +525,18 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 							getTuner().getController().setGain(
 								HydraSdrNative.GAIN_TYPE_SENSITIVITY, value);
 						}
-						/* Custom mode: no immediate device changes, user adjusts sliders */
+						else
+						{
+							controller.applyCustomGains(getConfiguration());
+						}
 						save();
 					}
 					catch(Exception ex)
 					{
 						mLog.error("Error applying gain mode", ex);
+						setLoading(true);
+						getGainModeCombo().setSelectedIndex(getConfiguration().getGainMode());
+						setLoading(false);
 					}
 
 					setLoading(true);

@@ -118,7 +118,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	}
 
 	@Override
-	public void start() throws SourceException
+	public synchronized void start() throws SourceException
 	{
 		if(!HydraSdrNative.isLoaded())
 		{
@@ -207,7 +207,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	}
 
 	@Override
-	public void stop()
+	public synchronized void stop()
 	{
 		stopStreaming();
 		closeDevice();
@@ -216,7 +216,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	/**
 	 * Closes the native device handle and clears device-specific state.
 	 */
-	private void closeDevice()
+	private synchronized void closeDevice()
 	{
 		if(mDeviceHandle != 0)
 		{
@@ -514,33 +514,25 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 
 				if(gainMode == GAIN_MODE_CUSTOM)
 				{
-					/* Custom mode: apply individual gains */
-					setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, config.isLnaAgc() ? 1 : 0);
-					setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, config.isMixerAgc() ? 1 : 0);
-
-					if(config.getLnaGain() >= 0)
-					{
-						setGain(HydraSdrNative.GAIN_TYPE_LNA, config.getLnaGain());
-					}
-					if(config.getMixerGain() >= 0)
-					{
-						setGain(HydraSdrNative.GAIN_TYPE_MIXER, config.getMixerGain());
-					}
-					if(config.getVgaGain() >= 0)
-					{
-						setGain(HydraSdrNative.GAIN_TYPE_VGA, config.getVgaGain());
-					}
+					applyCustomGains(config);
 				}
-				else if(gainMode == GAIN_MODE_SENSITIVITY && config.getSensitivityGain() > 0)
+				else if(gainMode == GAIN_MODE_SENSITIVITY && supportsGainMode(GAIN_MODE_SENSITIVITY))
 				{
 					/* Sensitivity mode: single preset value sets all gains */
-					setGain(HydraSdrNative.GAIN_TYPE_SENSITIVITY, config.getSensitivityGain());
+					int sensitivity = config.getSensitivityGain();
+					setGain(HydraSdrNative.GAIN_TYPE_SENSITIVITY, sensitivity > 0 ? sensitivity : 10);
+				}
+				else if(gainMode == GAIN_MODE_LINEARITY && supportsGainMode(GAIN_MODE_LINEARITY))
+				{
+					/* Linearity mode: single preset value sets all gains */
+					int linearity = config.getLinearityGain();
+					setGain(HydraSdrNative.GAIN_TYPE_LINEARITY, linearity > 0 ? linearity : 14);
 				}
 				else
 				{
-					/* Linearity mode (default): single preset value sets all gains */
-					int lin = config.getLinearityGain();
-					setGain(HydraSdrNative.GAIN_TYPE_LINEARITY, lin > 0 ? lin : 14);
+					/* Fall back to capability-gated individual gains. */
+					config.setGainMode(GAIN_MODE_CUSTOM);
+					applyCustomGains(config);
 				}
 			}
 			catch(Exception e)
@@ -563,7 +555,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	/**
 	 * Sets sample rate in Hz.
 	 */
-	public void setSampleRateHz(int rateHz) throws SourceException
+	public synchronized void setSampleRateHz(int rateHz) throws SourceException
 	{
 		if(mDeviceHandle == 0)
 		{
@@ -660,11 +652,68 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	/* ==================== Gain Control ==================== */
 
 	/**
+	 * Indicates if the device supports the requested gain mode.
+	 */
+	public synchronized boolean supportsGainMode(int gainMode)
+	{
+		HydraSdrDeviceInfo deviceInfo = getDeviceInfo();
+		if(deviceInfo == null)
+		{
+			return false;
+		}
+
+		return switch(gainMode)
+		{
+			case GAIN_MODE_LINEARITY -> deviceInfo.hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN);
+			case GAIN_MODE_SENSITIVITY -> deviceInfo.hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN);
+			case GAIN_MODE_CUSTOM -> deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_GAIN) ||
+				deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_GAIN) ||
+				deviceInfo.hasCapability(HydraSdrNative.CAP_VGA_GAIN) ||
+				deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_AGC) ||
+				deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC);
+			default -> false;
+		};
+	}
+
+	/**
+	 * Applies each saved custom gain that the device advertises.
+	 */
+	public synchronized void applyCustomGains(HydraSdrTunerConfiguration config) throws SourceException
+	{
+		HydraSdrDeviceInfo deviceInfo = getDeviceInfo();
+		if(deviceInfo == null)
+		{
+			throw new SourceException("Device capabilities unavailable");
+		}
+
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_AGC))
+		{
+			setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, config.isLnaAgc() ? 1 : 0);
+		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC))
+		{
+			setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, config.isMixerAgc() ? 1 : 0);
+		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_GAIN) && config.getLnaGain() >= 0)
+		{
+			setGain(HydraSdrNative.GAIN_TYPE_LNA, config.getLnaGain());
+		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_GAIN) && config.getMixerGain() >= 0)
+		{
+			setGain(HydraSdrNative.GAIN_TYPE_MIXER, config.getMixerGain());
+		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_VGA_GAIN) && config.getVgaGain() >= 0)
+		{
+			setGain(HydraSdrNative.GAIN_TYPE_VGA, config.getVgaGain());
+		}
+	}
+
+	/**
 	 * Sets a gain value using the unified gain API.
 	 * @param gainType one of HydraSdrNative.GAIN_TYPE_*
 	 * @param value gain value
 	 */
-	public void setGain(int gainType, int value) throws SourceException
+	public synchronized void setGain(int gainType, int value) throws SourceException
 	{
 		if(mDeviceHandle == 0)
 		{
@@ -684,7 +733,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	 * @param gainType one of HydraSdrNative.GAIN_TYPE_*
 	 * @return int[6] = {value, min, max, step, default, flags}, or null
 	 */
-	public int[] getGainInfo(int gainType)
+	public synchronized int[] getGainInfo(int gainType)
 	{
 		if(mDeviceHandle == 0)
 		{
@@ -696,7 +745,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	/**
 	 * Returns the device capability bitmask.
 	 */
-	public int getCapabilities()
+	public synchronized int getCapabilities()
 	{
 		if(mDeviceHandle == 0)
 		{
@@ -710,7 +759,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	/**
 	 * Enables/disables Bias-T.
 	 */
-	public void setBiasT(boolean enabled) throws SourceException
+	public synchronized void setBiasT(boolean enabled) throws SourceException
 	{
 		if(mDeviceHandle == 0)
 		{
@@ -728,7 +777,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	 * Reads the device temperature.
 	 * @return temperature in Celsius, or Float.NaN if not available
 	 */
-	public float getTemperature()
+	public synchronized float getTemperature()
 	{
 		if(mDeviceHandle == 0)
 		{
@@ -740,7 +789,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	/**
 	 * Sets bandwidth in Hz (0 for auto).
 	 */
-	public void setBandwidth(int bandwidthHz) throws SourceException
+	public synchronized void setBandwidth(int bandwidthHz) throws SourceException
 	{
 		if(mDeviceHandle == 0)
 		{
@@ -757,7 +806,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	/**
 	 * Sets the decimation mode.
 	 */
-	public void setDecimationMode(int mode) throws SourceException
+	public synchronized void setDecimationMode(int mode) throws SourceException
 	{
 		if(mDeviceHandle == 0)
 		{
@@ -776,7 +825,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	/**
 	 * Returns device information.
 	 */
-	public HydraSdrDeviceInfo getDeviceInfo()
+	public synchronized HydraSdrDeviceInfo getDeviceInfo()
 	{
 		if(mDeviceInfo == null && mDeviceHandle != 0)
 		{
