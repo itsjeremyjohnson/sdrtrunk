@@ -711,15 +711,15 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     updateToneMatch();
                     mLastToneMatchTime = System.currentTimeMillis();
 
-                    // If we were previously blocked, fire a call start now
-                    if(wasBlocked)
-                    {
-                        notifyCallStart();
-                    }
-
                     if(mDecoderState != null)
                     {
                         mDecoderState.setDetectedCTCSS(code);
+                    }
+
+                    // If we were previously blocked, fire a call start after publishing the detected tone.
+                    if(wasBlocked)
+                    {
+                        notifyCallStart();
                     }
                 }
 
@@ -731,6 +731,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mCTCSSMatch = false;
                     updateToneMatch();
 
+                    if(mDecoderState != null)
+                    {
+                        mDecoderState.setRejectedCTCSS(code);
+                    }
+
                     if(!mToneMatch)
                     {
                         if(wasActive)
@@ -738,11 +743,6 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                             notifyCallEnd();
                         }
                         notifyIdle();
-                    }
-
-                    if(mDecoderState != null)
-                    {
-                        mDecoderState.setRejectedCTCSS(code);
                     }
                 }
 
@@ -754,6 +754,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mCTCSSMatch = false;
                     updateToneMatch();
 
+                    if(mDecoderState != null)
+                    {
+                        mDecoderState.setCTCSSLost();
+                    }
+
                     if(!mToneMatch)
                     {
                         if(wasActive)
@@ -761,11 +766,6 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                             notifyCallEnd();
                         }
                         notifyIdle();
-                    }
-
-                    if(mDecoderState != null)
-                    {
-                        mDecoderState.setToneLost();
                     }
                 }
             });
@@ -789,14 +789,14 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     updateToneMatch();
                     mLastToneMatchTime = System.currentTimeMillis();
 
-                    if(wasBlocked)
-                    {
-                        notifyCallStart();
-                    }
-
                     if(mDecoderState != null)
                     {
                         mDecoderState.setDetectedDCS(code);
+                    }
+
+                    if(wasBlocked)
+                    {
+                        notifyCallStart();
                     }
                 }
 
@@ -808,6 +808,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mDCSMatch = false;
                     updateToneMatch();
 
+                    if(mDecoderState != null)
+                    {
+                        mDecoderState.setRejectedDCS(code);
+                    }
+
                     if(!mToneMatch)
                     {
                         if(wasActive)
@@ -815,11 +820,6 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                             notifyCallEnd();
                         }
                         notifyIdle();
-                    }
-
-                    if(mDecoderState != null)
-                    {
-                        mDecoderState.setRejectedDCS(code);
                     }
                 }
 
@@ -831,6 +831,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                     mDCSMatch = false;
                     updateToneMatch();
 
+                    if(mDecoderState != null)
+                    {
+                        mDecoderState.setDCSLost();
+                    }
+
                     if(!mToneMatch)
                     {
                         if(wasActive)
@@ -838,11 +843,6 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
                             notifyCallEnd();
                         }
                         notifyIdle();
-                    }
-
-                    if(mDecoderState != null)
-                    {
-                        mDecoderState.setToneLost();
                     }
                 }
             });

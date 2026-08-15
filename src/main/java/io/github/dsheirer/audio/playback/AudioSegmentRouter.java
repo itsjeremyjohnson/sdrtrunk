@@ -22,12 +22,15 @@ import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.alias.id.priority.Priority;
 import io.github.dsheirer.audio.AudioSegment;
 import io.github.dsheirer.identifier.Identifier;
+import io.github.dsheirer.identifier.IdentifierUpdateNotification;
+import io.github.dsheirer.sample.Listener;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 import javax.sound.sampled.*;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -46,6 +49,7 @@ public class AudioSegmentRouter
 
     private Map<String, SourceDataLine> mAudioOutputLines = new ConcurrentHashMap<>();
     private Map<AudioSegment, SegmentRouter> mActiveSegments = new ConcurrentHashMap<>();
+    private Map<AudioSegment, Listener<IdentifierUpdateNotification>> mPendingSegments = new ConcurrentHashMap<>();
     private Map<String, Long> mRecentlyActiveLines = new ConcurrentHashMap<>(); // Track lines that recently ended
     private static final long SILENCE_FEED_DURATION = 3000; // Feed silence for 3 seconds after segment ends
     private ScheduledExecutorService mExecutor;
@@ -148,9 +152,20 @@ public class AudioSegmentRouter
 
         if(alias == null || !alias.hasAudioOutputDevice())
         {
-            // No custom device - let main system handle it
+            if(!audioSegment.isComplete())
+            {
+                mPendingSegments.computeIfAbsent(audioSegment, segment ->
+                {
+                    Listener<IdentifierUpdateNotification> listener = update -> route(segment);
+                    segment.addIdentifierUpdateNotificationListener(listener);
+                    return listener;
+                });
+            }
+
             return;
         }
+
+        removePendingSegment(audioSegment);
 
         String deviceName = alias.getAudioOutputDevice();
 
@@ -179,14 +194,27 @@ public class AudioSegmentRouter
         audioSegment.monitorPriorityProperty().set(Priority.DO_NOT_MONITOR);
     }
 
+    private void removePendingSegment(AudioSegment audioSegment)
+    {
+        Listener<IdentifierUpdateNotification> listener = mPendingSegments.remove(audioSegment);
+
+        if(listener != null)
+        {
+            audioSegment.removeIdentifierUpdateNotificationListener(listener);
+        }
+    }
+
     /**
      * Processes all active segments and routes their audio buffers
      */
     void processActiveSegments()
     {
-        if(mActiveSegments.isEmpty())
+        for(AudioSegment audioSegment : mPendingSegments.keySet())
         {
-            return;
+            if(audioSegment.isComplete())
+            {
+                removePendingSegment(audioSegment);
+            }
         }
 
         // Process each active segment
@@ -387,6 +415,36 @@ public class AudioSegmentRouter
         return null;
     }
 
+    static List<Mixer.Info> getMatchingMixerInfos(String deviceName, Mixer.Info[] mixerInfos)
+    {
+        List<Mixer.Info> exactMatches = new ArrayList<>();
+        List<Mixer.Info> fallbackMatches = new ArrayList<>();
+
+        for(Mixer.Info mixerInfo : mixerInfos)
+        {
+            String mixerName = mixerInfo.getName();
+            String unwrappedName = mixerName;
+
+            if(mixerName.startsWith("DirectSound Playback(") && mixerName.endsWith(")"))
+            {
+                unwrappedName = mixerName.substring(mixerName.indexOf('(') + 1, mixerName.lastIndexOf(')'));
+            }
+
+            if(mixerName.equals(deviceName) || unwrappedName.equals(deviceName))
+            {
+                exactMatches.add(mixerInfo);
+            }
+            else if(mixerName.contains(deviceName) || deviceName.contains(mixerName) ||
+                unwrappedName.contains(deviceName) || deviceName.contains(unwrappedName))
+            {
+                fallbackMatches.add(mixerInfo);
+            }
+        }
+
+        exactMatches.addAll(fallbackMatches);
+        return exactMatches;
+    }
+
     /**
      * Gets or creates a SourceDataLine for the specified device
      */
@@ -402,49 +460,22 @@ public class AudioSegmentRouter
         // Create new line
         try
         {
-            Mixer.Info[] mixers = AudioSystem.getMixerInfo();
-
-            for(Mixer.Info mixerInfo : mixers)
+            for(Mixer.Info mixerInfo : getMatchingMixerInfos(deviceName, AudioSystem.getMixerInfo()))
             {
-                String mixerName = mixerInfo.getName();
-                boolean matches = false;
+                Mixer mixer = AudioSystem.getMixer(mixerInfo);
+                AudioFormat selectedFormat = getSupportedOutputFormat(mixer);
 
-                // Try multiple matching strategies
-                if(mixerName.equals(deviceName) || mixerName.contains(deviceName) || deviceName.contains(mixerName))
+                if(selectedFormat != null)
                 {
-                    matches = true;
-                }
-                else if(mixerName.startsWith("DirectSound Playback("))
-                {
-                    int start = mixerName.indexOf('(');
-                    int end = mixerName.lastIndexOf(')');
-                    if(start > 0 && end > start)
-                    {
-                        String innerName = mixerName.substring(start + 1, end);
-                        if(innerName.equals(deviceName) || innerName.contains(deviceName) || deviceName.contains(innerName))
-                        {
-                            matches = true;
-                        }
-                    }
-                }
+                    DataLine.Info lineInfo = new DataLine.Info(SourceDataLine.class, selectedFormat);
+                    SourceDataLine line = (SourceDataLine) mixer.getLine(lineInfo);
+                    line.open(selectedFormat, 8192);
+                    line.start();
 
-                if(matches)
-                {
-                    Mixer mixer = AudioSystem.getMixer(mixerInfo);
-                    AudioFormat selectedFormat = getSupportedOutputFormat(mixer);
+                    mAudioOutputLines.put(deviceName, line);
+                    mLog.info("Opened audio line for: " + deviceName);
 
-                    if(selectedFormat != null)
-                    {
-                        DataLine.Info lineInfo = new DataLine.Info(SourceDataLine.class, selectedFormat);
-                        SourceDataLine line = (SourceDataLine) mixer.getLine(lineInfo);
-                        line.open(selectedFormat, 8192);
-                        line.start();
-
-                        mAudioOutputLines.put(deviceName, line);
-                        mLog.info("Opened audio line for: " + deviceName);
-
-                        return line;
-                    }
+                    return line;
                 }
             }
 
@@ -525,6 +556,12 @@ public class AudioSegmentRouter
         }
 
         mActiveSegments.clear();
+
+        for(AudioSegment audioSegment : mPendingSegments.keySet())
+        {
+            removePendingSegment(audioSegment);
+        }
+
         mRecentlyActiveLines.clear();
 
         for(SourceDataLine line : mAudioOutputLines.values())

@@ -5,7 +5,10 @@
  */
 package io.github.dsheirer.module.decode.nbfm;
 
+import io.github.dsheirer.identifier.ctcss.CTCSSIdentifier;
+import io.github.dsheirer.identifier.dcs.DCSIdentifier;
 import io.github.dsheirer.module.decode.config.ChannelToneFilter;
+import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import io.github.dsheirer.module.decode.dcs.DCSCode;
 import java.util.List;
 import java.util.Set;
@@ -13,6 +16,7 @@ import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class NBFMToneFilterTest
@@ -39,6 +43,28 @@ class NBFMToneFilterTest
 
         assertTrue(decoder.hasConfiguredCTCSSFiltering());
         assertTrue(decoder.hasConfiguredDCSFiltering());
+    }
+
+    @Test
+    void channelFilterDetectionsPublishAndRemoveToneIdentifiers()
+    {
+        NBFMDecoderState state = new NBFMDecoderState("test", new DecodeConfigNBFM());
+
+        state.setDetectedCTCSS(CTCSSCode.TONE_XZ);
+        assertTrue(state.getIdentifierCollection().getIdentifiers().stream().anyMatch(CTCSSIdentifier.class::isInstance));
+
+        state.setDetectedDCS(DCSCode.N023);
+        assertTrue(state.getIdentifierCollection().getIdentifiers().stream().anyMatch(DCSIdentifier.class::isInstance));
+        state.setRejectedDCS(DCSCode.N025);
+        assertFalse(state.getIdentifierCollection().getIdentifiers().stream().anyMatch(DCSIdentifier.class::isInstance));
+        assertTrue(state.getIdentifierCollection().getIdentifiers().stream().anyMatch(CTCSSIdentifier.class::isInstance));
+
+        state.setRejectedCTCSS(CTCSSCode.TONE_WZ);
+        assertFalse(state.getIdentifierCollection().getIdentifiers().stream().anyMatch(CTCSSIdentifier.class::isInstance));
+
+        state.setDetectedDCS(DCSCode.N023);
+        state.setDCSLost();
+        assertFalse(state.getIdentifierCollection().getIdentifiers().stream().anyMatch(DCSIdentifier.class::isInstance));
     }
 
     @Test

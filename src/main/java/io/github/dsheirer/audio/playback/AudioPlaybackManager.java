@@ -98,6 +98,11 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
                 0, 100, TimeUnit.MILLISECONDS);
     }
 
+    static boolean isRoutingEligible(AudioSegment audioSegment, boolean duplicateSuppressionEnabled)
+    {
+        return audioSegment != null && (!audioSegment.isDuplicate() || !duplicateSuppressionEnabled);
+    }
+
     /**
      * Receives audio segments from channel audio modules.
      * @param audioSegment to receive and process
@@ -106,7 +111,12 @@ public class AudioPlaybackManager implements Listener<AudioSegment>, IAudioContr
     public void receive(AudioSegment audioSegment)
     {
         mNewAudioSegmentQueue.add(audioSegment);
-        mAudioRouter.route(audioSegment);
+
+        if(isRoutingEligible(audioSegment,
+            mUserPreferences.getCallManagementPreference().isDuplicatePlaybackSuppressionEnabled()))
+        {
+            mAudioRouter.route(audioSegment);
+        }
     }
 
     /**

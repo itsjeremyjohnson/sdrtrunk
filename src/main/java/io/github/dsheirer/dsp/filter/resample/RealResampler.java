@@ -198,17 +198,16 @@ public class RealResampler
                     mResampledListener.receive(resampled);
                 }
             }
-            // if this is the last batch of audio being processed by the resampler and there are still
-            //  samples remaining in the buffer, pad the block with zeros to make
-            //  mOutputArrayLength (usually 512) samples.
+            //Flush only the samples actually produced for the last batch. Padding becomes synthetic audio and can
+            //incorrectly age real samples out of downstream delay windows such as squelch-tail removal.
             if(mLastBatch && mOutputBuffer.position() != 0)
             {
-                float[] resampled = new float[mOutputArrayLength];
-                mOutputBuffer.flip();       // sets limit to remaining array length
-                mOutputBuffer.get(resampled, 0, mOutputBuffer.limit());     // unused are already zeroed, for padding
+                mOutputBuffer.flip();
+                float[] resampled = new float[mOutputBuffer.remaining()];
+                mOutputBuffer.get(resampled);
                 mOutputBuffer.compact();
 
-                if (mResampledListener != null)
+                if(mResampledListener != null)
                 {
                     mResampledListener.receive(resampled);
                 }

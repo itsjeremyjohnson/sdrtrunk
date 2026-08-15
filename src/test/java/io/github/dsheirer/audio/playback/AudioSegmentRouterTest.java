@@ -10,6 +10,7 @@ import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.alias.id.radio.Radio;
 import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.audio.AudioSegment;
+import io.github.dsheirer.identifier.IdentifierUpdateNotification;
 import io.github.dsheirer.module.decode.p25.identifier.radio.APCO25RadioIdentifier;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import io.github.dsheirer.protocol.Protocol;
@@ -20,12 +21,15 @@ import javax.sound.sampled.DataLine;
 import javax.sound.sampled.Mixer;
 import javax.sound.sampled.SourceDataLine;
 import java.lang.reflect.Proxy;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class AudioSegmentRouterTest
 {
@@ -58,6 +62,31 @@ class AudioSegmentRouterTest
     }
 
     @Test
+    void prefersExactMixerNameBeforeSubstringFallback()
+    {
+        Mixer.Info shorter = new TestMixerInfo("CABLE Input");
+        Mixer.Info exact = new TestMixerInfo("CABLE Input 2");
+        Mixer.Info wrapper = new TestMixerInfo("DirectSound Playback(CABLE Input 2)");
+
+        List<Mixer.Info> matches = AudioSegmentRouter.getMatchingMixerInfos("CABLE Input 2",
+            new Mixer.Info[]{shorter, exact, wrapper});
+
+        assertSame(exact, matches.get(0));
+        assertSame(wrapper, matches.get(1));
+        assertSame(shorter, matches.get(2));
+    }
+
+    @Test
+    void duplicateSuppressionBlocksCustomRoutingEligibility()
+    {
+        AudioSegment segment = new AudioSegment(new AliasList("test"), 0);
+        segment.setDuplicate(true);
+
+        assertFalse(AudioPlaybackManager.isRoutingEligible(segment, true));
+        assertTrue(AudioPlaybackManager.isRoutingEligible(segment, false));
+    }
+
+    @Test
     void selectsAliasWithConfiguredOutputDevice()
     {
         AliasList aliasList = new AliasList("test");
@@ -74,6 +103,44 @@ class AudioSegmentRouterTest
         segment.addIdentifier(APCO25RadioIdentifier.createFrom(200));
 
         assertSame(radioAlias, new AudioSegmentRouter().getAlias(segment));
+    }
+
+    @Test
+    void routesActiveSegmentWhenLateIdentifierAddsOutputAlias()
+    {
+        AliasList aliasList = new AliasList("test");
+        Alias alias = new Alias("late routed radio");
+        alias.addAliasID(new Radio(Protocol.APCO25, 200));
+        alias.setAudioOutputDevice("test-device");
+        aliasList.addAlias(alias);
+        AudioSegment segment = new AudioSegment(aliasList, 0);
+        segment.addIdentifier(APCO25Talkgroup.create(100));
+        segment.addAudio(new float[160]);
+        segment.incrementConsumerCount();
+        SourceDataLine line = (SourceDataLine)Proxy.newProxyInstance(SourceDataLine.class.getClassLoader(),
+            new Class[]{SourceDataLine.class}, (proxy, method, args) -> null);
+        AudioSegmentRouter router = new AudioSegmentRouter()
+        {
+            @Override
+            SourceDataLine getOrCreateOutputLine(String deviceName)
+            {
+                return line;
+            }
+        };
+
+        router.route(segment);
+        assertNotEquals(io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR,
+            segment.monitorPriorityProperty().get());
+
+        segment.receive(new IdentifierUpdateNotification(APCO25RadioIdentifier.createFrom(200),
+            IdentifierUpdateNotification.Operation.ADD, 0));
+        segment.decrementConsumerCount();
+
+        assertEquals(io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR,
+            segment.monitorPriorityProperty().get());
+        assertEquals(1, segment.getAudioBufferCount());
+        router.dispose();
+        assertEquals(0, segment.getAudioBufferCount());
     }
 
     @Test
@@ -105,6 +172,14 @@ class AudioSegmentRouterTest
         assertNotEquals(io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR,
             segment.monitorPriorityProperty().get());
         router.dispose();
+    }
+
+    private static class TestMixerInfo extends Mixer.Info
+    {
+        TestMixerInfo(String name)
+        {
+            super(name, "test", "test", "test");
+        }
     }
 
     @Test
