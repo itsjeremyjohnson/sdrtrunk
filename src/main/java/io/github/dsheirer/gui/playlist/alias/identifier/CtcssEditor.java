@@ -57,11 +57,23 @@ public class CtcssEditor extends IdentifierEditor<Ctcss>
     public void setItem(Ctcss item)
     {
         super.setItem(item);
-        if(item.isValid())
+        CTCSSCode selection = selectionFor(item);
+
+        if(selection != null)
         {
-            getCTCSSCodeComboBox().getSelectionModel().select(item.getCTCSSCode());
+            getCTCSSCodeComboBox().getSelectionModel().select(selection);
         }
+        else
+        {
+            getCTCSSCodeComboBox().getSelectionModel().clearSelection();
+        }
+
         modifiedProperty().set(false);
+    }
+
+    static CTCSSCode selectionFor(Ctcss item)
+    {
+        return item != null && item.isValid() ? item.getCTCSSCode() : null;
     }
 
     @Override

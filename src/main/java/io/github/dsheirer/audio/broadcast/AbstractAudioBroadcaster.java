@@ -38,6 +38,8 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
     private T mBroadcastConfiguration;
     protected ObjectProperty<BroadcastState> mBroadcastState = new SimpleObjectProperty<>(BroadcastState.READY);
     protected ObjectProperty<BroadcastState> mLastBadBroadcastState = new SimpleObjectProperty<>();
+    private volatile BroadcastState mCurrentBroadcastState = BroadcastState.READY;
+    private volatile BroadcastState mCurrentLastBadBroadcastState;
     protected StringProperty mLastErrorDetail = new SimpleStringProperty();
     protected int mStreamedAudioCount = 0;
     protected int mErrorAudioCount = 0;
@@ -73,7 +75,7 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
      */
     public BroadcastState getBroadcastState()
     {
-        return mBroadcastState.get();
+        return mCurrentBroadcastState;
     }
 
     /**
@@ -83,16 +85,26 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
      */
     public void setBroadcastState(BroadcastState broadcastState)
     {
+        mCurrentBroadcastState = broadcastState;
+
+        if(broadcastState == BroadcastState.CONNECTED)
+        {
+            mCurrentLastBadBroadcastState = null;
+        }
+        else if(broadcastState.isErrorState() || broadcastState.isWarningState())
+        {
+            mCurrentLastBadBroadcastState = broadcastState;
+        }
+
+        BroadcastState lastBadState = mCurrentLastBadBroadcastState;
         Runnable update = () -> {
+            mLastBadBroadcastState.setValue(lastBadState);
+
             if(broadcastState == BroadcastState.CONNECTED)
             {
-                mLastBadBroadcastState.setValue(null);
                 mLastErrorDetail.setValue(null);
             }
-            else if(broadcastState.isErrorState() || broadcastState.isWarningState())
-            {
-                mLastBadBroadcastState.setValue(broadcastState);
-            }
+
             mBroadcastState.setValue(broadcastState);
         };
 
@@ -106,7 +118,7 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
      */
     public BroadcastState getLastBadBroadcastState()
     {
-        return mLastBadBroadcastState.get();
+        return mCurrentLastBadBroadcastState;
     }
 
     /**
@@ -132,7 +144,7 @@ public abstract class AbstractAudioBroadcaster<T extends BroadcastConfiguration>
      * Runs an observable-property update on the JavaFX thread when the toolkit is available. Headless mode does not
      * initialize JavaFX, so updates must remain usable without it.
      */
-    private void runOnJavaFxThreadIfAvailable(Runnable update)
+    protected void runOnJavaFxThreadIfAvailable(Runnable update)
     {
         if(Platform.isFxApplicationThread())
         {

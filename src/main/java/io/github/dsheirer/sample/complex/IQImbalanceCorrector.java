@@ -61,15 +61,17 @@ public class IQImbalanceCorrector
             mMeanQPower = (1.0 - ALPHA) * mMeanQPower + ALPHA * (q * q);
             mMeanIQCross = (1.0 - ALPHA) * mMeanIQCross + ALPHA * (i * q);
 
-            // Compute correction coefficients
+            // Gram-Schmidt: remove the I projection from Q, then normalize the residual Q power to I power.
             if(mMeanIPower > 0)
             {
-                mGainCorrection = Math.sqrt(mMeanIPower / Math.max(mMeanQPower, 1e-10));
                 mPhaseCorrection = mMeanIQCross / Math.max(mMeanIPower, 1e-10);
+                double residualQPower = mMeanQPower -
+                    (mMeanIQCross * mMeanIQCross / Math.max(mMeanIPower, 1e-10));
+                mGainCorrection = Math.sqrt(mMeanIPower / Math.max(residualQPower, 1e-10));
             }
 
-            // Apply correction to Q channel in-place
-            qSamples[x] = (float)(mGainCorrection * q - mPhaseCorrection * i);
+            // Apply phase removal and residual-power normalization in the same Q scale.
+            qSamples[x] = (float)(mGainCorrection * (q - mPhaseCorrection * i));
             mSampleCount++;
         }
     }

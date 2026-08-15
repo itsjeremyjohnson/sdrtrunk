@@ -410,8 +410,10 @@ tasks.register('runtimeZipOthers', org.beryx.runtime.RuntimeZipTask) {rt ->
  * Usage (runs automatically as a finalizer): gradlew runtimeZipCurrent
  * Usage (manual):                            gradlew archiveVersion
  */
+def runtimeZipTaskNames = ['runtimeZipCurrent', 'runtimeZipWindows', 'runtimeZipOthers']
+
 tasks.register('archiveVersion', Copy) {
-    description = 'ap-fork: copies built runtime zips into sdrtrunk-ap-versions/v<version>'
+    description = 'ap-fork: copies successfully built runtime zips into sdrtrunk-ap-versions/v<version>'
     group = 'ap-fork'
 
     def defaultVersionsDir = file("${rootDir}/../sdrtrunk-ap-versions")
@@ -421,6 +423,12 @@ tasks.register('archiveVersion', Copy) {
         include '*.zip'
     }
     into(new File(versionsDir, "v${version}"))
+
+    onlyIf {
+        runtimeZipTaskNames.collect { tasks.findByName(it) }
+            .findAll { it != null && it.state.executed }
+            .every { it.state.failure == null }
+    }
 
     doFirst {
         versionsDir.mkdirs()
@@ -436,10 +444,10 @@ tasks.register('archiveVersion', Copy) {
     }
 }
 
-//Hook the archive task onto every runtimeZip* task as a finalizer so it runs
-//automatically after each build, even if the runtimeZip task fails partway through.
+//Run the archive finalizer after each runtime build. archiveVersion's onlyIf guard skips copying when
+//the producing runtime task failed, preventing stale or partial zips from being archived.
 afterEvaluate {
-    ['runtimeZipCurrent', 'runtimeZipWindows', 'runtimeZipOthers'].each { name ->
+    runtimeZipTaskNames.each { name ->
         def t = tasks.findByName(name)
         if (t != null) {
             t.finalizedBy('archiveVersion')

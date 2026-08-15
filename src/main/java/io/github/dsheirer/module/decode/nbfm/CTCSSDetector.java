@@ -50,13 +50,6 @@ public class CTCSSDetector
     private static final float DETECTION_THRESHOLD_DB = 6.0f;
 
     /**
-     * Frequency cutoff for the spectral leakage preference logic.
-     * Below this frequency, closely-spaced Goertzel bins cause significant leakage,
-     * so we allow preferring a nearby target bin over the peak bin if within 2 dB.
-     */
-    private static final float LOW_FREQ_NARROWBAND_CUTOFF = 120.0f;
-
-    /**
      * Number of consecutive detections required before reporting a match.
      * Prevents false triggers from transient energy.
      * 3 blocks at ~75ms each = ~225ms detection latency (within normal radio PL decode time).
@@ -332,45 +325,6 @@ public class CTCSSDetector
         if(maxIndex >= 0 && snrDB > DETECTION_THRESHOLD_DB)
         {
             CTCSSCode detected = mTargetCodeArray[maxIndex];
-
-            // For low-frequency tones, spectral leakage can cause a neighboring non-target bin
-            // to narrowly beat the actual target bin. If a target tone is within 2 bins of the
-            // winner and within 2 dB, prefer the target tone — it's almost certainly the real tone.
-            if(!mTargetCodes.contains(detected) && mTargetFrequencies[maxIndex] <= LOW_FREQ_NARROWBAND_CUTOFF)
-            {
-                for(int offset = 1; offset <= 2; offset++)
-                {
-                    int belowIdx = maxIndex - offset;
-                    int aboveIdx = maxIndex + offset;
-
-                    if(belowIdx >= 0 && mTargetCodes.contains(mTargetCodeArray[belowIdx]))
-                    {
-                        float diffDB = (float)(10.0 * Math.log10((maxPower / (powers[belowIdx] + 1e-10f)) + 1e-10));
-                        if(diffDB < 2.0f)
-                        {
-                            LOGGER.trace("{}CTCSS preferring target {} over winner {} (diff={} dB)",
-                                    mChannelLabel, mTargetCodeArray[belowIdx], detected, String.format("%.1f", diffDB));
-                            detected = mTargetCodeArray[belowIdx];
-                            maxIndex = belowIdx;
-                            maxPower = powers[belowIdx];
-                            break;
-                        }
-                    }
-                    if(aboveIdx < mTargetCodeArray.length && mTargetCodes.contains(mTargetCodeArray[aboveIdx]))
-                    {
-                        float diffDB = (float)(10.0 * Math.log10((maxPower / (powers[aboveIdx] + 1e-10f)) + 1e-10));
-                        if(diffDB < 2.0f)
-                        {
-                            LOGGER.trace("{}CTCSS preferring target {} over winner {} (diff={} dB)",
-                                    mChannelLabel, mTargetCodeArray[aboveIdx], detected, String.format("%.1f", diffDB));
-                            detected = mTargetCodeArray[aboveIdx];
-                            maxIndex = aboveIdx;
-                            maxPower = powers[aboveIdx];
-                            break;
-                        }
-                    }
-                }
-            }
 
             // Log at DEBUG only on confirmation transitions; TRACE for every block
             if(mConfirmationCounter < CONFIRMATION_COUNT ||
