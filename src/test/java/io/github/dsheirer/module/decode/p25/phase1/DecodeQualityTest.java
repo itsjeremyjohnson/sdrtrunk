@@ -68,7 +68,16 @@ import org.w3c.dom.NodeList;
  */
 public class DecodeQualityTest
 {
-    record ChannelConfig(String name, String system, String site, long frequency, String modulation, int nac, String preferredTuner) {}
+    record ChannelConfig(String name, String system, String site, long frequency, String modulation, int nac,
+                         String preferredTuner, int maxBchErrors)
+    {
+        ChannelConfig(String name, String system, String site, long frequency, String modulation, int nac,
+                      String preferredTuner)
+        {
+            this(name, system, site, frequency, modulation, nac, preferredTuner,
+                    DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT);
+        }
+    }
     record DecodeResult(int lduCount, int validMessages, int totalMessages, int syncBlockedCount, int bitErrors, int syncLosses, double signalSeconds, double totalFileSeconds, IMBEDiagSummary diagSummary) {}
     record IMBEDiagSummary(int totalFrames, int totalErrors, int uncorrectableFrames, int invalidFundamentals,
                            double avgErrorsPerFrame, int maxFrameErrors, int[] errorDistribution) {}
@@ -94,7 +103,7 @@ public class DecodeQualityTest
         String forceMod = null;
         int forceNac = -1;
         boolean diagEnabled = false;
-        int maxBchErrors = 11; // Default: no filtering
+        int maxBchErrorsOverride = -1; // Use each channel's production playlist setting unless explicitly overridden
         int maxImbeErrors = -1; // Default: no quality gate (-1 = disabled)
         int segmentGapMs = 500; // Default: segment on 500ms gaps
         float silenceThreshold = 0.01f; // RMS threshold for decode-failure silence
@@ -117,7 +126,7 @@ public class DecodeQualityTest
                 case "--force-nac" -> forceNac = Integer.parseInt(args[++i]);
                 case "--diag" -> diagEnabled = true;
                 case "--verbose" -> verbose = true;
-                case "--max-bch-errors" -> maxBchErrors = Integer.parseInt(args[++i]);
+                case "--max-bch-errors" -> maxBchErrorsOverride = Integer.parseInt(args[++i]);
                 case "--max-imbe-errors" -> maxImbeErrors = Integer.parseInt(args[++i]);
                 case "--segment-gap" -> segmentGapMs = Integer.parseInt(args[++i]);
                 case "--silence-threshold" -> silenceThreshold = Float.parseFloat(args[++i]);
@@ -179,6 +188,7 @@ public class DecodeQualityTest
             String channelName = config != null ? config.name() : "Unknown";
             String modulation = forceMod != null ? forceMod : (config != null ? config.modulation() : "C4FM");
             int nac = forceNac >= 0 ? forceNac : (config != null ? config.nac() : -1);
+            int maxBchErrors = effectiveMaxBchErrors(maxBchErrorsOverride, config);
             String sampleId = sampleIdentifier(Paths.get(samplesDir), bbFile.toPath());
             String tuner = config != null ? config.preferredTuner() : "N/A";
             String system = config != null ? config.system() : "";
@@ -750,6 +760,23 @@ public class DecodeQualityTest
         return explicitTerminator || isSegmentBoundary(previousTimestamp, currentTimestamp, segmentGapMs);
     }
 
+    static int effectiveMaxBchErrors(int override, ChannelConfig config)
+    {
+        if(override >= 0)
+        {
+            return override;
+        }
+
+        return config != null ? config.maxBchErrors() : DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT;
+    }
+
+    static boolean isCallEndingTerminator(String modulation, P25P1DataUnitID duid)
+    {
+        boolean terminator = duid == P25P1DataUnitID.TERMINATOR_DATA_UNIT ||
+                duid == P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL;
+        return terminator && ("C4FM".equals(modulation) || "C4FM_V2".equals(modulation));
+    }
+
     static AudioResult decodeAudio(File file, String modulation, int nac, TestJmbeCodecLoader codec, Path audioDir, int maxBchErrors, int maxImbeErrors, int segmentGapMs, float silenceThreshold, int silenceMinMs, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
     {
         List<float[]> audioBuffers = new ArrayList<>();
@@ -791,8 +818,7 @@ public class DecodeQualityTest
             {
                 encryptionState.updateFromLdu2(ldu2.getEncryptionSyncParameters().isEncryptedAudio());
             }
-            else if(p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT ||
-                    p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL)
+            else if(isCallEndingTerminator(modulation, p25Message.getDUID()))
             {
                 encryptionState.reset();
                 unresolvedLdus.clear();
@@ -1276,6 +1302,17 @@ public class DecodeQualityTest
             {
                 try { nac = Integer.parseInt(dc.getAttribute("configuredNAC")); } catch(NumberFormatException e) {}
             }
+            int maxBchErrors = DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT;
+            if(dc.hasAttribute("maxBchErrors"))
+            {
+                try
+                {
+                    maxBchErrors = Math.max(DecodeConfigP25Phase1.MAX_BCH_ERRORS_MINIMUM,
+                            Math.min(Integer.parseInt(dc.getAttribute("maxBchErrors")),
+                                    DecodeConfigP25Phase1.MAX_BCH_ERRORS_MAXIMUM));
+                }
+                catch(NumberFormatException e) {}
+            }
 
             NodeList sourceConfigs = ch.getElementsByTagName("source_configuration");
             if(sourceConfigs.getLength() == 0 || modulation == null || modulation.isEmpty()) continue;
@@ -1306,7 +1343,8 @@ public class DecodeQualityTest
 
             for(long frequency : frequencies)
             {
-                configs.add(new ChannelConfig(name, system, site, frequency, modulation, nac, preferredTuner));
+                configs.add(new ChannelConfig(name, system, site, frequency, modulation, nac, preferredTuner,
+                        maxBchErrors));
             }
         }
 

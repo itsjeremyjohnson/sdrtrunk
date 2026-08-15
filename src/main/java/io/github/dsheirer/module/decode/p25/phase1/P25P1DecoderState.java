@@ -1155,7 +1155,11 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 resetEncryptionConfirmation();
             }
 
-            mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDU:" + message);
+            if(isTDUCallEnd())
+            {
+                mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(),
+                        "TDU:" + message);
+            }
 
             // Fix D: Modulation-aware TDU transition
             // System property p25.tdu.fade.c4fm: true = C4FM TDU triggers FADE (default), false = disabled
@@ -1192,7 +1196,11 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                     resetEncryptionConfirmation();
                 }
 
-                mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDULC:" + message);
+                if(isTDUCallEnd())
+                {
+                    mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(),
+                            "TDULC:" + message);
+                }
                 broadcastTDUStateEvent();
             }
 

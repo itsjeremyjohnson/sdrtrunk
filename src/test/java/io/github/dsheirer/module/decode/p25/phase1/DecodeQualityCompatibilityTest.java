@@ -21,8 +21,10 @@ import org.junit.jupiter.api.Test;
 import org.xml.sax.InputSource;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class DecodeQualityCompatibilityTest
 {
@@ -80,6 +82,39 @@ class DecodeQualityCompatibilityTest
         assertEquals(2, configs.size());
         assertEquals("Rotating", DecodeQualityTest.findChannel(configs, 851012500).name());
         assertEquals("Rotating", DecodeQualityTest.findChannel(configs, 852012500).name());
+        assertEquals(DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT, configs.getFirst().maxBchErrors());
+    }
+
+    @Test
+    void scoringUsesPlaylistBchThresholdUnlessOverridden() throws Exception
+    {
+        String xml = """
+                <playlist>
+                  <channel name="Configured" system="System" site="Site">
+                    <decode_configuration type="decodeConfigP25Phase1" modulation="C4FM" maxBchErrors="7"/>
+                    <source_configuration type="sourceConfigTuner" frequency="155000000"/>
+                  </channel>
+                </playlist>
+                """;
+        var document = DocumentBuilderFactory.newInstance().newDocumentBuilder()
+                .parse(new InputSource(new StringReader(xml)));
+        DecodeQualityTest.ChannelConfig config = DecodeQualityTest.parsePlaylist(document).getFirst();
+
+        assertEquals(7, DecodeQualityTest.effectiveMaxBchErrors(-1, config));
+        assertEquals(3, DecodeQualityTest.effectiveMaxBchErrors(3, config));
+        assertEquals(DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT,
+                DecodeQualityTest.effectiveMaxBchErrors(-1, null));
+    }
+
+    @Test
+    void fullScoringIgnoresFalseCqpskTerminators()
+    {
+        assertFalse(DecodeQualityTest.isCallEndingTerminator("CQPSK", P25P1DataUnitID.TERMINATOR_DATA_UNIT));
+        assertFalse(DecodeQualityTest.isCallEndingTerminator("CQPSK_V2",
+                P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL));
+        assertTrue(DecodeQualityTest.isCallEndingTerminator("C4FM", P25P1DataUnitID.TERMINATOR_DATA_UNIT));
+        assertTrue(DecodeQualityTest.isCallEndingTerminator("C4FM_V2",
+                P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL));
     }
 
     @Test
