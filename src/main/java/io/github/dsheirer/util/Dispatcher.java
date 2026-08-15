@@ -186,18 +186,24 @@ public class Dispatcher<E> implements Listener<E>
                 executorService.shutdown();
                 mExecutorService = null;
 
-                try
+                boolean interrupted = false;
+                boolean terminated = false;
+
+                while(!terminated)
                 {
-                    if(executorService.awaitTermination(2, TimeUnit.SECONDS))
+                    try
                     {
-                        mFlushOnStop.set(false);
+                        terminated = executorService.awaitTermination(2, TimeUnit.SECONDS);
                     }
-                    else
+                    catch(InterruptedException e)
                     {
-                        mLog.warn("Timed out waiting for dispatcher [{}] to finish its in-flight batch", mThreadName);
+                        interrupted = true;
                     }
                 }
-                catch(InterruptedException e)
+
+                mFlushOnStop.set(false);
+
+                if(interrupted)
                 {
                     Thread.currentThread().interrupt();
                 }

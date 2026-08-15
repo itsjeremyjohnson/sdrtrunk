@@ -12,16 +12,21 @@ package io.github.dsheirer.record.wave;
 
 import io.github.dsheirer.sample.complex.ComplexSamples;
 import io.github.dsheirer.source.SourceEvent;
+import io.github.dsheirer.util.Dispatcher;
 import java.io.IOException;
+import java.lang.reflect.Field;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import javax.sound.sampled.AudioFormat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class ActivityTriggeredWaveRecorderTest
 {
@@ -66,6 +71,40 @@ class ActivityTriggeredWaveRecorderTest
         recorder.stop();
 
         assertEquals(1, findRecordings().size());
+    }
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void stopWaitsForSlowInFlightRecorderBatch() throws Exception
+    {
+        ActivityTriggeredWaveRecorder recorder = createRecorder();
+        recorder.start();
+        Field field = ActivityTriggeredWaveRecorder.class.getDeclaredField("mBufferProcessor");
+        field.setAccessible(true);
+        Dispatcher<Object> dispatcher = (Dispatcher<Object>)field.get(recorder);
+        CountDownLatch processingStarted = new CountDownLatch(1);
+        CountDownLatch releaseProcessing = new CountDownLatch(1);
+        dispatcher.setListener(ignored -> {
+            processingStarted.countDown();
+            try
+            {
+                releaseProcessing.await(5, TimeUnit.SECONDS);
+            }
+            catch(InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+            }
+        });
+        recorder.receive(createActiveSamples(64));
+        assertTrue(processingStarted.await(2, TimeUnit.SECONDS));
+
+        Thread stopThread = Thread.ofPlatform().start(recorder::stop);
+        stopThread.join(2200);
+        assertTrue(stopThread.isAlive());
+
+        releaseProcessing.countDown();
+        stopThread.join(2000);
+        assertEquals(false, stopThread.isAlive());
     }
 
     @Test

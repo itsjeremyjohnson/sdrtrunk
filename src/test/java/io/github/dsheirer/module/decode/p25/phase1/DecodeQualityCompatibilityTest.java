@@ -232,6 +232,53 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void historicalCorrectionFlagsDefaultToFalse()
+    {
+        assertEquals(false, DecodeQualityTest.optionalBooleanFlag(new HistoricalLdu(), "isDuidCorrected"));
+        assertEquals(false, DecodeQualityTest.optionalBooleanFlag(new HistoricalLdu(),
+                "isDuidCorrectedDuringActiveSignal"));
+        assertEquals(true, DecodeQualityTest.optionalBooleanFlag(new CurrentLduFlags(), "isDuidCorrected"));
+    }
+
+    @Test
+    void fullScoringAlwaysGatesUncorrectableCodewords()
+    {
+        io.github.dsheirer.module.decode.p25.phase1.message.ldu.IMBEFrameDiagnostic.FrameErrors uncorrectable =
+                new io.github.dsheirer.module.decode.p25.phase1.message.ldu.IMBEFrameDiagnostic.FrameErrors(
+                        new int[]{4, 0, 0, 0, 0, 0, 0}, 4, 1, true);
+
+        assertEquals(true, DecodeQualityTest.shouldGateScoringFrame(uncorrectable, 4, false));
+        assertEquals(true, DecodeQualityTest.shouldGateScoringFrame(uncorrectable, 10, true));
+    }
+
+    @Test
+    void unresolvedLdusReplayWhenClearStateIsEstablished()
+    {
+        List<Integer> cached = new java.util.ArrayList<>();
+        List<Integer> decoded = new java.util.ArrayList<>();
+        DecodeQualityTest.cacheWhileEncryptionUnknown(cached, 1, 4);
+        DecodeQualityTest.cacheWhileEncryptionUnknown(cached, 2, 4);
+
+        DecodeQualityTest.replayCached(cached, decoded::add);
+        decoded.add(3);
+
+        assertEquals(List.of(1, 2, 3), decoded);
+        assertEquals(List.of(), cached);
+    }
+
+    @Test
+    void unresolvedLduCacheUsesProductionBound()
+    {
+        List<Integer> cached = new java.util.ArrayList<>();
+        for(int value = 1; value <= 4; value++)
+        {
+            DecodeQualityTest.cacheWhileEncryptionUnknown(cached, value, 4);
+        }
+
+        assertEquals(List.of(), cached);
+    }
+
+    @Test
     void fullScoringWaitsForEncryptionStateBeforeDecoding()
     {
         DecodeQualityTest.ScoringEncryptionState state = new DecodeQualityTest.ScoringEncryptionState(2);
@@ -258,6 +305,18 @@ class DecodeQualityCompatibilityTest
 
         assertDoesNotThrow(() -> DecodeQualityTest.configureDecoder(decoder, 0x293, 3));
         assertEquals(0, decoder.getCalls());
+    }
+
+    public static class HistoricalLdu
+    {
+    }
+
+    public static class CurrentLduFlags
+    {
+        public boolean isDuidCorrected()
+        {
+            return true;
+        }
     }
 
     public static class ConfigurableDecoder

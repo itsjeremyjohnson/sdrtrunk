@@ -51,6 +51,8 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.Consumer;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -683,6 +685,11 @@ public class DecodeQualityTest
             return DecodeQualityTest.shouldDecodeAudio(mEstablished, mEncrypted);
         }
 
+        boolean isEstablished()
+        {
+            return mEstablished;
+        }
+
         void reset()
         {
             mConsecutiveEncryptedLdu2 = 0;
@@ -694,6 +701,35 @@ public class DecodeQualityTest
     static boolean shouldSuppressCorrectedLdu(boolean duidCorrected, boolean correctedDuringActiveSignal)
     {
         return duidCorrected && !correctedDuringActiveSignal;
+    }
+
+    static boolean optionalBooleanFlag(Object target, String methodName)
+    {
+        return Boolean.TRUE.equals(invokeOptionalResult(target, methodName));
+    }
+
+    static boolean shouldGateScoringFrame(IMBEFrameDiagnostic.FrameErrors frameErrors, int maxImbeErrors,
+                                          boolean adaptiveGateDisabled)
+    {
+        return frameErrors.uncorrectableCount() > 0 ||
+                (frameErrors.totalErrors() > maxImbeErrors && !adaptiveGateDisabled);
+    }
+
+    static <T> void cacheWhileEncryptionUnknown(List<T> cached, T value, int limit)
+    {
+        cached.add(value);
+
+        if(limit > 0 && cached.size() >= limit)
+        {
+            cached.clear();
+        }
+    }
+
+    static <T> void replayCached(List<T> cached, Consumer<T> consumer)
+    {
+        List<T> replay = new ArrayList<>(cached);
+        cached.clear();
+        replay.forEach(consumer);
     }
 
     static boolean isFireDepartmentChannel(String channelName)
@@ -732,6 +768,9 @@ public class DecodeQualityTest
                 Integer.parseInt(System.getProperty("p25.encrypt.confirm", "2")));
         boolean[] explicitSegmentBoundary = {false};
         long[] lastDecodedLduTimestamp = {0};
+        int unresolvedLduLimit = Integer.parseInt(System.getProperty("p25.cache.fallback", "4"));
+        List<LDUMessage> unresolvedLdus = new ArrayList<>();
+        AtomicReference<Listener<IMessage>> listenerHolder = new AtomicReference<>();
         codec.reset();
 
         Listener<IMessage> listener = msg -> {
@@ -739,6 +778,8 @@ public class DecodeQualityTest
             {
                 return;
             }
+
+            boolean encryptionWasEstablished = encryptionState.isEstablished();
 
             if(msg instanceof HDUMessage hdu && hdu.getHeaderData() != null && hdu.getHeaderData().isValid())
             {
@@ -753,15 +794,32 @@ public class DecodeQualityTest
                     p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL)
             {
                 encryptionState.reset();
+                unresolvedLdus.clear();
                 explicitSegmentBoundary[0] = true;
                 lastDecodedLduTimestamp[0] = 0;
                 codec.reset();
             }
 
+            if(msg instanceof LDUMessage ldu && !encryptionState.isEstablished())
+            {
+                cacheWhileEncryptionUnknown(unresolvedLdus, ldu, unresolvedLduLimit);
+                return;
+            }
+
+            if(msg instanceof LDUMessage && !encryptionWasEstablished && encryptionState.shouldDecodeAudio() &&
+                    !unresolvedLdus.isEmpty())
+            {
+                replayCached(unresolvedLdus, listenerHolder.get()::receive);
+            }
+            else if(msg instanceof LDUMessage && !encryptionState.shouldDecodeAudio())
+            {
+                unresolvedLdus.clear();
+            }
+
             if(msg instanceof LDUMessage ldu && encryptionState.shouldDecodeAudio())
             {
-                boolean suppressCorrectedLdu = shouldSuppressCorrectedLdu(ldu.isDuidCorrected(),
-                        ldu.isDuidCorrectedDuringActiveSignal());
+                boolean suppressCorrectedLdu = shouldSuppressCorrectedLdu(optionalBooleanFlag(ldu, "isDuidCorrected"),
+                        optionalBooleanFlag(ldu, "isDuidCorrectedDuringActiveSignal"));
                 long timestamp = p25Message.getTimestamp();
                 boolean startsSegment = startsAudioSegment(explicitSegmentBoundary[0],
                         lastDecodedLduTimestamp[0], timestamp, segmentGapMs);
@@ -817,7 +875,7 @@ public class DecodeQualityTest
                             adaptivePass[0] = 0;
                         }
 
-                        if(exceedsThreshold && !adaptiveDisabled[0])
+                        if(shouldGateScoringFrame(fe, maxImbeErrors, adaptiveDisabled[0]))
                         {
                             gatedFrames[0]++;
                             consecutiveGated[0]++;
@@ -865,6 +923,7 @@ public class DecodeQualityTest
                 }
             }
         };
+        listenerHolder.set(listener);
 
         try(TestComplexWaveSource source = new TestComplexWaveSource(file))
         {

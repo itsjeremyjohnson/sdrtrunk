@@ -49,19 +49,11 @@ def load_metrics(path):
 
 def get_mp3_duration(mp3_path):
     """Get duration of an MP3 file in seconds."""
-    if HAS_PYDUB:
-        try:
-            audio = AudioSegment.from_mp3(mp3_path)
-            return len(audio) / 1000.0
-        except Exception:
-            pass
+    if not HAS_PYDUB:
+        raise RuntimeError("pydub is required to decode MP3 duration")
 
-    # Fallback: estimate from file size (16kbps CBR MP3 = 2000 bytes/sec)
-    try:
-        size = os.path.getsize(mp3_path)
-        return size / 2000.0
-    except Exception:
-        return 0.0
+    audio = AudioSegment.from_mp3(mp3_path)
+    return len(audio) / 1000.0
 
 
 def analyze_audio_directory(audio_dir, enable_stt=False, stt_model="tiny"):
@@ -157,6 +149,14 @@ def completed_tone_run_count(sustained_tone_windows):
     return 1 if sustained_tone_windows >= 2 else 0
 
 
+def advance_tone_run(sustained_tone_windows, last_peak_freq, peak_freq):
+    """Advance a tone run and complete a sustained run when the dominant frequency changes."""
+    if last_peak_freq is not None and abs(peak_freq - last_peak_freq) < 20:
+        return 0, sustained_tone_windows + 1, peak_freq
+
+    return completed_tone_run_count(sustained_tone_windows), 1, peak_freq
+
+
 def detect_tones_and_distortion(mp3_files):
     """
     Detect dispatch tones and distortion events in audio segments.
@@ -215,11 +215,9 @@ def detect_tones_and_distortion(mp3_files):
                 # Check if dominant frequency is a clear tone (high peak-to-average ratio)
                 avg_mag = np.mean(tone_magnitudes)
                 if avg_mag > 0 and peak_mag / avg_mag > 8.0:
-                    if last_peak_freq is not None and abs(peak_freq - last_peak_freq) < 20:
-                        sustained_tone_windows += 1
-                    else:
-                        sustained_tone_windows = 1
-                    last_peak_freq = peak_freq
+                    completed, sustained_tone_windows, last_peak_freq = advance_tone_run(
+                        sustained_tone_windows, last_peak_freq, peak_freq)
+                    tone_count += completed
                 else:
                     # Check for distortion: broadband energy spike
                     high_freq_mask = freqs > 3000

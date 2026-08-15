@@ -105,12 +105,14 @@ class DispatcherTest
 
         assertTrue(firstElementStarted.await(2, TimeUnit.SECONDS));
         Thread stopThread = Thread.ofPlatform().start(dispatcher::flushAndStop);
-        stopThread.join(3000);
-        assertEquals(false, stopThread.isAlive());
+        stopThread.join(2200);
+        assertTrue(stopThread.isAlive());
 
         releaseFirstElement.countDown();
 
         assertTrue(secondElementDelivered.await(2, TimeUnit.SECONDS));
+        stopThread.join(2000);
+        assertEquals(false, stopThread.isAlive());
         assertEquals(List.of(1, 2), received);
     }
 

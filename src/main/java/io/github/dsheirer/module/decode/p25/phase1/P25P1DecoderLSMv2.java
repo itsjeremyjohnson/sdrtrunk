@@ -278,10 +278,13 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
             if(mInSilence)
             {
                 mNoiseFloorSampleCount++;
+                boolean establishedFloorRise = mStartupClassificationComplete && mNoiseFloor > 0 &&
+                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO;
                 mNoiseFloor += (mEnergyAverage - mNoiseFloor) * 0.001f;
 
-                boolean learnedFloorRise = mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
-                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO;
+                boolean learnedFloorRise = establishedFloorRise ||
+                        (mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
+                                mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO);
                 boolean startupClassification = !mStartupClassificationComplete &&
                         mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold;
                 boolean startupSignal = startupClassification && mEnergyAverage >= STARTUP_SIGNAL_ENERGY;
