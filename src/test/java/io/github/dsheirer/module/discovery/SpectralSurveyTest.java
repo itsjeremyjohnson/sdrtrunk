@@ -210,10 +210,16 @@ class SpectralSurveyTest
     }
 
     @Test
-    void findPeaks_throwsOnNonPositiveBaseFreq()
+    void findPeaks_negativeNominalBaseKeepsTruePositiveCenters()
     {
-        assertThrows(IllegalArgumentException.class, () ->
-            SpectralSurvey.findPeaks(new float[]{-80.0f, -50.0f}, BIN_WIDTH_HZ, 0L, THRESHOLD_DB));
+        float[] magnitudes = makeFlat(20, -100.0f);
+        magnitudes[3] = -50.0f;  // negative-frequency run, discarded
+        magnitudes[12] = -50.0f; // positive-frequency run, retained at 7 kHz
+
+        List<EnergyPeak> peaks = SpectralSurvey.findPeaks(magnitudes, 1_000L, -5_000L, THRESHOLD_DB);
+
+        assertEquals(1, peaks.size());
+        assertEquals(7_000L, peaks.get(0).centerFrequencyHz());
     }
 
     @Test
@@ -497,6 +503,24 @@ class SpectralSurveyTest
         assertTrue(tunerControl.getSetFreqCallCount() >= 3,
             "Should issue at least 3 setCenterFreqHz calls (steps + restore); got "
                 + tunerControl.getSetFreqCallCount());
+    }
+
+    @Test
+    @Timeout(10)
+    void survey_steppedPath_appliesConfiguredDwellPerStep() throws Exception
+    {
+        FakeTunerControl tunerControl = new FakeTunerControl(160_000_000L, 2_000_000.0);
+        SpectralSurvey survey = new SpectralSurvey(mExecutor);
+        Duration dwell = Duration.ofMillis(120);
+
+        long started = System.nanoTime();
+        survey.survey(158_000_000L, 162_000_000L, dwell, 6.0, null, tunerControl)
+            .get(8, java.util.concurrent.TimeUnit.SECONDS);
+        long elapsedMillis = java.util.concurrent.TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+        int sweepSteps = tunerControl.getSetFreqCallCount() - 1; // exclude original-center restore
+
+        assertTrue(elapsedMillis >= sweepSteps * dwell.toMillis(),
+            "Configured dwell must apply independently to every sweep step");
     }
 
     @Test

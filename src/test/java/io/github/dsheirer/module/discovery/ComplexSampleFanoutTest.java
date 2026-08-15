@@ -26,6 +26,8 @@ import io.github.dsheirer.source.SourceException;
 import io.github.dsheirer.sample.Listener;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -175,6 +177,43 @@ class ComplexSampleFanoutTest
 
         assertEquals(1, receivedA.size(), "Subscriber A should have received only 1 buffer after removal");
         assertEquals(2, receivedB.size(), "Subscriber B should still receive all 2 buffers");
+    }
+
+    @Test
+    void removalWaitsForInFlightDelivery() throws Exception
+    {
+        ComplexSource subscriber = mFanout.newSubscriberSource();
+        CountDownLatch entered = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean removed = new AtomicBoolean(false);
+        subscriber.setListener(samples ->
+        {
+            entered.countDown();
+            try
+            {
+                release.await();
+            }
+            catch(InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+            }
+        });
+
+        Thread delivery = new Thread(() -> mRealSource.pushSamples(makeSamples()));
+        delivery.start();
+        assertTrue(entered.await(1, TimeUnit.SECONDS));
+        Thread removal = new Thread(() ->
+        {
+            mFanout.removeSubscriberSource(subscriber);
+            removed.set(true);
+        });
+        removal.start();
+        Thread.sleep(50);
+        assertFalse(removed.get(), "Removal must wait until captured delivery completes");
+        release.countDown();
+        delivery.join(1_000);
+        removal.join(1_000);
+        assertTrue(removed.get());
     }
 
     // -------------------------------------------------------------------------

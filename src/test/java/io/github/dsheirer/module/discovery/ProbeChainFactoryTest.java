@@ -19,6 +19,7 @@
 package io.github.dsheirer.module.discovery;
 
 import io.github.dsheirer.alias.AliasModel;
+import io.github.dsheirer.alias.action.AliasActionManager;
 import io.github.dsheirer.audio.AbstractAudioModule;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.ChannelEvent;
@@ -28,6 +29,8 @@ import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.PrimaryDecoder;
+import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
+import io.github.dsheirer.module.decode.p25.phase1.Modulation;
 import io.github.dsheirer.module.decode.traffic.TrafficChannelManager;
 import io.github.dsheirer.module.log.EventLogger;
 import io.github.dsheirer.preference.UserPreferences;
@@ -35,6 +38,7 @@ import io.github.dsheirer.record.binary.BinaryRecorder;
 import io.github.dsheirer.record.wave.ComplexSamplesWaveRecorder;
 import io.github.dsheirer.channel.state.AbstractChannelState;
 import io.github.dsheirer.sample.Listener;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -252,6 +256,26 @@ class ProbeChainFactoryTest
         ProbeChain chain = mFactory.build(DecoderType.P25_PHASE1);
         assertFalse(chain.chain().getModules().stream().anyMatch(m -> m instanceof AbstractAudioModule),
             "P25_PHASE1 probe chain must not contain audio modules");
+        chain.chain().dispose();
+    }
+
+    @Test
+    void p25Phase1_buildsBothModulationVariants()
+    {
+        var chains = mFactory.buildAll(DecoderType.P25_PHASE1);
+        assertEquals(List.of(Modulation.C4FM, Modulation.CQPSK), chains.stream()
+            .map(ProbeChain::decodeConfiguration)
+            .map(DecodeConfigP25Phase1.class::cast)
+            .map(DecodeConfigP25Phase1::getModulation)
+            .toList());
+        chains.forEach(chain -> chain.chain().dispose());
+    }
+
+    @Test
+    void probeChainsDoNotContainAliasActionManager()
+    {
+        ProbeChain chain = mFactory.build(DecoderType.NBFM);
+        assertFalse(chain.chain().getModules().stream().anyMatch(AliasActionManager.class::isInstance));
         chain.chain().dispose();
     }
 }

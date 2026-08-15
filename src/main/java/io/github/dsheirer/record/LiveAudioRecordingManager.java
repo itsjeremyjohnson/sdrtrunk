@@ -45,9 +45,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -202,14 +204,9 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
             return;
         }
 
-        if(isRecording())
-        {
-            mNewAudioSegments.add(audioSegment);
-        }
-        else
-        {
-            audioSegment.decrementConsumerCount();
-        }
+        // Retain incomplete calls even while recording is off so a call already visible in
+        // Now Playing can be captured if the operator starts a session before it completes.
+        mNewAudioSegments.add(audioSegment);
     }
 
     /**
@@ -230,23 +227,45 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
         }
 
         boolean recording = isRecording() || includeIncomplete;
+        Set<String> blockedKeys = new HashSet<>();
         var iterator = mAudioSegments.iterator();
 
         while(iterator.hasNext())
         {
             AudioSegment audioSegment = iterator.next();
+            LiveRecordingKey key = LiveRecordingKey.from(audioSegment.getIdentifierCollection(),
+                audioSegment.getTimeslot());
 
-            if(!recording || audioSegment.isComplete() || includeIncomplete)
+            if(!recording)
             {
-                iterator.remove();
-
-                if(recording && shouldRecord(audioSegment))
+                if(audioSegment.isComplete())
                 {
-                    record(audioSegment);
+                    iterator.remove();
+                    audioSegment.decrementConsumerCount();
                 }
-
-                audioSegment.decrementConsumerCount();
+                continue;
             }
+
+            if(!audioSegment.isComplete() && !includeIncomplete)
+            {
+                blockedKeys.add(key.key());
+                continue;
+            }
+
+            // A later segment for the same writer must wait behind an earlier incomplete call.
+            if(blockedKeys.contains(key.key()))
+            {
+                continue;
+            }
+
+            iterator.remove();
+
+            if(shouldRecord(audioSegment))
+            {
+                record(audioSegment, key);
+            }
+
+            audioSegment.decrementConsumerCount();
         }
     }
 
@@ -259,9 +278,8 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
                 mUserPreferences.getCallManagementPreference().isDuplicatePlaybackSuppressionEnabled());
     }
 
-    private void record(AudioSegment audioSegment)
+    private void record(AudioSegment audioSegment, LiveRecordingKey key)
     {
-        LiveRecordingKey key = LiveRecordingKey.from(audioSegment.getIdentifierCollection(), audioSegment.getTimeslot());
         LiveRecordingWriter writer = mWriters.get(key.key());
 
         if(writer == null)

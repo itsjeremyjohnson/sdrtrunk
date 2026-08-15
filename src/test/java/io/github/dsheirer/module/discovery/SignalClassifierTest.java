@@ -27,6 +27,8 @@ import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog.Bandwidth;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
+import io.github.dsheirer.module.decode.p25.phase1.Modulation;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.discovery.DiscoveryPreference;
 import io.github.dsheirer.sample.Listener;
@@ -242,9 +244,52 @@ class SignalClassifierTest
             return pc;
         }
 
+        @Override
+        public List<ProbeChain> buildAll(DecoderType decoderType)
+        {
+            return List.of(build(decoderType));
+        }
+
         List<ProbeChain> getBuiltChains()
         {
             return mBuilt;
+        }
+    }
+
+    static class P25VariantProbeChainFactory extends ProbeChainFactory
+    {
+        P25VariantProbeChainFactory()
+        {
+            super(new AliasModel(), new ChannelMapModel(), new UserPreferences());
+        }
+
+        @Override
+        public List<ProbeChain> buildAll(DecoderType decoderType)
+        {
+            DecodeConfigP25Phase1 c4fm = new DecodeConfigP25Phase1();
+            c4fm.setModulation(Modulation.C4FM);
+            DecodeConfigP25Phase1 cqpsk = new DecodeConfigP25Phase1();
+            cqpsk.setModulation(Modulation.CQPSK);
+            LockWatcher unlocked = new LockWatcher();
+            LockWatcher locked = new LockWatcher();
+            for(int i = 0; i < LockWatcher.LOCK_DEBOUNCE_COUNT - 1; i++)
+            {
+                locked.getDecoderStateListener().receive(new DecoderStateEvent(this,
+                    DecoderStateEvent.Event.NOTIFICATION_CHANNEL_STATE, State.CONTROL));
+            }
+            try
+            {
+                Thread.sleep(LockWatcher.LOCK_DEBOUNCE_MS + 50);
+            }
+            catch(InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+            }
+            locked.getDecoderStateListener().receive(new DecoderStateEvent(this,
+                DecoderStateEvent.Event.NOTIFICATION_CHANNEL_STATE, State.CONTROL));
+            return List.of(
+                new ProbeChain(decoderType, c4fm, new CountingChain(), unlocked, null),
+                new ProbeChain(decoderType, cqpsk, new CountingChain(), locked, null));
         }
     }
 
@@ -285,6 +330,22 @@ class SignalClassifierTest
             DecoderType.NBFM, 25_000);
 
         assertEquals(Bandwidth.BW_25_0, configuration.getBandwidth());
+    }
+
+    @Test
+    @Timeout(15)
+    void classify_p25CqpskLocks_retainsWinningModulation() throws Exception
+    {
+        FakeComplexSource fakeSource = new FakeComplexSource();
+        ClassificationRequest request = new ClassificationRequest(FREQ, 12_500,
+            EnumSet.of(DecoderType.P25_PHASE1), Duration.ofSeconds(10), false, "p25-variants");
+
+        ClassificationResult result = buildClassifier((config, spec, name) -> fakeSource,
+            new P25VariantProbeChainFactory()).classify(request).get();
+
+        assertEquals(ClassificationOutcome.IDENTIFIED, result.outcome());
+        assertEquals(Modulation.CQPSK,
+            ((DecodeConfigP25Phase1)result.bestDecodeConfig()).getModulation());
     }
 
     // -------------------------------------------------------------------------
@@ -549,6 +610,12 @@ class SignalClassifierTest
             mBuilt.add(pc);
             return pc;
         }
+
+        @Override
+        public List<ProbeChain> buildAll(DecoderType decoderType)
+        {
+            return List.of(build(decoderType));
+        }
     }
 
     @Test
@@ -654,6 +721,12 @@ class SignalClassifierTest
             LockWatcher watcher = new LockWatcher(); // stays NONE
             CountingChain chain = new CountingChain();
             return new ProbeChain(decoderType, chain, watcher);
+        }
+
+        @Override
+        public List<ProbeChain> buildAll(DecoderType decoderType)
+        {
+            return List.of(build(decoderType));
         }
     }
 
@@ -773,6 +846,12 @@ class SignalClassifierTest
                 @Override public void stop() { mCurrentlyRunning.decrementAndGet(); super.stop(); }
             };
             return new ProbeChain(decoderType, chain, watcher);
+        }
+
+        @Override
+        public List<ProbeChain> buildAll(DecoderType decoderType)
+        {
+            return List.of(build(decoderType));
         }
     }
 
@@ -903,6 +982,34 @@ class SignalClassifierTest
             "source must be stopped after cancel + interrupt");
     }
 
+    @Test
+    @Timeout(10)
+    void confirmedLockStopsAlreadyActiveLowerPriorityProbe() throws Exception
+    {
+        FakeComplexSource source = new FakeComplexSource();
+        FakeProbeChainFactory factory = new FakeProbeChainFactory(
+            Map.of(DecoderType.P25_PHASE1, LockState.LOCKED),
+            Map.of(DecoderType.P25_PHASE1, SignalKind.CONTROL));
+        DiscoveryPreference prefs = new DiscoveryPreference(t -> {})
+        {
+            @Override public int getMaxConcurrentProbes() { return 2; }
+            @Override public Duration probeWindow(DecoderType dt) { return Duration.ofSeconds(5); }
+        };
+        SignalClassifier classifier = new SignalClassifier((config, spec, name) -> source, factory, prefs, mExecutor);
+        ClassificationRequest request = new ClassificationRequest(FREQ, 12_500,
+            EnumSet.of(DecoderType.P25_PHASE1, DecoderType.DMR), Duration.ofSeconds(8), false, "short-circuit");
+
+        long started = System.nanoTime();
+        ClassificationResult result = classifier.classify(request).get();
+        long elapsedMillis = TimeUnit.NANOSECONDS.toMillis(System.nanoTime() - started);
+
+        assertEquals(DecoderType.P25_PHASE1, result.bestDecoder());
+        assertTrue(elapsedMillis < 3_000, "Lower-priority DMR must not consume its five-second window");
+        ProbeChain dmr = factory.getBuiltChains().stream()
+            .filter(chain -> chain.decoderType() == DecoderType.DMR).findFirst().orElseThrow();
+        assertTrue(((CountingChain)dmr.chain()).stopCount.get() > 0);
+    }
+
     // =========================================================================
     // Energy gate behaviour
     // =========================================================================
@@ -1014,6 +1121,37 @@ class SignalClassifierTest
         assertNotEquals(ClassificationOutcome.NO_SIGNAL, result.outcome(),
             "A steady continuous carrier must not be rejected because temporal power is stable");
         assertFalse(factory.mBuilt.isEmpty(), "Stable energy should proceed to decoder probing");
+    }
+
+    @Test
+    @Timeout(10)
+    void classify_admissionWaitConsumesOverallDeadline() throws Exception
+    {
+        AtomicInteger acquisitions = new AtomicInteger();
+        CountDownLatch firstAcquired = new CountDownLatch(1);
+        SourceProvider provider = (config, spec, name) ->
+        {
+            acquisitions.incrementAndGet();
+            firstAcquired.countDown();
+            return new NoSignalComplexSource();
+        };
+        DiscoveryPreference prefs = new DiscoveryPreference(t -> {})
+        {
+            @Override public int getMaxConcurrentClassifications() { return 1; }
+        };
+        SignalClassifier classifier = new SignalClassifier(provider, new NeverLockProbeChainFactory(), prefs, mExecutor);
+        ClassificationRequest firstRequest = new ClassificationRequest(FREQ, 0, EnumSet.of(DecoderType.NBFM),
+            Duration.ofSeconds(5), false, "admission-holder");
+        ClassificationRequest waitingRequest = new ClassificationRequest(FREQ + 1_000, 0,
+            EnumSet.of(DecoderType.NBFM), Duration.ofMillis(100), false, "admission-timeout");
+
+        CompletableFuture<ClassificationResult> first = classifier.classify(firstRequest);
+        assertTrue(firstAcquired.await(2, TimeUnit.SECONDS));
+        ClassificationResult waiting = classifier.classify(waitingRequest).get(2, TimeUnit.SECONDS);
+
+        assertEquals(ClassificationOutcome.CANCELLED, waiting.outcome());
+        assertEquals(1, acquisitions.get(), "Expired queued work must not acquire a source");
+        first.get(5, TimeUnit.SECONDS);
     }
 
     @Test

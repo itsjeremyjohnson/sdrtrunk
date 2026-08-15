@@ -55,6 +55,7 @@ public class ComplexSampleFanout
 
     private final ComplexSource mRealSource;
     private final CopyOnWriteArrayList<SubscriberSource> mSubscribers = new CopyOnWriteArrayList<>();
+    private final Object mDeliveryLock = new Object();
     private final AtomicBoolean mStopped = new AtomicBoolean(false);
 
     /**
@@ -96,7 +97,10 @@ public class ComplexSampleFanout
      */
     public void removeSubscriberSource(ComplexSource subscriberSource)
     {
-        mSubscribers.remove(subscriberSource);
+        synchronized(mDeliveryLock)
+        {
+            mSubscribers.remove(subscriberSource);
+        }
     }
 
     /**
@@ -125,9 +129,12 @@ public class ComplexSampleFanout
             return;
         }
 
-        for(SubscriberSource sub : mSubscribers)
+        synchronized(mDeliveryLock)
         {
-            sub.deliver(samples);
+            for(SubscriberSource sub : mSubscribers)
+            {
+                sub.deliver(samples);
+            }
         }
     }
 
@@ -138,9 +145,12 @@ public class ComplexSampleFanout
             return;
         }
 
-        for(SubscriberSource sub : mSubscribers)
+        synchronized(mDeliveryLock)
         {
-            sub.deliverSourceEvent(event);
+            for(SubscriberSource sub : mSubscribers)
+            {
+                sub.deliverSourceEvent(event);
+            }
         }
     }
 

@@ -19,7 +19,9 @@
 package io.github.dsheirer.module.discovery;
 
 import io.github.dsheirer.module.ProcessingChain;
+import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.source.ComplexSource;
 
 /**
@@ -31,11 +33,17 @@ import io.github.dsheirer.source.ComplexSource;
  * @param lockWatcher the watcher observing this chain's decoder-state events; must not be null
  * @param source      the fanout subscriber source feeding the probe chain; may be null before launch
  */
-public record ProbeChain(DecoderType decoderType, ProcessingChain chain, LockWatcher lockWatcher, ComplexSource source)
+public record ProbeChain(DecoderType decoderType, DecodeConfiguration decodeConfiguration,
+                         ProcessingChain chain, LockWatcher lockWatcher, ComplexSource source)
 {
     public ProbeChain(DecoderType decoderType, ProcessingChain chain, LockWatcher lockWatcher)
     {
-        this(decoderType, chain, lockWatcher, null);
+        this(decoderType, DecoderFactory.getDecodeConfiguration(decoderType), chain, lockWatcher, null);
+    }
+
+    public ProbeChain(DecoderType decoderType, ProcessingChain chain, LockWatcher lockWatcher, ComplexSource source)
+    {
+        this(decoderType, DecoderFactory.getDecodeConfiguration(decoderType), chain, lockWatcher, source);
     }
 
     /**
@@ -46,6 +54,10 @@ public record ProbeChain(DecoderType decoderType, ProcessingChain chain, LockWat
         if(decoderType == null)
         {
             throw new IllegalArgumentException("decoderType must not be null");
+        }
+        if(decodeConfiguration == null)
+        {
+            throw new IllegalArgumentException("decodeConfiguration must not be null");
         }
         if(chain == null)
         {

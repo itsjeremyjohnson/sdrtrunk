@@ -309,6 +309,27 @@ public class DiscoveryEditor extends BorderPane
         };
     }
 
+    static String detectedLabel(Discovery discovery)
+    {
+        DecoderType decoder = discovery.getDetectedDecoder();
+        SignalKind kind = discovery.getKind();
+
+        if(decoder == null)
+        {
+            return "";
+        }
+
+        String kindLabel = kind == null ? "" : switch(kind)
+        {
+            case CONTROL -> " · control";
+            case DATA -> " · data";
+            case CONVENTIONAL -> " · conventional";
+            case TRAFFIC -> " · traffic";
+            case UNKNOWN -> "";
+        };
+        return decoder.getShortDisplayString() + kindLabel;
+    }
+
     // -------------------------------------------------------------------------
     // Table
     // -------------------------------------------------------------------------
@@ -423,49 +444,10 @@ public class DiscoveryEditor extends BorderPane
         bwCol.setPrefWidth(80);
 
         // --- Column: Detected decoder + kind ---
-        TableColumn<Discovery, DecoderType> decoderCol = new TableColumn<>("Detected");
-        decoderCol.setCellValueFactory(f -> f.getValue().detectedDecoderProperty());
-        decoderCol.setCellFactory(col -> new TableCell<>()
-        {
-            @Override
-            protected void updateItem(DecoderType dt, boolean empty)
-            {
-                super.updateItem(dt, empty);
-
-                if(empty)
-                {
-                    setText(null);
-                    return;
-                }
-
-                int idx = getIndex();
-                if(idx < 0 || idx >= getTableView().getItems().size())
-                {
-                    setText(null);
-                    return;
-                }
-
-                Discovery d = getTableView().getItems().get(idx);
-                SignalKind kind = d.getKind();
-
-                if(dt == null)
-                {
-                    setText(null);
-                    return;
-                }
-
-                String kindStr = kind == null ? "" : switch(kind)
-                {
-                    case CONTROL      -> " · control";
-                    case DATA         -> " · data";
-                    case CONVENTIONAL -> " · conventional";
-                    case TRAFFIC      -> " · traffic";
-                    case UNKNOWN      -> "";
-                };
-
-                setText(dt.getShortDisplayString() + kindStr);
-            }
-        });
+        TableColumn<Discovery, String> decoderCol = new TableColumn<>("Detected");
+        decoderCol.setCellValueFactory(f -> Bindings.createStringBinding(
+            () -> detectedLabel(f.getValue()),
+            f.getValue().detectedDecoderProperty(), f.getValue().kindProperty()));
         decoderCol.setPrefWidth(160);
 
         // --- Column: Confidence pips ---

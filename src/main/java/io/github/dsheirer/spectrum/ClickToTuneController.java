@@ -25,6 +25,7 @@ import io.github.dsheirer.controller.channel.ChannelModel;
 import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.discovery.ClassificationOutcome;
 import io.github.dsheirer.module.discovery.ClassificationRequest;
 import io.github.dsheirer.module.discovery.ClassificationResult;
@@ -397,7 +398,9 @@ public class ClickToTuneController
             if(result.outcome() == ClassificationOutcome.IDENTIFIED)
             {
                 // Swap the existing channel's config and restart it — no model change
-                channel.setDecodeConfiguration(DecoderFactory.getDecodeConfiguration(result.bestDecoder()));
+                DecodeConfiguration detectedConfiguration = DecoderFactory.copy(result.bestDecodeConfig());
+                channel.setDecodeConfiguration(detectedConfiguration != null ? detectedConfiguration :
+                    DecoderFactory.getDecodeConfiguration(result.bestDecoder()));
                 notifySavedChannelChanged(channel);
                 mClickToTuneChannels.add(channel); // defensive, should already be there
                 restartExistingChannel(channel);

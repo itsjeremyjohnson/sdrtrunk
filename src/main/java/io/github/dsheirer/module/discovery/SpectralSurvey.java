@@ -123,11 +123,6 @@ public class SpectralSurvey implements SpectralSurveyApi
      */
     private static final long SETTLE_MS = 100L;
 
-    /**
-     * Minimum per-step dwell in milliseconds.
-     */
-    private static final long MIN_STEP_DWELL_MS = 500L;
-
     private final ExecutorService mExecutor;
 
     // -------------------------------------------------------------------------
@@ -268,7 +263,7 @@ public class SpectralSurvey implements SpectralSurveyApi
      * @param magnitudesDb     array of magnitude values in dB, index 0 = {@code baseFrequencyHz},
      *                         index N-1 = {@code baseFrequencyHz + (N-1) * binWidthHz}
      * @param binWidthHz       width of each frequency bin in Hz; must be &gt; 0
-     * @param baseFrequencyHz  center frequency of the first bin in Hz; must be &gt; 0
+     * @param baseFrequencyHz  nominal center frequency of the first bin in Hz; may be non-positive
      * @param thresholdDb      minimum dB above estimated noise floor for a bin to be included in a peak run
      * @return unmodifiable list of detected {@link EnergyPeak}s, sorted by center frequency ascending
      */
@@ -283,11 +278,6 @@ public class SpectralSurvey implements SpectralSurveyApi
         if(binWidthHz <= 0)
         {
             throw new IllegalArgumentException("binWidthHz must be > 0, got: " + binWidthHz);
-        }
-
-        if(baseFrequencyHz <= 0)
-        {
-            throw new IllegalArgumentException("baseFrequencyHz must be > 0, got: " + baseFrequencyHz);
         }
 
         double noiseFloor = estimateNoiseFloor(magnitudesDb);
@@ -517,9 +507,7 @@ public class SpectralSurvey implements SpectralSurveyApi
             stepCount, (maxHz - minHz) / 1_000_000.0, strideHz / 1_000.0,
             usableBandwidthHz / 1_000_000.0);
 
-        long totalDwellMs = dwell.toMillis();
-        long stepDwellMs = Math.max(MIN_STEP_DWELL_MS, stepCount > 0 ? totalDwellMs / stepCount : totalDwellMs);
-        Duration stepDwell = Duration.ofMillis(stepDwellMs);
+        Duration stepDwell = dwell;
 
         List<EnergyPeak> allPeaks = new ArrayList<>();
 
@@ -707,11 +695,6 @@ public class SpectralSurvey implements SpectralSurveyApi
 
         // After fftshift, bin 0 corresponds to centerHz - sampleRate/2 + binWidth/2
         long baseFrequencyHz = centerHz - (long)(sampleRate / 2.0) + binWidthHz / 2;
-
-        if(baseFrequencyHz <= 0)
-        {
-            baseFrequencyHz = binWidthHz;
-        }
 
         return findPeaksInFrequencyRange(shiftedDb, binWidthHz, baseFrequencyHz, thresholdDb,
             usableMinHz, usableMaxHz);

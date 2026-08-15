@@ -713,7 +713,7 @@ public class BandScanController
             return;
         }
 
-        setState(ScanState.PROBING);
+        setStateIfEpoch(ScanState.PROBING, myEpoch);
 
         List<Discovery> toProbeLater = new ArrayList<>();
 
@@ -737,28 +737,25 @@ public class BandScanController
                 if(existing != null)
                 {
                     // Refresh the matched row before any re-probe uses its geometry.
-                    existing.updateObservation(peak);
                     Instant nowForExisting = Instant.now();
+                    refreshObservation(existing, peak, nowForExisting);
 
                     if(existing.getState() == DiscoveryState.UNIDENTIFIED)
                     {
                         if(existing.isWatched())
                         {
-                            // Re-probe watched unidentified rows; update last-seen on FX thread
-                            FxThreads.run(() -> existing.setLastSeen(nowForExisting));
+                            // Re-probe watched unidentified rows.
                             toProbeLater.add(existing);
                         }
                         else
                         {
                             // Fresh energy keeps an unwatched, previously-classified row UNIDENTIFIED.  ENERGY_DETECTED
                             // is only a transient state for newly-created rows awaiting their first probe.
-                            FxThreads.run(() -> existing.setLastSeen(nowForExisting));
                             mDiscoveryModel.update(existing);
                         }
                     }
                     else
                     {
-                        FxThreads.run(() -> existing.setLastSeen(nowForExisting));
                         mDiscoveryModel.update(existing);
                     }
                 }
@@ -941,7 +938,7 @@ public class BandScanController
     private void runProbeLoop(ScanRequest request, int myEpoch,
                                List<EnergyPeak> peaks, boolean addEnergyRows)
     {
-        setState(ScanState.PROBING);
+        setStateIfEpoch(ScanState.PROBING, myEpoch);
 
         List<Discovery> toProbeLater = new ArrayList<>();
 
@@ -966,8 +963,7 @@ public class BandScanController
                 if(discovery != null)
                 {
                     Discovery existing = discovery;
-                    existing.updateObservation(peak);
-                    FxThreads.runAndWait(() -> existing.setLastSeen(Instant.now()));
+                    refreshObservation(existing, peak, Instant.now());
                     mDiscoveryModel.update(existing);
 
                     if(existing.getState() == DiscoveryState.UNIDENTIFIED ||
@@ -1384,6 +1380,15 @@ public class BandScanController
         return (names != null && !names.isEmpty()) ? names.get(0) : null;
     }
 
+    private static void refreshObservation(Discovery discovery, EnergyPeak peak, Instant lastSeen)
+    {
+        FxThreads.runAndWait(() ->
+        {
+            discovery.updateObservation(peak);
+            discovery.setLastSeen(lastSeen);
+        });
+    }
+
     /**
      * Sets the scan state property on the FX Application Thread.
      * Safe to call from any thread; uses {@link FxThreads#run(Runnable)} which runs
@@ -1392,6 +1397,17 @@ public class BandScanController
     private void setState(ScanState state)
     {
         FxThreads.run(() -> mScanState.set(state));
+    }
+
+    private void setStateIfEpoch(ScanState state, int epoch)
+    {
+        FxThreads.run(() ->
+        {
+            if(mCurrentEpoch.get() == epoch)
+            {
+                mScanState.set(state);
+            }
+        });
     }
 
     /**

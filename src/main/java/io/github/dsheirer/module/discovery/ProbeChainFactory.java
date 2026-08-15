@@ -19,6 +19,7 @@
 package io.github.dsheirer.module.discovery;
 
 import io.github.dsheirer.alias.AliasModel;
+import io.github.dsheirer.alias.action.AliasActionManager;
 import io.github.dsheirer.audio.AbstractAudioModule;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.map.ChannelMapModel;
@@ -26,6 +27,9 @@ import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.config.DecodeConfiguration;
+import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
+import io.github.dsheirer.module.decode.p25.phase1.Modulation;
 import io.github.dsheirer.module.decode.traffic.TrafficChannelManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.source.config.SourceConfigTuner;
@@ -75,9 +79,28 @@ public class ProbeChainFactory
      * @return a {@link ProbeChain} holding the chain and its {@link LockWatcher}
      * @throws IllegalArgumentException if the decoder type is not a primary decoder
      */
+    public List<ProbeChain> buildAll(DecoderType decoderType)
+    {
+        if(decoderType == DecoderType.P25_PHASE1)
+        {
+            DecodeConfigP25Phase1 c4fm = new DecodeConfigP25Phase1();
+            c4fm.setModulation(Modulation.C4FM);
+            DecodeConfigP25Phase1 cqpsk = new DecodeConfigP25Phase1();
+            cqpsk.setModulation(Modulation.CQPSK);
+            return List.of(build(decoderType, c4fm), build(decoderType, cqpsk));
+        }
+
+        return List.of(build(decoderType));
+    }
+
     public ProbeChain build(DecoderType decoderType)
     {
-        // Build a throwaway channel with the default decode configuration for this type.
+        return build(decoderType, DecoderFactory.getDecodeConfiguration(decoderType));
+    }
+
+    private ProbeChain build(DecoderType decoderType, DecodeConfiguration decodeConfiguration)
+    {
+        // Build a throwaway channel with the requested decode configuration for this type.
         //
         // WHY ChannelType.STANDARD: DecoderFactory.getPrimaryModules() checks the ChannelType when
         // the TrafficChannelManager parameter is null.  For TRAFFIC channels without a TCM, the
@@ -85,7 +108,7 @@ public class ProbeChainFactory
         // Using STANDARD ensures the full decoder stack is built.  The subsequent call to
         // removeTrafficChannelManager() strips the otherwise-unused TCM module so the chain
         // remains lightweight and produces no side effects.
-        Channel channel = buildProbeChannel(decoderType);
+        Channel channel = buildProbeChannel(decoderType, decodeConfiguration);
 
         // Create the processing chain (auto-adds channel state, DecodeEventHistory, MessageHistory)
         ProcessingChain chain = new ProcessingChain(channel, mAliasModel);
@@ -141,17 +164,17 @@ public class ProbeChainFactory
         // ProcessingChain.addModule() auto-wires it via IdentifierUpdateListener.
         chain.addModule(new IdentifierForwardingModule(lockWatcher));
 
-        return new ProbeChain(decoderType, chain, lockWatcher);
+        return new ProbeChain(decoderType, decodeConfiguration, chain, lockWatcher, null);
     }
 
     /**
      * Creates a minimal {@link Channel} configured with the default decode config for the
      * given decoder type and a placeholder source config.
      */
-    private Channel buildProbeChannel(DecoderType decoderType)
+    private Channel buildProbeChannel(DecoderType decoderType, DecodeConfiguration decodeConfiguration)
     {
         Channel channel = new Channel("probe:" + decoderType.name());
-        channel.setDecodeConfiguration(DecoderFactory.getDecodeConfiguration(decoderType));
+        channel.setDecodeConfiguration(decodeConfiguration);
 
         SourceConfigTuner sourceConfig = new SourceConfigTuner();
         sourceConfig.setFrequency(0L);
@@ -170,13 +193,13 @@ public class ProbeChainFactory
 
         for(Module module : modules)
         {
-            if(!(module instanceof AbstractAudioModule))
+            if(module instanceof AbstractAudioModule || module instanceof AliasActionManager)
             {
-                stripped.add(module);
+                mLog.trace("Stripping side-effect module from probe chain: {}", module.getClass().getSimpleName());
             }
             else
             {
-                mLog.trace("Stripping audio module from probe chain: {}", module.getClass().getSimpleName());
+                stripped.add(module);
             }
         }
 

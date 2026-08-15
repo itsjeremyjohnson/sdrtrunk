@@ -72,6 +72,47 @@ class LiveAudioRecordingManagerTest
     }
 
     @Test
+    void capturesCallThatWasActiveWhenRecordingStarted() throws IOException
+    {
+        LiveAudioRecordingManager manager = new LiveAudioRecordingManager(mUserPreferences);
+        AudioSegment active = baseSegment();
+        active.addIdentifier(APCO25Talkgroup.create(100));
+
+        receive(manager, active);
+        manager.processAudioSegments();
+        manager.startRecording();
+        active.completeProperty().set(true);
+        manager.processAudioSegments();
+
+        assertEquals(1, manager.getActiveRecordingCount());
+        manager.stopRecording();
+        assertEquals(1, recordings().size());
+    }
+
+    @Test
+    void laterSameKeySegmentWaitsForEarlierIncompleteSegment() throws IOException
+    {
+        LiveAudioRecordingManager manager = new LiveAudioRecordingManager(mUserPreferences);
+        AudioSegment earlier = baseSegment();
+        earlier.addIdentifier(APCO25Talkgroup.create(100));
+        AudioSegment later = baseSegment();
+        later.addIdentifier(APCO25Talkgroup.create(100));
+        later.completeProperty().set(true);
+
+        manager.startRecording();
+        receive(manager, earlier);
+        receive(manager, later);
+        manager.processAudioSegments();
+        assertEquals(0, manager.getActiveRecordingCount(),
+            "Later same-key audio must wait while the earlier call is incomplete");
+
+        earlier.completeProperty().set(true);
+        manager.processAudioSegments();
+        assertEquals(1, manager.getActiveRecordingCount());
+        manager.stopRecording();
+    }
+
+    @Test
     void recordsOneMp3PerTalkgroupForSession() throws IOException
     {
         LiveAudioRecordingManager manager = new LiveAudioRecordingManager(mUserPreferences);

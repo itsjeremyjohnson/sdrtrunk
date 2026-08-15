@@ -33,7 +33,9 @@ import io.github.dsheirer.source.config.SourceConfigTuner;
 import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 import java.time.Duration;
 import java.time.Instant;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -195,18 +197,19 @@ public class SignalClassifier implements Classifier
     private ClassificationResult doClassify(ClassificationRequest request, AtomicBoolean cancelledFlag)
     {
         long freqHz = request.centerFrequencyHz();
+        Instant overallDeadline = Instant.now().plus(request.overallDeadline());
         boolean admitted = false;
 
         try
         {
-            admitted = acquireClassificationSlot(cancelledFlag);
+            admitted = acquireClassificationSlot(cancelledFlag, overallDeadline);
 
             if(!admitted)
             {
                 return ClassificationResult.cancelled(freqHz);
             }
 
-            return doClassifyInternal(request, freqHz, cancelledFlag);
+            return doClassifyInternal(request, freqHz, cancelledFlag, overallDeadline);
         }
         catch(Throwable t)
         {
@@ -225,20 +228,22 @@ public class SignalClassifier implements Classifier
     /**
      * Waits for admission under the live classification-concurrency preference.
      */
-    private boolean acquireClassificationSlot(AtomicBoolean cancelledFlag)
+    private boolean acquireClassificationSlot(AtomicBoolean cancelledFlag, Instant overallDeadline)
     {
         synchronized(mClassificationGate)
         {
             while(mActiveClassifications >= Math.max(1, mDiscoveryPreference.getMaxConcurrentClassifications()))
             {
-                if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
+                if(cancelledFlag.get() || Thread.currentThread().isInterrupted()
+                    || !Instant.now().isBefore(overallDeadline))
                 {
                     return false;
                 }
 
                 try
                 {
-                    mClassificationGate.wait(POLL_INTERVAL_MS);
+                    long remainingMillis = Math.max(1L, Duration.between(Instant.now(), overallDeadline).toMillis());
+                    mClassificationGate.wait(Math.min(POLL_INTERVAL_MS, remainingMillis));
                 }
                 catch(InterruptedException e)
                 {
@@ -247,7 +252,8 @@ public class SignalClassifier implements Classifier
                 }
             }
 
-            if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
+            if(cancelledFlag.get() || Thread.currentThread().isInterrupted()
+                || !Instant.now().isBefore(overallDeadline))
             {
                 return false;
             }
@@ -327,9 +333,9 @@ public class SignalClassifier implements Classifier
 
     private ClassificationResult doClassifyInternal(ClassificationRequest request,
                                                      long freqHz,
-                                                     AtomicBoolean cancelledFlag)
+                                                     AtomicBoolean cancelledFlag,
+                                                     Instant overallDeadline)
     {
-        Instant overallDeadline = Instant.now().plus(request.overallDeadline());
 
         // --- Step 1: Acquire source ------------------------------------------
         SourceConfigTuner sourceConfig = new SourceConfigTuner();
@@ -362,7 +368,7 @@ public class SignalClassifier implements Classifier
         {
             // Set up the energy gate BEFORE starting the source so the subscriber
             // is registered when the first samples arrive.
-            double signalPowerDb = runEnergyGateWithStart(fanout, realSource, cancelledFlag);
+            double signalPowerDb = runEnergyGateWithStart(fanout, realSource, cancelledFlag, overallDeadline);
 
             if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
             {
@@ -380,47 +386,27 @@ public class SignalClassifier implements Classifier
 
             int maxConcurrent = Math.max(1, mDiscoveryPreference.getMaxConcurrentProbes());
 
-            List<Candidate>        candidates    = new ArrayList<>();
-            // Watcher snapshots keyed by DecoderType, captured before each chain is torn down.
-            // Used so kind/metadata/summary survive chain disposal.
+            List<Candidate> candidates = new ArrayList<>();
             Map<DecoderType, WatcherSnapshot> snapshots = new HashMap<>();
+            Map<DecoderType, DecodeConfiguration> winningConfigurations = new HashMap<>();
+            Map<DecoderType, Double> winningQualities = new HashMap<>();
 
-            // Active slots: at most maxConcurrent chains running simultaneously.
-            List<ProbeChain> activeChains    = new ArrayList<>(maxConcurrent);
-            List<Instant>    activeDeadlines = new ArrayList<>(maxConcurrent);
-            int nextIndex = 0; // next decoder to launch from ordered list
-            boolean shortCircuit = false; // set when a lock is confirmed
+            // Active slots: at most maxConcurrent chains running simultaneously.  P25 Phase 1
+            // contributes separate C4FM and CQPSK variants at the same decoder priority.
+            List<ProbeChain> activeChains = new ArrayList<>(maxConcurrent);
+            List<Instant> activeDeadlines = new ArrayList<>(maxConcurrent);
+            Deque<ProbeChain> pendingVariants = new ArrayDeque<>();
+            int[] nextIndex = {0};
+            int lockedPriority = Integer.MAX_VALUE;
 
-            // Seed the initial batch
-            while(nextIndex < ordered.size() && activeChains.size() < maxConcurrent)
-            {
-                if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
-                {
-                    break;
-                }
-                if(Instant.now().isAfter(overallDeadline))
-                {
-                    break;
-                }
+            launchAvailableProbes(ordered, nextIndex, lockedPriority, pendingVariants, activeChains,
+                activeDeadlines, maxConcurrent, fanout, session, freqHz, candidates);
 
-                DecoderType decoderType = ordered.get(nextIndex++);
-                ProbeChain pc = launchProbeChain(decoderType, fanout, session, freqHz, candidates);
-                if(pc != null)
-                {
-                    activeChains.add(pc);
-                    activeDeadlines.add(Instant.now().plus(mDiscoveryPreference.probeWindow(decoderType)));
-                }
-            }
-
-            // Poll active chains; as one completes, record it and optionally start the next
+            // Poll active chains; as one completes, record it and optionally start the next.
             while(!activeChains.isEmpty())
             {
-                if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
-                {
-                    break;
-                }
-
-                if(Instant.now().isAfter(overallDeadline))
+                if(cancelledFlag.get() || Thread.currentThread().isInterrupted()
+                    || Instant.now().isAfter(overallDeadline))
                 {
                     break;
                 }
@@ -437,23 +423,9 @@ public class SignalClassifier implements Classifier
                     if(state == LockState.LOCKED || state == LockState.ERROR || timedOut)
                     {
                         LockState finalState = (timedOut && state != LockState.LOCKED && state != LockState.ERROR)
-                            ? pc.lockWatcher().getLockState()
-                            : state;
-
-                        // Capture watcher data BEFORE teardown
-                        snapshots.put(pc.decoderType(), new WatcherSnapshot(
-                            pc.lockWatcher().getKind(),
-                            pc.lockWatcher().getSummary(),
-                            pc.lockWatcher().getMetadata()
-                        ));
-
-                        candidates.add(new Candidate(
-                            pc.decoderType(),
-                            finalState,
-                            pc.lockWatcher().getLockQuality(),
-                            null
-                        ));
-
+                            ? pc.lockWatcher().getLockState() : state;
+                        recordProbeResult(pc, finalState, candidates, snapshots, winningConfigurations,
+                            winningQualities);
                         tearDownChain(pc, session, fanout);
                         activeChains.remove(i);
                         activeDeadlines.remove(i);
@@ -462,30 +434,13 @@ public class SignalClassifier implements Classifier
 
                         if(finalState == LockState.LOCKED)
                         {
-                            shortCircuit = true;
+                            lockedPriority = Math.min(lockedPriority, ordered.indexOf(pc.decoderType()));
+                            stopLowerPriorityProbes(ordered, lockedPriority, activeChains, activeDeadlines,
+                                candidates, session, fanout);
                         }
-                        else if(!shortCircuit)
-                        {
-                            // Slot freed: start next candidate if any remain
-                            while(nextIndex < ordered.size() && activeChains.size() < maxConcurrent)
-                            {
-                                if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
-                                {
-                                    break;
-                                }
-                                if(Instant.now().isAfter(overallDeadline))
-                                {
-                                    break;
-                                }
-                                DecoderType next = ordered.get(nextIndex++);
-                                ProbeChain newPc = launchProbeChain(next, fanout, session, freqHz, candidates);
-                                if(newPc != null)
-                                {
-                                    activeChains.add(newPc);
-                                    activeDeadlines.add(Instant.now().plus(mDiscoveryPreference.probeWindow(next)));
-                                }
-                            }
-                        }
+
+                        launchAvailableProbes(ordered, nextIndex, lockedPriority, pendingVariants, activeChains,
+                            activeDeadlines, maxConcurrent, fanout, session, freqHz, candidates);
                     }
                 }
 
@@ -504,20 +459,13 @@ public class SignalClassifier implements Classifier
                 }
             }
 
+            disposePendingProbes(pendingVariants);
+
             // Tear down any remaining active chains (deadline or cancel)
             for(ProbeChain pc : activeChains)
             {
-                snapshots.put(pc.decoderType(), new WatcherSnapshot(
-                    pc.lockWatcher().getKind(),
-                    pc.lockWatcher().getSummary(),
-                    pc.lockWatcher().getMetadata()
-                ));
-                candidates.add(new Candidate(
-                    pc.decoderType(),
-                    pc.lockWatcher().getLockState(),
-                    pc.lockWatcher().getLockQuality(),
-                    null
-                ));
+                recordProbeResult(pc, pc.lockWatcher().getLockState(), candidates, snapshots,
+                    winningConfigurations, winningQualities);
                 tearDownChain(pc, session, fanout);
             }
 
@@ -534,26 +482,23 @@ public class SignalClassifier implements Classifier
             DecoderType winnerType = null;
             int winnerPriority = Integer.MAX_VALUE;
 
-            for(Candidate c : candidates)
+            for(DecoderType decoderType : winningConfigurations.keySet())
             {
-                if(c.lockState() == LockState.LOCKED)
+                int priorityIdx = ordered.indexOf(decoderType);
+                if(priorityIdx < winnerPriority)
                 {
-                    int priorityIdx = ordered.indexOf(c.decoderType());
-                    if(priorityIdx < winnerPriority
-                        || (priorityIdx == winnerPriority
-                            && winnerType != null
-                            && c.lockQuality() > getQualityFor(c.decoderType(), candidates)))
-                    {
-                        winnerPriority = priorityIdx;
-                        winnerType = c.decoderType();
-                    }
+                    winnerPriority = priorityIdx;
+                    winnerType = decoderType;
                 }
             }
 
             if(winnerType != null)
             {
-                DecodeConfiguration bestConfig = buildResultConfiguration(winnerType,
-                    request.approximateBandwidthHz());
+                DecodeConfiguration bestConfig = winningConfigurations.get(winnerType);
+                if(bestConfig instanceof DecodeConfigAnalog || bestConfig == null)
+                {
+                    bestConfig = buildResultConfiguration(winnerType, request.approximateBandwidthHz());
+                }
                 WatcherSnapshot snap = snapshots.getOrDefault(winnerType,
                     new WatcherSnapshot(SignalKind.UNKNOWN, "", Map.of()));
 
@@ -580,17 +525,95 @@ public class SignalClassifier implements Classifier
         }
     }
 
-    /** Helper to look up the lock quality for a given decoder type in the candidates list. */
-    private static double getQualityFor(DecoderType type, List<Candidate> candidates)
+    private void launchAvailableProbes(List<DecoderType> ordered, int[] nextIndex, int lockedPriority,
+                                       Deque<ProbeChain> pendingVariants, List<ProbeChain> activeChains,
+                                       List<Instant> activeDeadlines, int maxConcurrent,
+                                       ComplexSampleFanout fanout, ClassificationSession session,
+                                       long freqHz, List<Candidate> candidates)
     {
-        for(Candidate c : candidates)
+        while(activeChains.size() < maxConcurrent)
         {
-            if(c.decoderType() == type)
+            if(pendingVariants.isEmpty())
             {
-                return c.lockQuality();
+                if(nextIndex[0] >= ordered.size() || nextIndex[0] > lockedPriority)
+                {
+                    return;
+                }
+
+                DecoderType decoderType = ordered.get(nextIndex[0]++);
+                try
+                {
+                    pendingVariants.addAll(mProbeChainFactory.buildAll(decoderType));
+                }
+                catch(Exception e)
+                {
+                    mLog.warn("SignalClassifier: error building probe for {} at {} Hz: {}",
+                        decoderType, freqHz, e.getMessage());
+                    candidates.add(new Candidate(decoderType, LockState.ERROR, 0.0, e.getMessage()));
+                    continue;
+                }
+            }
+
+            ProbeChain launched = launchProbeChain(pendingVariants.removeFirst(), fanout, session,
+                freqHz, candidates);
+            if(launched != null)
+            {
+                activeChains.add(launched);
+                activeDeadlines.add(Instant.now().plus(mDiscoveryPreference.probeWindow(launched.decoderType())));
             }
         }
-        return 0.0;
+    }
+
+    private static void recordProbeResult(ProbeChain pc, LockState state, List<Candidate> candidates,
+                                          Map<DecoderType, WatcherSnapshot> snapshots,
+                                          Map<DecoderType, DecodeConfiguration> winningConfigurations,
+                                          Map<DecoderType, Double> winningQualities)
+    {
+        double quality = pc.lockWatcher().getLockQuality();
+        candidates.add(new Candidate(pc.decoderType(), state, quality, null));
+
+        if(state == LockState.LOCKED && quality >= winningQualities.getOrDefault(pc.decoderType(), -1.0))
+        {
+            winningQualities.put(pc.decoderType(), quality);
+            winningConfigurations.put(pc.decoderType(), DecoderFactory.copy(pc.decodeConfiguration()));
+            snapshots.put(pc.decoderType(), new WatcherSnapshot(pc.lockWatcher().getKind(),
+                pc.lockWatcher().getSummary(), pc.lockWatcher().getMetadata()));
+        }
+    }
+
+    private void stopLowerPriorityProbes(List<DecoderType> ordered, int lockedPriority,
+                                         List<ProbeChain> activeChains, List<Instant> activeDeadlines,
+                                         List<Candidate> candidates, ClassificationSession session,
+                                         ComplexSampleFanout fanout)
+    {
+        for(int i = activeChains.size() - 1; i >= 0; i--)
+        {
+            ProbeChain active = activeChains.get(i);
+            if(ordered.indexOf(active.decoderType()) > lockedPriority)
+            {
+                candidates.add(new Candidate(active.decoderType(), active.lockWatcher().getLockState(),
+                    active.lockWatcher().getLockQuality(), null));
+                tearDownChain(active, session, fanout);
+                activeChains.remove(i);
+                activeDeadlines.remove(i);
+            }
+        }
+    }
+
+    private static void disposePendingProbes(Deque<ProbeChain> pendingVariants)
+    {
+        for(ProbeChain pending : pendingVariants)
+        {
+            try
+            {
+                pending.chain().dispose();
+            }
+            catch(Exception ignored)
+            {
+                // Best-effort disposal of variants that were never started.
+            }
+        }
+        pendingVariants.clear();
     }
 
     // -------------------------------------------------------------------------
@@ -601,16 +624,14 @@ public class SignalClassifier implements Classifier
      * Builds a probe chain for the given decoder, wires it to the fanout, registers it with
      * the session, and starts it.  On any failure, records an ERROR candidate and returns null.
      */
-    private ProbeChain launchProbeChain(DecoderType decoderType, ComplexSampleFanout fanout,
+    private ProbeChain launchProbeChain(ProbeChain pc, ComplexSampleFanout fanout,
                                          ClassificationSession session, long freqHz,
                                          List<Candidate> candidates)
     {
-        ProbeChain pc = null;
         ComplexSource subscriberSource = null;
 
         try
         {
-            pc = mProbeChainFactory.build(decoderType);
             subscriberSource = fanout.newSubscriberSource();
 
             // Register with session immediately after build, before setSource/start,
@@ -622,7 +643,8 @@ public class SignalClassifier implements Classifier
                 pc.chain().start();
             }
 
-            return new ProbeChain(pc.decoderType(), pc.chain(), pc.lockWatcher(), subscriberSource);
+            return new ProbeChain(pc.decoderType(), pc.decodeConfiguration(), pc.chain(), pc.lockWatcher(),
+                subscriberSource);
         }
         catch(Exception e)
         {
@@ -639,8 +661,8 @@ public class SignalClassifier implements Classifier
             }
 
             mLog.warn("SignalClassifier: error launching probe for {} at {} Hz: {}",
-                decoderType, freqHz, e.getMessage());
-            candidates.add(new Candidate(decoderType, LockState.ERROR, 0.0, e.getMessage()));
+                pc.decoderType(), freqHz, e.getMessage());
+            candidates.add(new Candidate(pc.decoderType(), LockState.ERROR, 0.0, e.getMessage()));
             return null;
         }
     }
@@ -684,7 +706,7 @@ public class SignalClassifier implements Classifier
      * @return the measured peak power in dBm, or {@code Double.NaN} if no signal was detected
      */
     private double runEnergyGateWithStart(ComplexSampleFanout fanout, ComplexSource realSource,
-                                           AtomicBoolean cancelledFlag)
+                                           AtomicBoolean cancelledFlag, Instant overallDeadline)
     {
         // Collect power readings so we can report the peak measured signal power.
         List<Double> powerReadings = new ArrayList<>();
@@ -717,7 +739,8 @@ public class SignalClassifier implements Classifier
         // Now start the source — any synchronously pushed samples will be captured
         realSource.start();
 
-        long gateEndMs = System.currentTimeMillis() + ENERGY_GATE_WINDOW.toMillis();
+        long gateEndMs = Math.min(System.currentTimeMillis() + ENERGY_GATE_WINDOW.toMillis(),
+            overallDeadline.toEpochMilli());
 
         synchronized(lock)
         {

@@ -26,6 +26,8 @@ import io.github.dsheirer.controller.channel.ChannelModel;
 import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog.Bandwidth;
+import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.module.discovery.Candidate;
 import io.github.dsheirer.module.discovery.ClassificationOutcome;
 import io.github.dsheirer.module.discovery.ClassificationResult;
@@ -600,6 +602,26 @@ class ClickToTuneControllerTest
         assertFalse(mFakeClassifier.getReceivedRequests().getLast().candidateDecoders()
             .contains(DecoderType.P25_PHASE1));
         assertTrue(mController.getClickToTuneChannels().contains(channel));
+    }
+
+    @Test
+    void redetect_preservesDetectedAnalogBandwidth() throws Exception
+    {
+        mFakeClassifier.setNextResult(ClassificationResult.identified(FREQ, List.of(), DecoderType.NBFM,
+            DecoderFactory.getDecodeConfiguration(DecoderType.NBFM), SignalKind.CONVENTIONAL, "", Map.of(), -80.0));
+        mController.classifyAndTune(FREQ, 12_500);
+        drainEdt();
+        Channel channel = mFakeChannelModel.mAdded.get(0);
+        DecodeConfigNBFM detected = new DecodeConfigNBFM();
+        detected.setBandwidth(Bandwidth.BW_25_0);
+        mFakeClassifier.setNextResult(ClassificationResult.identified(FREQ, List.of(), DecoderType.NBFM,
+            detected, SignalKind.CONVENTIONAL, "", Map.of(), -70.0));
+
+        mController.redetect(channel);
+        drainEdt();
+
+        assertEquals(Bandwidth.BW_25_0, ((DecodeConfigNBFM)channel.getDecodeConfiguration()).getBandwidth());
+        assertNotSame(detected, channel.getDecodeConfiguration());
     }
 
     @Test
