@@ -10,6 +10,8 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import io.github.dsheirer.audio.squelch.SquelchState;
+import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
@@ -48,6 +50,25 @@ class NetworkStreamManagerTest
             occupied.close();
             assertNotNull(NetworkStreamManager.getInstance(eventPort, rawPort));
         }
+    }
+
+    @Test
+    void treatsPhaseOneSquelchCloseAsVoiceIdCallBoundary()
+    {
+        assertTrue(P25P1DecoderState.isCallBoundary(new SquelchStateEvent(SquelchState.SQUELCH, 0)));
+        assertFalse(P25P1DecoderState.isCallBoundary(new SquelchStateEvent(SquelchState.UNSQUELCH, 0)));
+        assertFalse(P25P1DecoderState.isCallBoundary(new SquelchStateEvent(SquelchState.SQUELCH, 1)));
+    }
+
+    @Test
+    void disconnectsNetworkClientsWhenTheirQueuesOverflow() throws IOException
+    {
+        NetworkStreamManager.ClientWriter writer =
+            new NetworkStreamManager.ClientWriter(new TestSocket(), 1, false);
+
+        assertTrue(writer.offer("event"));
+        assertFalse(writer.offer("next-event"));
+        assertFalse(writer.isAlive());
     }
 
     @Test

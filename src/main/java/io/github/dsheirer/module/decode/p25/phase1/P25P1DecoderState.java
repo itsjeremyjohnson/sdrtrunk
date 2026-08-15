@@ -19,6 +19,9 @@
 package io.github.dsheirer.module.decode.p25.phase1;
 
 import com.google.common.eventbus.Subscribe;
+import io.github.dsheirer.audio.squelch.ISquelchStateListener;
+import io.github.dsheirer.audio.squelch.SquelchState;
+import io.github.dsheirer.audio.squelch.SquelchStateEvent;
 import io.github.dsheirer.channel.state.ChangeChannelTimeoutEvent;
 import io.github.dsheirer.channel.state.DecoderState;
 import io.github.dsheirer.channel.state.DecoderStateEvent;
@@ -188,7 +191,7 @@ import org.slf4j.LoggerFactory;
  * Decoder state for an APCO25 channel.  Maintains the call/data/idle state of the channel and produces events by
  * monitoring the decoded message stream.
  */
-public class P25P1DecoderState extends DecoderState implements IChannelEventListener
+public class P25P1DecoderState extends DecoderState implements IChannelEventListener, ISquelchStateListener
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(P25P1DecoderState.class);
     private static final LoggingSuppressor LOGGING_SUPPRESSOR = new LoggingSuppressor(LOGGER);
@@ -204,6 +207,24 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private List<ControlChannelHeartbeat> mHeartbeatMonitors = new ArrayList<>();
     private Listener<IMessage> mRawStreamListener;
     private boolean mPcmVoiceIdBroadcast;
+    private final Listener<SquelchStateEvent> mSquelchStateListener = event ->
+    {
+        if(isCallBoundary(event))
+        {
+            mPcmVoiceIdBroadcast = false;
+        }
+    };
+
+    static boolean isCallBoundary(SquelchStateEvent event)
+    {
+        return event.getTimeslot() == 0 && event.getSquelchState() == SquelchState.SQUELCH;
+    }
+
+    @Override
+    public Listener<SquelchStateEvent> getSquelchStateListener()
+    {
+        return mSquelchStateListener;
+    }
 
     /**
      * Constructs an APCO-25 decoder state with an optional traffic channel manager.

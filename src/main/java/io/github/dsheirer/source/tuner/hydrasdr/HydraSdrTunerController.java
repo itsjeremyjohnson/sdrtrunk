@@ -124,6 +124,20 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		return getInitialFrequency(TunerConfiguration.DEFAULT_FREQUENCY, minimum, maximum);
 	}
 
+	static long[] getIntersectedFrequencyRange(long configuredMinimum, long configuredMaximum,
+		long hardwareMinimum, long hardwareMaximum)
+	{
+		long minimum = configuredMinimum > 0 ? Math.max(configuredMinimum, hardwareMinimum) : hardwareMinimum;
+		long maximum = configuredMaximum > 0 ? Math.min(configuredMaximum, hardwareMaximum) : hardwareMaximum;
+
+		if(minimum > maximum)
+		{
+			return new long[]{hardwareMinimum, hardwareMaximum};
+		}
+
+		return new long[]{minimum, maximum};
+	}
+
 	@Override
 	public void start() throws SourceException
 	{
@@ -484,14 +498,12 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			}
 		}
 
-		if(tunerConfiguration.getMinimumFrequency() > 0)
-		{
-			setMinimumFrequency(tunerConfiguration.getMinimumFrequency());
-		}
-		if(tunerConfiguration.getMaximumFrequency() > 0)
-		{
-			setMaximumFrequency(tunerConfiguration.getMaximumFrequency());
-		}
+		long[] frequencyRange = getIntersectedFrequencyRange(tunerConfiguration.getMinimumFrequency(),
+			tunerConfiguration.getMaximumFrequency(), getMinimumFrequency(), getMaximumFrequency());
+		setMinimumFrequency(frequencyRange[0]);
+		setMaximumFrequency(frequencyRange[1]);
+		tunerConfiguration.setMinimumFrequency(frequencyRange[0]);
+		tunerConfiguration.setMaximumFrequency(frequencyRange[1]);
 		setFrequencyCorrection(tunerConfiguration.getFrequencyCorrection());
 		getFrequencyErrorCorrectionManager().setEnabled(tunerConfiguration.getAutoPPMCorrectionEnabled());
 

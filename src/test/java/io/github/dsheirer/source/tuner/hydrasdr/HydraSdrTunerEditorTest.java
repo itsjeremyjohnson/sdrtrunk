@@ -46,6 +46,23 @@ class HydraSdrTunerEditorTest
     }
 
     @Test
+    void intersectsConfiguredFrequencyBoundsWithReportedRange()
+    {
+        assertEquals(200_000_000,
+            HydraSdrTunerController.getIntersectedFrequencyRange(
+                1_000_000, 2_000_000_000, 200_000_000, 1_000_000_000)[0]);
+        assertEquals(800_000_000,
+            HydraSdrTunerController.getIntersectedFrequencyRange(
+                300_000_000, 800_000_000, 200_000_000, 1_000_000_000)[1]);
+        assertEquals(200_000_000,
+            HydraSdrTunerController.getIntersectedFrequencyRange(
+                1_000_000, 50_000_000, 200_000_000, 1_000_000_000)[0]);
+        assertEquals(1_000_000_000,
+            HydraSdrTunerController.getIntersectedFrequencyRange(
+                1_000_000, 50_000_000, 200_000_000, 1_000_000_000)[1]);
+    }
+
+    @Test
     void preservesSupportedModes()
     {
         assertEquals(HydraSdrTunerController.GAIN_MODE_LINEARITY,

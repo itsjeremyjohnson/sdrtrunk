@@ -104,9 +104,9 @@ public class NetworkStreamManager
             {
                 clients.remove(writer);
             }
-            else
+            else if(!writer.offer(json))
             {
-                writer.offer(json);
+                clients.remove(writer);
             }
         }
     }
@@ -192,16 +192,22 @@ public class NetworkStreamManager
     {
         private final Socket mSocket;
         private final PrintWriter mWriter;
-        private final ArrayBlockingQueue<String> mQueue = new ArrayBlockingQueue<>(512);
+        private final ArrayBlockingQueue<String> mQueue;
         private final Thread mWriterThread;
         private volatile boolean mAlive = true;
 
         public ClientWriter(Socket socket) throws IOException
         {
+            this(socket, 512, true);
+        }
+
+        ClientWriter(Socket socket, int queueCapacity, boolean startWriter) throws IOException
+        {
             mSocket = socket;
             mWriter = new PrintWriter(socket.getOutputStream(), false);
+            mQueue = new ArrayBlockingQueue<>(queueCapacity);
 
-            mWriterThread = Thread.ofVirtual().start(() ->
+            mWriterThread = startWriter ? Thread.ofVirtual().start(() ->
             {
                 while(mAlive)
                 {
@@ -221,15 +227,20 @@ public class NetworkStreamManager
                         mAlive = false;
                     }
                 }
-            });
+            }) : null;
         }
 
         /**
-         * Offers a line to the write queue (non-blocking, drops if full).
+         * Offers a line to the write queue and disconnects if the queue is full.
          */
         public boolean offer(String json)
         {
-            return mQueue.offer(json);
+            boolean accepted = mQueue.offer(json);
+            if(!accepted)
+            {
+                close();
+            }
+            return accepted;
         }
 
         /**
@@ -246,7 +257,10 @@ public class NetworkStreamManager
         public void close()
         {
             mAlive = false;
-            mWriterThread.interrupt();
+            if(mWriterThread != null)
+            {
+                mWriterThread.interrupt();
+            }
             try
             {
                 mSocket.close();
