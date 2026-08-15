@@ -20,6 +20,7 @@ package io.github.dsheirer.controller.config;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.core.JsonGenerator;
 import com.fasterxml.jackson.core.JsonParser;
 import com.fasterxml.jackson.databind.DeserializationContext;
@@ -41,6 +42,7 @@ import javax.xml.stream.XMLStreamConstants;
 import javax.xml.stream.XMLStreamReader;
 
 @JacksonXmlRootElement(localName = "configuration")
+@JsonPropertyOrder({"serializedUnknownProperties"})
 public abstract class Configuration
 {
     private Map<String, Object> mUnknownProperties;
@@ -172,7 +174,7 @@ public abstract class Configuration
 
     public static class UnknownXmlPropertyNameSerializer extends JsonSerializer<Object>
     {
-        private static final String ATTRIBUTE_PREFIX = "__sdrtrunk_xml_attribute__:";
+        public static final String ATTRIBUTE_PREFIX = "__sdrtrunk_xml_attribute__:";
 
         @Override
         public void serialize(Object value, JsonGenerator generator,

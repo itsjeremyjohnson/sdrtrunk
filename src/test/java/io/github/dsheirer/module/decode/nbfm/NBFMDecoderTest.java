@@ -21,4 +21,13 @@ class NBFMDecoderTest
         assertTrue(NBFMDecoder.shouldPassCTCSS(true, true, false));
         assertTrue(NBFMDecoder.shouldPassCTCSS(false, false, false));
     }
+
+    @Test
+    void releasingOverrideEndsCallWhenConfiguredToneIsAbsent()
+    {
+        assertTrue(NBFMDecoder.shouldEndCallOnOverrideRelease(true, false, true, false));
+        assertFalse(NBFMDecoder.shouldEndCallOnOverrideRelease(true, false, true, true));
+        assertFalse(NBFMDecoder.shouldEndCallOnOverrideRelease(false, false, true, false));
+        assertFalse(NBFMDecoder.shouldEndCallOnOverrideRelease(true, false, false, false));
+    }
 }

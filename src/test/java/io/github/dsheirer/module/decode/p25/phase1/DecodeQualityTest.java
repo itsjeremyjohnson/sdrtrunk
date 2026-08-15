@@ -25,7 +25,6 @@ import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.SyncLossMessage;
 import io.github.dsheirer.module.decode.p25.phase1.message.P25P1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.hdu.HDUMessage;
-import io.github.dsheirer.module.decode.p25.phase1.message.ldu.IMBEFrameDiagnostic;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
@@ -54,6 +53,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Consumer;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.w3c.dom.Document;
 import org.w3c.dom.Element;
@@ -68,6 +69,8 @@ import org.w3c.dom.NodeList;
  */
 public class DecodeQualityTest
 {
+    private static final Pattern BASEBAND_FILE_PATTERN =
+            Pattern.compile("^(.*_baseband)(?:_([2-9]|[1-9][0-9]+))?\\.wav$");
     record DecoderTuning(int maxImbeErrors, boolean ignoreEncryptionState, float cmaAcquisitionMu,
                          float cmaTrackingMu, int cmaGearShiftMs, float gardnerBandwidth, float afcAlpha,
                          boolean adaptiveThresholds, boolean dfeEnabled, float dfeMu)
@@ -496,8 +499,8 @@ public class DecodeQualityTest
                         // Run IMBE diagnostic on valid LDUs
                         if(diagEnabled && msg instanceof LDUMessage lduMsg)
                         {
-                            IMBEFrameDiagnostic.LDUErrors lduErrors = IMBEFrameDiagnostic.analyzeLDU(lduMsg);
-                            for(IMBEFrameDiagnostic.FrameErrors fe : lduErrors.frameErrors())
+                            DecodeQualityIMBEFrameDiagnostic.LDUErrors lduErrors = DecodeQualityIMBEFrameDiagnostic.analyzeLDU(lduMsg);
+                            for(DecodeQualityIMBEFrameDiagnostic.FrameErrors fe : lduErrors.frameErrors())
                             {
                                 diagTotalFrames[0]++;
                                 diagTotalErrors[0] += fe.totalErrors();
@@ -778,11 +781,32 @@ public class DecodeQualityTest
         return Boolean.TRUE.equals(invokeOptionalResult(target, methodName));
     }
 
-    static boolean shouldGateScoringFrame(IMBEFrameDiagnostic.FrameErrors frameErrors, int maxImbeErrors,
+    static boolean shouldGateScoringFrame(DecodeQualityIMBEFrameDiagnostic.FrameErrors frameErrors, int maxImbeErrors,
                                           boolean adaptiveGateDisabled)
     {
         return frameErrors.uncorrectableCount() > 0 ||
                 (frameErrors.totalErrors() > maxImbeErrors && !adaptiveGateDisabled);
+    }
+
+    static float[] applyScoringGain(float[] rawAudio)
+    {
+        float[] gained = rawAudio.clone();
+        for(int sample = 0; sample < gained.length; sample++)
+        {
+            float amplified = gained[sample] * 5.0f;
+            gained[sample] = Math.max(-0.95f, Math.min(0.95f, amplified));
+        }
+        return gained;
+    }
+
+    static float[] concealScoringFrame(float[] rawAudio, float fade)
+    {
+        float[] concealed = rawAudio.clone();
+        for(int sample = 0; sample < concealed.length; sample++)
+        {
+            concealed[sample] *= fade;
+        }
+        return applyScoringGain(concealed);
     }
 
     static <T> void cacheWhileEncryptionUnknown(List<T> cached, T value, int limit)
@@ -967,13 +991,8 @@ public class DecodeQualityTest
 
                         if(lastGoodFrame[0] != null && consecutiveGated[0] <= 2)
                         {
-                            float[] faded = lastGoodFrame[0].clone();
                             float fade = 1.0f - (float)consecutiveGated[0] / 2.0f;
-                            for(int sample = 0; sample < faded.length; sample++)
-                            {
-                                faded[sample] *= fade;
-                            }
-                            audioBuffers.add(faded);
+                            audioBuffers.add(concealScoringFrame(lastGoodFrame[0], fade));
                         }
                         else
                         {
@@ -985,7 +1004,7 @@ public class DecodeQualityTest
                     // Pre-codec quality gate with adaptive disable
                     if(shouldGateImbeFrames(maxImbeErrors))
                     {
-                        IMBEFrameDiagnostic.FrameErrors fe = IMBEFrameDiagnostic.analyzeFrame(frame);
+                        DecodeQualityIMBEFrameDiagnostic.FrameErrors fe = DecodeQualityIMBEFrameDiagnostic.analyzeFrame(frame);
                         boolean exceedsThreshold = fe.totalErrors() > maxImbeErrors;
 
                         // Update adaptive gate
@@ -1014,16 +1033,9 @@ public class DecodeQualityTest
                             // Repeat last good frame with fade-out
                             if(lastGoodFrame[0] != null && consecutiveGated[0] <= fadeStart + fadeLength)
                             {
-                                float[] repeated = lastGoodFrame[0].clone();
-                                if(consecutiveGated[0] > fadeStart)
-                                {
-                                    float fade = 1.0f - (float)(consecutiveGated[0] - fadeStart) / fadeLength;
-                                    for(int s = 0; s < repeated.length; s++)
-                                    {
-                                        repeated[s] *= fade;
-                                    }
-                                }
-                                audioBuffers.add(repeated);
+                                float fade = consecutiveGated[0] > fadeStart ?
+                                        1.0f - (float)(consecutiveGated[0] - fadeStart) / fadeLength : 1.0f;
+                                audioBuffers.add(concealScoringFrame(lastGoodFrame[0], fade));
                             }
                             else
                             {
@@ -1037,13 +1049,8 @@ public class DecodeQualityTest
                     float[] audio = codec.decodeFrame(frame);
                     if(audio != null && audio.length > 0)
                     {
-                        for(int s = 0; s < audio.length; s++)
-                        {
-                            float a = audio[s] * 5.0f;
-                            audio[s] = Math.max(-0.95f, Math.min(0.95f, a));
-                        }
                         lastGoodFrame[0] = audio.clone();
-                        audioBuffers.add(audio);
+                        audioBuffers.add(applyScoringGain(audio));
                     }
                 }
             }
@@ -1583,20 +1590,43 @@ public class DecodeQualityTest
         return StringUtils.replaceIllegalCharacters(channel.system() + "_" + channel.site() + "_" + channel.name());
     }
 
+    static boolean isBasebandFileName(String name)
+    {
+        return BASEBAND_FILE_PATTERN.matcher(name).matches();
+    }
+
+    static int compareBasebandFileNames(String first, String second)
+    {
+        Matcher firstMatcher = BASEBAND_FILE_PATTERN.matcher(first);
+        Matcher secondMatcher = BASEBAND_FILE_PATTERN.matcher(second);
+        if(firstMatcher.matches() && secondMatcher.matches())
+        {
+            int seriesComparison = firstMatcher.group(1).compareTo(secondMatcher.group(1));
+            if(seriesComparison != 0)
+            {
+                return seriesComparison;
+            }
+            int firstSequence = firstMatcher.group(2) == null ? 1 : Integer.parseInt(firstMatcher.group(2));
+            int secondSequence = secondMatcher.group(2) == null ? 1 : Integer.parseInt(secondMatcher.group(2));
+            return Integer.compare(firstSequence, secondSequence);
+        }
+        return first.compareTo(second);
+    }
+
     static List<File> findBasebandFiles(File dir)
     {
         List<File> files = new ArrayList<>();
-        if(dir.isFile() && dir.getName().endsWith("_baseband.wav")) { files.add(dir); return files; }
+        if(dir.isFile() && isBasebandFileName(dir.getName())) { files.add(dir); return files; }
         if(dir.isDirectory())
         {
             File[] children = dir.listFiles();
             if(children != null)
             {
-                Arrays.sort(children, (a, b) -> a.getName().compareTo(b.getName()));
+                Arrays.sort(children, (a, b) -> compareBasebandFileNames(a.getName(), b.getName()));
                 for(File child : children)
                 {
                     if(child.isDirectory()) files.addAll(findBasebandFiles(child));
-                    else if(child.getName().endsWith("_baseband.wav")) files.add(child);
+                    else if(isBasebandFileName(child.getName())) files.add(child);
                 }
             }
         }

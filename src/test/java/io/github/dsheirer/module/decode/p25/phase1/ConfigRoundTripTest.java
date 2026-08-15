@@ -11,6 +11,7 @@ import io.github.dsheirer.alias.action.beep.BeepAction;
 import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.audio.broadcast.broadcastify.BroadcastifyCallConfiguration;
 import io.github.dsheirer.controller.channel.Channel;
+import io.github.dsheirer.controller.config.Configuration;
 import io.github.dsheirer.controller.channel.map.ChannelMapModel;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.DecoderFactory;
@@ -148,6 +149,37 @@ public class ConfigRoundTripTest
 
         String output = mapper.writeValueAsString(configuration);
         assertEquals(2, output.split("<futureTone>", -1).length - 1);
+    }
+
+    @Test
+    void nonConfigurationUnknownAttributesRetainXmlShape() throws Exception
+    {
+        XmlMapper mapper = createMapper();
+        Configuration.UnknownXmlPropertyValue attribute =
+                new Configuration.UnknownXmlPropertyValue("value", true);
+
+        Talkgroup aliasId = new Talkgroup();
+        aliasId.setUnknownProperty("futureOption", attribute);
+        BeepAction aliasAction = new BeepAction();
+        aliasAction.setUnknownProperty("futureOption", attribute);
+        BroadcastifyCallConfiguration broadcast = new BroadcastifyCallConfiguration();
+        broadcast.setUnknownProperty("futureOption", attribute);
+        FileSetting setting = new FileSetting();
+        setting.setUnknownProperty("futureOption", attribute);
+        RecordingTunerConfiguration tuner = new RecordingTunerConfiguration();
+        tuner.setUnknownProperty("futureOption", attribute);
+
+        for(Object value : java.util.List.of(aliasId, aliasAction, broadcast, setting, tuner))
+        {
+            String output = mapper.writeValueAsString(value);
+            assertTrue(output.contains("futureOption=\"value\""), output);
+            assertFalse(output.contains("<futureOption>"), output);
+
+            Object restored = mapper.readValue(output, value.getClass());
+            String roundTrip = mapper.writeValueAsString(restored);
+            assertTrue(roundTrip.contains("futureOption=\"value\""), roundTrip);
+            assertFalse(roundTrip.contains("<futureOption>"), roundTrip);
+        }
     }
 
     @Test

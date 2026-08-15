@@ -21,9 +21,12 @@ package io.github.dsheirer.alias.id;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
+import io.github.dsheirer.controller.config.Configuration;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
 import io.github.dsheirer.alias.id.dcs.Dcs;
 import io.github.dsheirer.alias.id.esn.Esn;
@@ -49,9 +52,11 @@ import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.alias.id.talkgroup.TalkgroupRange;
 import io.github.dsheirer.alias.id.tone.TonesID;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javafx.beans.Observable;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
@@ -86,6 +91,7 @@ import javafx.util.Callback;
     @JsonSubTypes.Type(value = UniqueID.class, name = "uniqueID")
 })
 @JacksonXmlRootElement(localName = "id")
+@JsonPropertyOrder({"serializedUnknownProperties"})
 public abstract class AliasID
 {
     private SimpleStringProperty mValueProperty = new SimpleStringProperty();
@@ -175,10 +181,25 @@ public abstract class AliasID
     }
 
     private Map<String, Object> mUnknownProperties;
+    private Set<String> mUnknownAttributeNames;
 
-    @JsonAnySetter
     public void setUnknownProperty(String key, Object value)
     {
+        setUnknownProperty(key, new Configuration.UnknownXmlPropertyValue(value, false));
+    }
+
+    @JsonAnySetter
+    public void setUnknownProperty(String key, Configuration.UnknownXmlPropertyValue unknownValue)
+    {
+        Object value = unknownValue.value();
+        if(unknownValue.attribute())
+        {
+            if(mUnknownAttributeNames == null)
+            {
+                mUnknownAttributeNames = new HashSet<>();
+            }
+            mUnknownAttributeNames.add(key);
+        }
         if(mUnknownProperties == null)
         {
             mUnknownProperties = new LinkedHashMap<>();
@@ -196,17 +217,29 @@ public abstract class AliasID
         }
         else
         {
-            List<Object> values = new ArrayList<>();
-            values.add(existing);
-            values.add(value);
-            mUnknownProperties.put(key, values);
+            mUnknownProperties.put(key, new ArrayList<>(List.of(existing, value)));
         }
     }
 
-    @JsonAnyGetter
+    @JsonIgnore
     public Map<String, Object> getUnknownProperties()
     {
         return mUnknownProperties;
+    }
+
+    @JsonAnyGetter
+    @JsonSerialize(keyUsing = Configuration.UnknownXmlPropertyNameSerializer.class)
+    public Map<String, Object> getSerializedUnknownProperties()
+    {
+        if(mUnknownProperties == null)
+        {
+            return null;
+        }
+        Map<String, Object> properties = new LinkedHashMap<>();
+        mUnknownProperties.forEach((key, value) -> properties.put(
+                mUnknownAttributeNames != null && mUnknownAttributeNames.contains(key) ?
+                        Configuration.UnknownXmlPropertyNameSerializer.ATTRIBUTE_PREFIX + key : key, value));
+        return properties;
     }
 
     public void copyUnknownPropertiesFrom(AliasID aliasID)
@@ -216,6 +249,10 @@ public abstract class AliasID
             mUnknownProperties = new LinkedHashMap<>();
             aliasID.mUnknownProperties.forEach((key, value) -> mUnknownProperties.put(key,
                     value instanceof List<?> list ? new ArrayList<>(list) : value));
+            if(aliasID.mUnknownAttributeNames != null)
+            {
+                mUnknownAttributeNames = new HashSet<>(aliasID.mUnknownAttributeNames);
+            }
         }
     }
 }

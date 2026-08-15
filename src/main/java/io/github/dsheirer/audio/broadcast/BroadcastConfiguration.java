@@ -21,8 +21,10 @@ package io.github.dsheirer.audio.broadcast;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
 import io.github.dsheirer.audio.broadcast.broadcastify.BroadcastifyCallConfiguration;
@@ -31,6 +33,7 @@ import io.github.dsheirer.audio.broadcast.openmhz.OpenMHzConfiguration;
 import io.github.dsheirer.audio.broadcast.icecast.IcecastConfiguration;
 import io.github.dsheirer.audio.broadcast.shoutcast.v1.ShoutcastV1Configuration;
 import io.github.dsheirer.audio.broadcast.shoutcast.v2.ShoutcastV2Configuration;
+import io.github.dsheirer.controller.config.Configuration;
 import javafx.beans.Observable;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.IntegerProperty;
@@ -47,9 +50,11 @@ import org.slf4j.LoggerFactory;
 import java.net.InetSocketAddress;
 import java.net.SocketAddress;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include = JsonTypeInfo.As.PROPERTY, property = "type")
 @JsonSubTypes({
@@ -61,6 +66,7 @@ import java.util.Map;
     @JsonSubTypes.Type(value = ShoutcastV2Configuration.class, name="shoutcastV2Configuration"),
 })
 @JacksonXmlRootElement(localName = "stream")
+@JsonPropertyOrder({"serializedUnknownProperties"})
 public abstract class BroadcastConfiguration
 {
     private final static Logger mLog = LoggerFactory.getLogger(BroadcastConfiguration.class);
@@ -418,10 +424,25 @@ public abstract class BroadcastConfiguration
     }
 
     private Map<String, Object> mUnknownProperties;
+    private Set<String> mUnknownAttributeNames;
 
-    @JsonAnySetter
     public void setUnknownProperty(String key, Object value)
     {
+        setUnknownProperty(key, new Configuration.UnknownXmlPropertyValue(value, false));
+    }
+
+    @JsonAnySetter
+    public void setUnknownProperty(String key, Configuration.UnknownXmlPropertyValue unknownValue)
+    {
+        Object value = unknownValue.value();
+        if(unknownValue.attribute())
+        {
+            if(mUnknownAttributeNames == null)
+            {
+                mUnknownAttributeNames = new HashSet<>();
+            }
+            mUnknownAttributeNames.add(key);
+        }
         if(mUnknownProperties == null)
         {
             mUnknownProperties = new LinkedHashMap<>();
@@ -439,16 +460,28 @@ public abstract class BroadcastConfiguration
         }
         else
         {
-            List<Object> values = new ArrayList<>();
-            values.add(existing);
-            values.add(value);
-            mUnknownProperties.put(key, values);
+            mUnknownProperties.put(key, new ArrayList<>(List.of(existing, value)));
         }
     }
 
-    @JsonAnyGetter
+    @JsonIgnore
     public Map<String, Object> getUnknownProperties()
     {
         return mUnknownProperties;
+    }
+
+    @JsonAnyGetter
+    @JsonSerialize(keyUsing = Configuration.UnknownXmlPropertyNameSerializer.class)
+    public Map<String, Object> getSerializedUnknownProperties()
+    {
+        if(mUnknownProperties == null)
+        {
+            return null;
+        }
+        Map<String, Object> properties = new LinkedHashMap<>();
+        mUnknownProperties.forEach((key, value) -> properties.put(
+                mUnknownAttributeNames != null && mUnknownAttributeNames.contains(key) ?
+                        Configuration.UnknownXmlPropertyNameSerializer.ATTRIBUTE_PREFIX + key : key, value));
+        return properties;
     }
 }

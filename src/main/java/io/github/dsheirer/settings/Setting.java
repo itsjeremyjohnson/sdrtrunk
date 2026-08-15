@@ -19,16 +19,21 @@ package io.github.dsheirer.settings;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
+import io.github.dsheirer.controller.config.Configuration;
 import io.github.dsheirer.map.DefaultIcon;
 import io.github.dsheirer.map.MapIcon;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @JsonTypeInfo(use = JsonTypeInfo.Id.NAME, include= JsonTypeInfo.As.PROPERTY, property="type")
 @JsonSubTypes({
@@ -39,6 +44,7 @@ import java.util.Map;
     @JsonSubTypes.Type(value=MapViewSetting.class, name="mapViewSetting"),
 })
 @JacksonXmlRootElement( localName = "setting" )
+@JsonPropertyOrder({"serializedUnknownProperties"})
 public abstract class Setting
 {
     protected String mName;
@@ -67,10 +73,25 @@ public abstract class Setting
     public abstract SettingType getType();
 
     private Map<String, Object> mUnknownProperties;
+    private Set<String> mUnknownAttributeNames;
 
-    @JsonAnySetter
     public void setUnknownProperty(String key, Object value)
     {
+        setUnknownProperty(key, new Configuration.UnknownXmlPropertyValue(value, false));
+    }
+
+    @JsonAnySetter
+    public void setUnknownProperty(String key, Configuration.UnknownXmlPropertyValue unknownValue)
+    {
+        Object value = unknownValue.value();
+        if(unknownValue.attribute())
+        {
+            if(mUnknownAttributeNames == null)
+            {
+                mUnknownAttributeNames = new HashSet<>();
+            }
+            mUnknownAttributeNames.add(key);
+        }
         if(mUnknownProperties == null)
         {
             mUnknownProperties = new LinkedHashMap<>();
@@ -88,16 +109,28 @@ public abstract class Setting
         }
         else
         {
-            List<Object> values = new ArrayList<>();
-            values.add(existing);
-            values.add(value);
-            mUnknownProperties.put(key, values);
+            mUnknownProperties.put(key, new ArrayList<>(List.of(existing, value)));
         }
     }
 
-    @JsonAnyGetter
+    @JsonIgnore
     public Map<String, Object> getUnknownProperties()
     {
         return mUnknownProperties;
+    }
+
+    @JsonAnyGetter
+    @JsonSerialize(keyUsing = Configuration.UnknownXmlPropertyNameSerializer.class)
+    public Map<String, Object> getSerializedUnknownProperties()
+    {
+        if(mUnknownProperties == null)
+        {
+            return null;
+        }
+        Map<String, Object> properties = new LinkedHashMap<>();
+        mUnknownProperties.forEach((key, value) -> properties.put(
+                mUnknownAttributeNames != null && mUnknownAttributeNames.contains(key) ?
+                        Configuration.UnknownXmlPropertyNameSerializer.ATTRIBUTE_PREFIX + key : key, value));
+        return properties;
     }
 }

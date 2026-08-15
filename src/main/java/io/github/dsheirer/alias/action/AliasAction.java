@@ -21,18 +21,23 @@ package io.github.dsheirer.alias.action;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
 import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.alias.action.beep.BeepAction;
 import io.github.dsheirer.alias.action.clip.ClipAction;
 import io.github.dsheirer.alias.action.script.ScriptAction;
+import io.github.dsheirer.controller.config.Configuration;
 import io.github.dsheirer.message.IMessage;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import javafx.beans.Observable;
 import javafx.beans.property.SimpleStringProperty;
 import javafx.util.Callback;
@@ -48,6 +53,7 @@ import javafx.util.Callback;
     @JsonSubTypes.Type(value = ScriptAction.class, name = "scriptAction")
 })
 @JacksonXmlRootElement(localName = "action")
+@JsonPropertyOrder({"serializedUnknownProperties"})
 public abstract class AliasAction
 {
     private SimpleStringProperty mValueProperty = new SimpleStringProperty();
@@ -102,10 +108,25 @@ public abstract class AliasAction
     }
 
     private Map<String, Object> mUnknownProperties;
+    private Set<String> mUnknownAttributeNames;
 
-    @JsonAnySetter
     public void setUnknownProperty(String key, Object value)
     {
+        setUnknownProperty(key, new Configuration.UnknownXmlPropertyValue(value, false));
+    }
+
+    @JsonAnySetter
+    public void setUnknownProperty(String key, Configuration.UnknownXmlPropertyValue unknownValue)
+    {
+        Object value = unknownValue.value();
+        if(unknownValue.attribute())
+        {
+            if(mUnknownAttributeNames == null)
+            {
+                mUnknownAttributeNames = new HashSet<>();
+            }
+            mUnknownAttributeNames.add(key);
+        }
         if(mUnknownProperties == null)
         {
             mUnknownProperties = new LinkedHashMap<>();
@@ -123,17 +144,29 @@ public abstract class AliasAction
         }
         else
         {
-            List<Object> values = new ArrayList<>();
-            values.add(existing);
-            values.add(value);
-            mUnknownProperties.put(key, values);
+            mUnknownProperties.put(key, new ArrayList<>(List.of(existing, value)));
         }
     }
 
-    @JsonAnyGetter
+    @JsonIgnore
     public Map<String, Object> getUnknownProperties()
     {
         return mUnknownProperties;
+    }
+
+    @JsonAnyGetter
+    @JsonSerialize(keyUsing = Configuration.UnknownXmlPropertyNameSerializer.class)
+    public Map<String, Object> getSerializedUnknownProperties()
+    {
+        if(mUnknownProperties == null)
+        {
+            return null;
+        }
+        Map<String, Object> properties = new LinkedHashMap<>();
+        mUnknownProperties.forEach((key, value) -> properties.put(
+                mUnknownAttributeNames != null && mUnknownAttributeNames.contains(key) ?
+                        Configuration.UnknownXmlPropertyNameSerializer.ATTRIBUTE_PREFIX + key : key, value));
+        return properties;
     }
 
     public void copyUnknownPropertiesFrom(AliasAction aliasAction)
@@ -143,6 +176,10 @@ public abstract class AliasAction
             mUnknownProperties = new LinkedHashMap<>();
             aliasAction.mUnknownProperties.forEach((key, value) -> mUnknownProperties.put(key,
                     value instanceof List<?> list ? new ArrayList<>(list) : value));
+            if(aliasAction.mUnknownAttributeNames != null)
+            {
+                mUnknownAttributeNames = new HashSet<>(aliasAction.mUnknownAttributeNames);
+            }
         }
     }
 }

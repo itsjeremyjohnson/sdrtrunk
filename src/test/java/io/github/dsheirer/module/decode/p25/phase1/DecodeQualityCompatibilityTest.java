@@ -42,6 +42,21 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void basebandDiscoveryRecognizesAndOrdersRolloverFiles()
+    {
+        assertTrue(DecodeQualityTest.isBasebandFileName("call_baseband.wav"));
+        assertTrue(DecodeQualityTest.isBasebandFileName("call_baseband_2.wav"));
+        assertTrue(DecodeQualityTest.isBasebandFileName("call_baseband_10.wav"));
+        assertFalse(DecodeQualityTest.isBasebandFileName("call_baseband_1.wav"));
+        assertFalse(DecodeQualityTest.isBasebandFileName("call.wav"));
+
+        List<String> names = new java.util.ArrayList<>(List.of("call_baseband_10.wav", "call_baseband_2.wav",
+                "call_baseband.wav"));
+        names.sort(DecodeQualityTest::compareBasebandFileNames);
+        assertEquals(List.of("call_baseband.wav", "call_baseband_2.wav", "call_baseband_10.wav"), names);
+    }
+
+    @Test
     void duplicateBasenamesRetainRelativeDirectoryIdentity()
     {
         java.nio.file.Path root = java.nio.file.Path.of("samples").toAbsolutePath();
@@ -384,10 +399,32 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void scorerConcealmentAppliesGainAfterRawFrameFade()
+    {
+        float[] raw = {1.0f, 0.1f};
+
+        float[] concealed = DecodeQualityTest.concealScoringFrame(raw, 0.5f);
+
+        assertEquals(0.95f, concealed[0]);
+        assertEquals(0.25f, concealed[1]);
+        assertEquals(1.0f, raw[0]);
+    }
+
+    @Test
+    void scoringImbeDiagnosticsAreOwnedByRevisionIndependentHarness()
+    {
+        DecodeQualityIMBEFrameDiagnostic.FrameErrors errors =
+                DecodeQualityIMBEFrameDiagnostic.analyzeFrame(new byte[18]);
+
+        assertTrue(errors.totalErrors() >= 0);
+        assertEquals(7, errors.codewordErrors().length);
+    }
+
+    @Test
     void fullScoringAlwaysGatesUncorrectableCodewords()
     {
-        io.github.dsheirer.module.decode.p25.phase1.message.ldu.IMBEFrameDiagnostic.FrameErrors uncorrectable =
-                new io.github.dsheirer.module.decode.p25.phase1.message.ldu.IMBEFrameDiagnostic.FrameErrors(
+        DecodeQualityIMBEFrameDiagnostic.FrameErrors uncorrectable =
+                new DecodeQualityIMBEFrameDiagnostic.FrameErrors(
                         new int[]{4, 0, 0, 0, 0, 0, 0}, 4, 1, true);
 
         assertEquals(true, DecodeQualityTest.shouldGateScoringFrame(uncorrectable, 4, false));

@@ -195,8 +195,15 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     @Override
     public void setSquelchOverride(boolean override)
     {
+        boolean endCtcssCall = shouldEndCallOnOverrideRelease(mSquelchOverride, override,
+                mCTCSSDetector != null, mCTCSSDetector != null && mCTCSSDetector.isToneDetected());
         mSquelchOverride = override;
         mNoiseSquelch.setSquelchOverride(override);
+
+        if(endCtcssCall)
+        {
+            notifyCallEnd();
+        }
     }
 
     /**
@@ -310,6 +317,12 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     static boolean shouldPassCTCSS(boolean detectorConfigured, boolean toneDetected, boolean squelchOverride)
     {
         return squelchOverride || !detectorConfigured || toneDetected;
+    }
+
+    static boolean shouldEndCallOnOverrideRelease(boolean wasOverridden, boolean override,
+                                                  boolean detectorConfigured, boolean toneDetected)
+    {
+        return wasOverridden && !override && detectorConfigured && !toneDetected;
     }
 
     private void flushPendingSquelchAudio()

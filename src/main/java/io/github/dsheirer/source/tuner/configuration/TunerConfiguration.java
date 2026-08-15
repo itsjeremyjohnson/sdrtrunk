@@ -21,10 +21,13 @@ package io.github.dsheirer.source.tuner.configuration;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonPropertyOrder;
 import com.fasterxml.jackson.annotation.JsonSubTypes;
 import com.fasterxml.jackson.annotation.JsonTypeInfo;
+import com.fasterxml.jackson.databind.annotation.JsonSerialize;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
+import io.github.dsheirer.controller.config.Configuration;
 import io.github.dsheirer.source.tuner.TunerType;
 import io.github.dsheirer.source.tuner.airspy.AirspyTunerConfiguration;
 import io.github.dsheirer.source.tuner.airspy.hf.AirspyHfTunerConfiguration;
@@ -39,9 +42,11 @@ import io.github.dsheirer.source.tuner.rtl.r8x.r820t.R820TTunerConfiguration;
 import io.github.dsheirer.source.tuner.rtl.r8x.r828d.R828DTunerConfiguration;
 import io.github.dsheirer.source.tuner.sdrplay.RspTunerConfiguration;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * Abstract class to hold a configuration for a specific type of tuner
@@ -62,6 +67,7 @@ import java.util.Map;
         @JsonSubTypes.Type(value = RspTunerConfiguration.class, name = "rspTunerConfiguration"),
 })
 @JacksonXmlRootElement(localName = "tuner_configuration")
+@JsonPropertyOrder({"serializedUnknownProperties"})
 public abstract class TunerConfiguration
 {
     public static final long DEFAULT_FREQUENCY = 101_100_000;
@@ -193,10 +199,25 @@ public abstract class TunerConfiguration
     }
 
     private Map<String, Object> mUnknownProperties;
+    private Set<String> mUnknownAttributeNames;
 
-    @JsonAnySetter
     public void setUnknownProperty(String key, Object value)
     {
+        setUnknownProperty(key, new Configuration.UnknownXmlPropertyValue(value, false));
+    }
+
+    @JsonAnySetter
+    public void setUnknownProperty(String key, Configuration.UnknownXmlPropertyValue unknownValue)
+    {
+        Object value = unknownValue.value();
+        if(unknownValue.attribute())
+        {
+            if(mUnknownAttributeNames == null)
+            {
+                mUnknownAttributeNames = new HashSet<>();
+            }
+            mUnknownAttributeNames.add(key);
+        }
         if(mUnknownProperties == null)
         {
             mUnknownProperties = new LinkedHashMap<>();
@@ -214,16 +235,28 @@ public abstract class TunerConfiguration
         }
         else
         {
-            List<Object> values = new ArrayList<>();
-            values.add(existing);
-            values.add(value);
-            mUnknownProperties.put(key, values);
+            mUnknownProperties.put(key, new ArrayList<>(List.of(existing, value)));
         }
     }
 
-    @JsonAnyGetter
+    @JsonIgnore
     public Map<String, Object> getUnknownProperties()
     {
         return mUnknownProperties;
+    }
+
+    @JsonAnyGetter
+    @JsonSerialize(keyUsing = Configuration.UnknownXmlPropertyNameSerializer.class)
+    public Map<String, Object> getSerializedUnknownProperties()
+    {
+        if(mUnknownProperties == null)
+        {
+            return null;
+        }
+        Map<String, Object> properties = new LinkedHashMap<>();
+        mUnknownProperties.forEach((key, value) -> properties.put(
+                mUnknownAttributeNames != null && mUnknownAttributeNames.contains(key) ?
+                        Configuration.UnknownXmlPropertyNameSerializer.ATTRIBUTE_PREFIX + key : key, value));
+        return properties;
     }
 }
