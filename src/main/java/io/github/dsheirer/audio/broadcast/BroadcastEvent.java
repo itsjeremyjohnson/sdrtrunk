@@ -88,6 +88,7 @@ public class BroadcastEvent
 
         CONFIGURATION_ADD,
         CONFIGURATION_CHANGE,
+        CONFIGURATION_RECONNECT,
         CONFIGURATION_DELETE;
     }
 }

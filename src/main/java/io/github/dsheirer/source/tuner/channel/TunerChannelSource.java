@@ -25,6 +25,7 @@ import io.github.dsheirer.source.ISourceEventProcessor;
 import io.github.dsheirer.source.SourceEvent;
 import io.github.dsheirer.source.SourceEventListenerToProcessorAdapter;
 import io.github.dsheirer.source.SourceException;
+import io.github.dsheirer.source.tuner.Tuner;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -37,6 +38,7 @@ public abstract class TunerChannelSource extends ComplexSource implements ISourc
     private Listener<SourceEvent> mProducerSourceEventListener;
     private Listener<SourceEvent> mConsumerSourceEventListener;
     protected String mThreadName;
+    private Tuner mTuner;
 
     /**
      * Tuner Channel Source is a Digital Drop Channel (DDC) abstract class that defines the minimum functionality
@@ -53,6 +55,22 @@ public abstract class TunerChannelSource extends ComplexSource implements ISourc
         mTunerChannel = tunerChannel;
         mConsumerSourceEventListenerAdapter = new SourceEventListenerToProcessorAdapter(this);
         mThreadName = threadName;
+    }
+
+    /**
+     * Sets the tuner providing samples for this channel source.
+     */
+    public void setTuner(Tuner tuner)
+    {
+        mTuner = tuner;
+    }
+
+    /**
+     * Tuner currently providing samples for this channel source.
+     */
+    public Tuner getTuner()
+    {
+        return mTuner;
     }
 
     @Override

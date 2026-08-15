@@ -68,6 +68,27 @@ public class AudioSegmentRouter
     }
 
     /**
+     * Identifies the preferred format supported by a mixer for routed audio.
+     *
+     * @param mixer to inspect
+     * @return supported stereo or mono format, or null when neither is available
+     */
+    public static AudioFormat getSupportedOutputFormat(Mixer mixer)
+    {
+        AudioFormat stereoFormat = new AudioFormat(8000.0f, 16, 2, true, false);
+        DataLine.Info stereoInfo = new DataLine.Info(SourceDataLine.class, stereoFormat);
+
+        if(mixer.isLineSupported(stereoInfo))
+        {
+            return stereoFormat;
+        }
+
+        AudioFormat monoFormat = new AudioFormat(8000.0f, 16, 1, true, false);
+        DataLine.Info monoInfo = new DataLine.Info(SourceDataLine.class, monoFormat);
+        return mixer.isLineSupported(monoInfo) ? monoFormat : null;
+    }
+
+    /**
      * Writes silence to recently active audio lines to prevent clicking
      * Only feeds lines that ended within the last 1 second
      */
@@ -410,28 +431,7 @@ public class AudioSegmentRouter
                 if(matches)
                 {
                     Mixer mixer = AudioSystem.getMixer(mixerInfo);
-                    AudioFormat selectedFormat = null;
-
-                    // Try stereo first
-                    AudioFormat stereoFormat = new AudioFormat(8000.0f, 16, 2, true, false);
-                    DataLine.Info stereoInfo = new DataLine.Info(SourceDataLine.class, stereoFormat);
-
-                    if(mixer.isLineSupported(stereoInfo))
-                    {
-                        selectedFormat = stereoFormat;
-                        mLog.info("Using STEREO for: " + deviceName);
-                    }
-                    else
-                    {
-                        AudioFormat monoFormat = new AudioFormat(8000.0f, 16, 1, true, false);
-                        DataLine.Info monoInfo = new DataLine.Info(SourceDataLine.class, monoFormat);
-
-                        if(mixer.isLineSupported(monoInfo))
-                        {
-                            selectedFormat = monoFormat;
-                            mLog.info("Using MONO for: " + deviceName);
-                        }
-                    }
+                    AudioFormat selectedFormat = getSupportedOutputFormat(mixer);
 
                     if(selectedFormat != null)
                     {

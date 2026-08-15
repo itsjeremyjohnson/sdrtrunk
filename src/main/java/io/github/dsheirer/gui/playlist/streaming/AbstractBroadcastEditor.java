@@ -199,11 +199,8 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
     }
 
     /**
-     * Reconnect button - stops and restarts the streaming connection for the current
-     * configuration by firing a CONFIGURATION_CHANGE event. The BroadcastModel handles
-     * this by deleting the existing broadcaster and scheduling a new one after a brief
-     * delay (allowing the remote server time to clean up). Only available when the
-     * stream is currently enabled and there are no unsaved edits.
+     * Reconnect button - stops and restarts the existing streaming connection after a brief delay. Only available when
+     * the stream is currently enabled and there are no unsaved edits.
      */
     protected Button getReconnectButton()
     {
@@ -233,7 +230,7 @@ public abstract class AbstractBroadcastEditor<T extends BroadcastConfiguration> 
         }
 
         mPlaylistManager.getBroadcastModel().process(new BroadcastEvent(configuration,
-            BroadcastEvent.Event.CONFIGURATION_CHANGE));
+            BroadcastEvent.Event.CONFIGURATION_RECONNECT));
     }
 
     protected TextField getNameTextField()

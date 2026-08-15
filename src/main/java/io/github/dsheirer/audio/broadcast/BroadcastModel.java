@@ -367,6 +367,26 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
     }
 
     /**
+     * Restarts an existing broadcaster without disposing it so that queued recordings remain pending.
+     */
+    void restartBroadcaster(ConfiguredBroadcast configuredBroadcast)
+    {
+        if(configuredBroadcast != null && configuredBroadcast.hasAudioBroadcaster())
+        {
+            AbstractAudioBroadcaster broadcaster = configuredBroadcast.getAudioBroadcaster();
+            broadcaster.stop();
+            ThreadPool.SCHEDULED.schedule(() ->
+            {
+                if(configuredBroadcast.getAudioBroadcaster() == broadcaster &&
+                    configuredBroadcast.getBroadcastConfiguration().isEnabled())
+                {
+                    broadcaster.start();
+                }
+            }, 1, TimeUnit.SECONDS);
+        }
+    }
+
+    /**
      * Shut down a broadcaster created from the configuration and remove it from this model
      */
     private void deleteBroadcaster(ConfiguredBroadcast configuredBroadcast)
@@ -500,6 +520,9 @@ public class BroadcastModel extends AbstractTableModel implements Listener<Audio
 
                     int index = mConfiguredBroadcasts.indexOf(configuredBroadcast);
                     fireTableRowsUpdated(index, index);
+                    break;
+                case CONFIGURATION_RECONNECT:
+                    restartBroadcaster(getConfiguredBroadcast(broadcastEvent.getBroadcastConfiguration()));
                     break;
                 case CONFIGURATION_DELETE:
                     deleteBroadcaster(getConfiguredBroadcast(broadcastEvent.getBroadcastConfiguration()));

@@ -630,6 +630,7 @@ public class TunerManager implements IDiscoveredTunerStatusListener
 
                         if(source != null)
                         {
+                            source.setTuner(discoveredTuner.getTuner());
                             return source;
                         }
                     }
@@ -655,6 +656,11 @@ public class TunerManager implements IDiscoveredTunerStatusListener
                     {
                         source = discoveredTuner.getTuner().getChannelSourceManager().getSource(tunerChannel,
                                 channelSpecification, threadName);
+
+                        if(source != null)
+                        {
+                            source.setTuner(discoveredTuner.getTuner());
+                        }
                     }
                     catch(Exception e)
                     {

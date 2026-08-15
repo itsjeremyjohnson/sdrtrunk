@@ -134,7 +134,6 @@ public class RdioScannerBroadcaster extends AbstractAudioBroadcaster<RdioScanner
         {
             mAudioRecordingProcessorFuture.cancel(true);
             mAudioRecordingProcessorFuture = null;
-            dispose();
             setBroadcastState(BroadcastState.DISCONNECTED);
         }
     }

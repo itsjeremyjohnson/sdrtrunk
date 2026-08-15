@@ -132,7 +132,6 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
         {
             mAudioRecordingProcessorFuture.cancel(true);
             mAudioRecordingProcessorFuture = null;
-            dispose();
             setBroadcastState(BroadcastState.DISCONNECTED);
         }
     }

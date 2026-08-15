@@ -142,7 +142,6 @@ public class BroadcastifyCallBroadcaster extends AbstractAudioBroadcaster<Broadc
         {
             mAudioRecordingProcessorFuture.cancel(true);
             mAudioRecordingProcessorFuture = null;
-            dispose();
             setBroadcastState(BroadcastState.DISCONNECTED);
         }
     }

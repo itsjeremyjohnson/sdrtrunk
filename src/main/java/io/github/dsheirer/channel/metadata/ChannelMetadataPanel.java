@@ -41,7 +41,6 @@ import io.github.dsheirer.audio.AbstractAudioModule;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.sample.Broadcaster;
 import io.github.dsheirer.sample.Listener;
-import io.github.dsheirer.source.Source;
 import io.github.dsheirer.source.config.SourceConfigTuner;
 import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
 import io.github.dsheirer.source.config.SourceConfiguration;
@@ -586,10 +585,15 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         return mMutedChannelIds.contains(channel.getChannelID());
     }
 
+    static Tuner getLiveTuner(TunerChannelSource tunerChannelSource)
+    {
+        return tunerChannelSource != null ? tunerChannelSource.getTuner() : null;
+    }
+
     /**
      * Attempts to show the tuner serving a channel in the main spectral display (waterfall).
-     * Finds the tuner by checking the channel's source configuration for a preferred tuner name,
-     * or by matching against the processing chain's current tuner channel source.
+     * Finds the tuner from the processing chain's live tuner channel source, falling back to the configured preferred
+     * tuner when the live source is unavailable.
      * @param channel to show in waterfall
      */
     private void showChannelInWaterfall(Channel channel)
@@ -601,69 +605,32 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         }
 
         DiscoveredTunerModel discoveredTunerModel = mTunerManager.getDiscoveredTunerModel();
-        Tuner tuner = null;
-
-        // First try: find tuner via preferred tuner name from source config
+        ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
+        TunerChannelSource tunerChannelSource = processingChain != null &&
+            processingChain.getSource() instanceof TunerChannelSource source ? source : null;
+        Tuner tuner = getLiveTuner(tunerChannelSource);
         SourceConfiguration sourceConfig = channel.getSourceConfiguration();
 
-        String preferredTunerName = null;
-
-        if(sourceConfig instanceof SourceConfigTuner)
-        {
-            preferredTunerName = ((SourceConfigTuner)sourceConfig).getPreferredTuner();
-        }
-        else if(sourceConfig instanceof SourceConfigTunerMultipleFrequency)
-        {
-            preferredTunerName = ((SourceConfigTunerMultipleFrequency)sourceConfig).getPreferredTuner();
-        }
-
-        if(preferredTunerName != null)
-        {
-            DiscoveredTuner discoveredTuner = mTunerManager.getDiscoveredTuner(preferredTunerName);
-
-            if(discoveredTuner != null && discoveredTuner.hasTuner())
-            {
-                tuner = discoveredTuner.getTuner();
-            }
-        }
-
-        // Second try: find tuner via the processing chain's source
         if(tuner == null)
         {
-            ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
+            String preferredTunerName = null;
 
-            if(processingChain != null)
+            if(sourceConfig instanceof SourceConfigTuner)
             {
-                Source source = processingChain.getSource();
+                preferredTunerName = ((SourceConfigTuner)sourceConfig).getPreferredTuner();
+            }
+            else if(sourceConfig instanceof SourceConfigTunerMultipleFrequency)
+            {
+                preferredTunerName = ((SourceConfigTunerMultipleFrequency)sourceConfig).getPreferredTuner();
+            }
 
-                if(source instanceof TunerChannelSource)
+            if(preferredTunerName != null)
+            {
+                DiscoveredTuner discoveredTuner = mTunerManager.getDiscoveredTuner(preferredTunerName);
+
+                if(discoveredTuner != null && discoveredTuner.hasTuner())
                 {
-                    long channelFrequency = ((TunerChannelSource)source).getFrequency();
-
-                    // Find which tuner is serving this frequency
-                    for(DiscoveredTuner discoveredTuner : discoveredTunerModel.getAvailableTuners())
-                    {
-                        if(discoveredTuner.hasTuner())
-                        {
-                            try
-                            {
-                                long tunerFreq = discoveredTuner.getTuner().getTunerController().getFrequency();
-                                double sampleRate = discoveredTuner.getTuner().getTunerController().getSampleRate();
-                                long halfBandwidth = (long)(sampleRate / 2.0);
-
-                                if(channelFrequency >= tunerFreq - halfBandwidth &&
-                                   channelFrequency <= tunerFreq + halfBandwidth)
-                                {
-                                    tuner = discoveredTuner.getTuner();
-                                    break;
-                                }
-                            }
-                            catch(Exception ex)
-                            {
-                                mLog.error("Error checking tuner frequency", ex);
-                            }
-                        }
-                    }
+                    tuner = discoveredTuner.getTuner();
                 }
             }
         }
@@ -671,13 +638,7 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         if(tuner != null)
         {
             // Prefer the live source frequency so rotated multi-frequency channels center correctly.
-            long channelFrequency = 0;
-            ProcessingChain pc = mChannelProcessingManager.getProcessingChain(channel);
-
-            if(pc != null && pc.getSource() instanceof TunerChannelSource)
-            {
-                channelFrequency = ((TunerChannelSource)pc.getSource()).getFrequency();
-            }
+            long channelFrequency = tunerChannelSource != null ? tunerChannelSource.getFrequency() : 0;
 
             if(channelFrequency == 0 && sourceConfig instanceof SourceConfigTuner)
             {

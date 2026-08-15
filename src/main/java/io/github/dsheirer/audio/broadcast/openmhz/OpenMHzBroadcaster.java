@@ -139,7 +139,6 @@ import org.slf4j.LoggerFactory;
          {
              mAudioRecordingProcessorFuture.cancel(true);
              mAudioRecordingProcessorFuture = null;
-             dispose();
              setBroadcastState(BroadcastState.DISCONNECTED);
          }
      }

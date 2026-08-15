@@ -19,6 +19,7 @@
 package io.github.dsheirer.gui.editor;
 
 import io.github.dsheirer.alias.Alias;
+import io.github.dsheirer.audio.playback.AudioSegmentRouter;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.beans.value.ChangeListener;
@@ -106,6 +107,13 @@ public class AudioOutputDeviceEditor extends HBox
 
             for(Mixer.Info mixerInfo : mixers)
             {
+                Mixer mixer = AudioSystem.getMixer(mixerInfo);
+
+                if(AudioSegmentRouter.getSupportedOutputFormat(mixer) == null)
+                {
+                    continue;
+                }
+
                 String mixerName = mixerInfo.getName();
                 String displayName = mixerName;
 

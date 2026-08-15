@@ -15,16 +15,48 @@ import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup
 import io.github.dsheirer.protocol.Protocol;
 import org.junit.jupiter.api.Test;
 
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.DataLine;
+import javax.sound.sampled.Mixer;
 import javax.sound.sampled.SourceDataLine;
 import java.lang.reflect.Proxy;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 class AudioSegmentRouterTest
 {
+    @Test
+    void identifiesUsableRoutedOutputFormats()
+    {
+        AudioFormat stereo = AudioSegmentRouter.getSupportedOutputFormat(mixerSupportingChannels(2));
+        assertEquals(2, stereo.getChannels());
+        assertEquals(8000.0f, stereo.getSampleRate());
+        assertEquals(16, stereo.getSampleSizeInBits());
+
+        AudioFormat mono = AudioSegmentRouter.getSupportedOutputFormat(mixerSupportingChannels(1));
+        assertEquals(1, mono.getChannels());
+        assertNull(AudioSegmentRouter.getSupportedOutputFormat(mixerSupportingChannels(0)));
+    }
+
+    private Mixer mixerSupportingChannels(int channels)
+    {
+        return (Mixer)Proxy.newProxyInstance(Mixer.class.getClassLoader(), new Class[]{Mixer.class},
+            (proxy, method, args) ->
+            {
+                if(method.getName().equals("isLineSupported"))
+                {
+                    DataLine.Info lineInfo = (DataLine.Info)args[0];
+                    return lineInfo.getFormats()[0].getChannels() == channels;
+                }
+
+                return method.getReturnType() == boolean.class ? false : null;
+            });
+    }
+
     @Test
     void selectsAliasWithConfiguredOutputDevice()
     {
