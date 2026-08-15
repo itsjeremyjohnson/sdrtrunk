@@ -44,7 +44,7 @@ import javax.sound.sampled.UnsupportedAudioFileException;
  */
 public class TransmissionScoringTest
 {
-    private static int sConfiguredNAC = 0;
+    private static int sConfiguredNAC = -1;
     private static int sExtractWorst = 0;
     private static boolean sExtractRegressions = false;
     private static File sOutputDir = null;
@@ -142,7 +142,7 @@ public class TransmissionScoringTest
     {
         System.out.println("=== Transmission Scoring Analysis ===");
         System.out.println("File: " + file.getName());
-        if(sConfiguredNAC > 0)
+        if(sConfiguredNAC >= 0)
         {
             System.out.println("NAC: " + sConfiguredNAC);
         }
@@ -490,7 +490,7 @@ public class TransmissionScoringTest
             {
                 P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
                 decoder.setMessageListener(messageListener);
-                if(sConfiguredNAC > 0)
+                if(sConfiguredNAC >= 0)
                 {
                     decoder.setConfiguredNAC(sConfiguredNAC);
                 }

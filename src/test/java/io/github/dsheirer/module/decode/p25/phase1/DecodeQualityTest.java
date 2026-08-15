@@ -71,6 +71,8 @@ public class DecodeQualityTest
 {
     private static final Pattern BASEBAND_FILE_PATTERN =
             Pattern.compile("^(.*_baseband)(?:_([2-9]|[1-9][0-9]+))?\\.wav$");
+    private static final Pattern BASEBAND_SUFFIX_PATTERN =
+            Pattern.compile("_baseband(?:_(?:[2-9]|[1-9][0-9]+))?\\.wav$");
     record DecoderTuning(int maxImbeErrors, boolean ignoreEncryptionState, float cmaAcquisitionMu,
                          float cmaTrackingMu, int cmaGearShiftMs, float gardnerBandwidth, float afcAlpha,
                          boolean adaptiveThresholds, boolean dfeEnabled, float dfeMu)
@@ -1553,10 +1555,7 @@ public class DecodeQualityTest
             if(marker >= 0)
             {
                 String suffix = filename.substring(marker + frequencyMarker.length());
-                if(suffix.endsWith("_baseband.wav"))
-                {
-                    suffix = suffix.substring(0, suffix.length() - "_baseband.wav".length());
-                }
+                suffix = BASEBAND_SUFFIX_PATTERN.matcher(suffix).replaceFirst("");
                 return stripTrailingChannelId(suffix);
             }
         }

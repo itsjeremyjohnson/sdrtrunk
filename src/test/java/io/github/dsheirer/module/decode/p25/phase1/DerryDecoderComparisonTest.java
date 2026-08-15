@@ -41,7 +41,7 @@ import java.util.List;
  */
 public class DerryDecoderComparisonTest
 {
-    private static int sConfiguredNAC = 0;
+    private static int sConfiguredNAC = -1;
 
     public static void main(String[] args)
     {
@@ -104,7 +104,7 @@ public class DerryDecoderComparisonTest
                 if(sConfiguredNAC < 0 || sConfiguredNAC > 4095)
                 {
                     System.out.println("WARNING: NAC must be 0-4095, ignoring: " + sConfiguredNAC);
-                    sConfiguredNAC = 0;
+                    sConfiguredNAC = -1;
                 }
             }
             catch(NumberFormatException e)
@@ -126,7 +126,7 @@ public class DerryDecoderComparisonTest
         System.out.println("╔══════════════════════════════════════════════════════════════════════════════╗");
         System.out.println("║              P25 Phase 1 — 3-Way Decoder Comparison                        ║");
         System.out.println("╚══════════════════════════════════════════════════════════════════════════════╝");
-        if(sConfiguredNAC > 0)
+        if(sConfiguredNAC >= 0)
         {
             System.out.println("Configured NAC: " + sConfiguredNAC);
         }
@@ -498,7 +498,7 @@ public class DerryDecoderComparisonTest
             P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
             decoder.setMessageListener(listener);
 
-            if(sConfiguredNAC > 0)
+            if(sConfiguredNAC >= 0)
             {
                 decoder.setConfiguredNAC(sConfiguredNAC);
             }

@@ -46,7 +46,7 @@ import java.util.List;
  */
 public class AudioComparisonTest
 {
-    private static int sConfiguredNAC = 0;
+    private static int sConfiguredNAC = -1;
     private static String sV2Diagnostics = "";
 
     public static void main(String[] args)
@@ -92,7 +92,7 @@ public class AudioComparisonTest
                 if(sConfiguredNAC < 0 || sConfiguredNAC > 4095)
                 {
                     System.out.println("WARNING: NAC must be 0-4095, ignoring: " + sConfiguredNAC);
-                    sConfiguredNAC = 0;
+                    sConfiguredNAC = -1;
                 }
             }
             catch(NumberFormatException e)
@@ -120,7 +120,7 @@ public class AudioComparisonTest
         }
 
         System.out.println("=== P25 LSM vs LSM v2 Audio Comparison ===");
-        System.out.println("File: " + basebandFile.getName() + " | NAC: " + (sConfiguredNAC > 0 ? sConfiguredNAC : "auto") +
+        System.out.println("File: " + basebandFile.getName() + " | NAC: " + (sConfiguredNAC >= 0 ? sConfiguredNAC : "auto") +
                           " | JMBE: " + codec.getVersion());
         System.out.println();
 
@@ -318,7 +318,7 @@ public class AudioComparisonTest
                 P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
                 decoder.setMessageListener(messageListener);
 
-                if(sConfiguredNAC > 0)
+                if(sConfiguredNAC >= 0)
                 {
                     decoder.setConfiguredNAC(sConfiguredNAC);
                 }

@@ -29,6 +29,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.IdentityHashMap;
 import java.util.Iterator;
 import java.util.List;
 import java.util.Map;
@@ -51,13 +52,13 @@ public class MissedTransmissionAnalyzer
     private static final double WEAK_SIGNAL_PERCENTILE = 0.10; // Bottom 10%
 
     // State
-    private static int sConfiguredNAC = 0;
+    private static int sConfiguredNAC = -1;
     private static boolean sExtractEnabled = false;
     private static File sExtractDir = null;
-    private static List<File> sSourceFiles = new ArrayList<>();
 
     // Collected results
     private final List<TransmissionDecodeResult> allResults = new ArrayList<>();
+    private final Map<TransmissionDecodeResult, File> resultSourceFiles = new IdentityHashMap<>();
     private final List<MissedTransmission> missedTransmissions = new ArrayList<>();
     private final List<LowRateTransmission> lowRateTransmissions = new ArrayList<>();
 
@@ -134,11 +135,10 @@ public class MissedTransmissionAnalyzer
 
         // Sort files by name
         files.sort(Comparator.comparing(File::getName));
-        sSourceFiles = files;
 
         System.out.println("=== MISSED TRANSMISSION ANALYSIS ===");
         System.out.println("Files: " + files.size());
-        if(sConfiguredNAC > 0)
+        if(sConfiguredNAC >= 0)
         {
             System.out.println("NAC: " + sConfiguredNAC);
         }
@@ -184,7 +184,7 @@ public class MissedTransmissionAnalyzer
         if(sExtractEnabled && sExtractDir != null && !files.isEmpty())
         {
             System.out.println();
-            analyzer.extractMissedTransmissions(files);
+            analyzer.extractMissedTransmissions();
         }
     }
 
@@ -229,7 +229,7 @@ public class MissedTransmissionAnalyzer
         for(Transmission tx : transmissions)
         {
             TransmissionDecodeResult result = scorer.scoreForDetectionMetrics(tx, lsmStats, v2Stats, 0);
-            allResults.add(result);
+            recordResult(file, result);
         }
 
         int missedCount = (int) allResults.stream()
@@ -302,7 +302,7 @@ public class MissedTransmissionAnalyzer
             {
                 P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
                 decoder.setMessageListener(messageListener);
-                if(sConfiguredNAC > 0)
+                if(sConfiguredNAC >= 0)
                 {
                     decoder.setConfiguredNAC(sConfiguredNAC);
                 }
@@ -341,6 +341,17 @@ public class MissedTransmissionAnalyzer
         }
 
         return stats;
+    }
+
+    void recordResult(File sourceFile, TransmissionDecodeResult result)
+    {
+        allResults.add(result);
+        resultSourceFiles.put(result, sourceFile);
+    }
+
+    File sourceFileFor(TransmissionDecodeResult result)
+    {
+        return resultSourceFiles.get(result);
     }
 
     /**
@@ -423,7 +434,7 @@ public class MissedTransmissionAnalyzer
             diagnostic = "Could not determine cause";
         }
 
-        return new MissedTransmission(result, category, diagnostic);
+        return new MissedTransmission(sourceFileFor(result), result, category, diagnostic);
     }
 
     /**
@@ -916,7 +927,7 @@ public class MissedTransmissionAnalyzer
     /**
      * Extracts missed transmissions to separate files for manual analysis.
      */
-    private void extractMissedTransmissions(List<File> sourceFiles)
+    private void extractMissedTransmissions()
     {
         if(missedTransmissions.isEmpty())
         {
@@ -939,8 +950,12 @@ public class MissedTransmissionAnalyzer
                 continue;
             }
 
-            // Find source file - for now use first file (multi-file support would require tracking)
-            File sourceFile = sourceFiles.get(0);
+            File sourceFile = mt.sourceFile();
+            if(sourceFile == null)
+            {
+                System.out.println("  ERROR extracting TX#" + mt.index() + ": source file unavailable");
+                continue;
+            }
 
             try
             {

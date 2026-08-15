@@ -41,7 +41,7 @@ import javax.sound.sampled.UnsupportedAudioFileException;
  */
 public class TransmissionDetectionAnalyzer
 {
-    private static int sConfiguredNAC = 0;
+    private static int sConfiguredNAC = -1;
 
     public static void main(String[] args)
     {
@@ -111,7 +111,7 @@ public class TransmissionDetectionAnalyzer
 
         System.out.println("=== TRANSMISSION DETECTION ANALYSIS ===");
         System.out.println("Files: " + files.size());
-        if(sConfiguredNAC > 0)
+        if(sConfiguredNAC >= 0)
         {
             System.out.println("NAC: " + sConfiguredNAC);
         }
@@ -259,7 +259,7 @@ public class TransmissionDetectionAnalyzer
             {
                 P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
                 decoder.setMessageListener(messageListener);
-                if(sConfiguredNAC > 0)
+                if(sConfiguredNAC >= 0)
                 {
                     decoder.setConfiguredNAC(sConfiguredNAC);
                 }

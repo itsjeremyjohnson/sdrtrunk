@@ -412,7 +412,7 @@ public class TransmissionAnalyzer
             }
         };
 
-        try(ComplexWaveSource source = new ComplexWaveSource(mFile, false))
+        try(TestComplexWaveSource source = createFileRelativeSource())
         {
             if(useV2)
             {
@@ -427,7 +427,6 @@ public class TransmissionAnalyzer
                         decoder.receive(it.next());
                     }
                 });
-                source.start();
                 decoder.setSampleRate(source.getSampleRate());
 
                 processFile(source);
@@ -447,7 +446,6 @@ public class TransmissionAnalyzer
                         decoder.receive(it.next());
                     }
                 });
-                source.start();
                 decoder.setSampleRate(source.getSampleRate());
 
                 processFile(source);
@@ -458,19 +456,21 @@ public class TransmissionAnalyzer
         return result;
     }
 
-    private static void processFile(ComplexWaveSource source) throws IOException
+    TestComplexWaveSource createFileRelativeSource() throws IOException
     {
         try
         {
-            while(true)
-            {
-                source.next(2048, true);
-            }
+            return new TestComplexWaveSource(mFile);
         }
-        catch(Exception e)
+        catch(javax.sound.sampled.UnsupportedAudioFileException e)
         {
-            // End of file
+            throw new IOException("Unsupported baseband WAV: " + mFile, e);
         }
+    }
+
+    private static void processFile(TestComplexWaveSource source) throws IOException
+    {
+        while(source.next(2048)) { }
     }
 
     /**

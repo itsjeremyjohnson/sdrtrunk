@@ -18,16 +18,24 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import java.io.File;
+
 /**
  * A transmission where both decoders recovered zero LDUs,
  * with failure categorization and diagnostic information.
  */
 public record MissedTransmission(
+    File sourceFile,
     TransmissionDecodeResult result,
     FailureCategory category,
     String diagnosticInfo
 )
 {
+    public MissedTransmission(TransmissionDecodeResult result, FailureCategory category, String diagnosticInfo)
+    {
+        this(null, result, category, diagnosticInfo);
+    }
+
     /**
      * The underlying transmission data.
      */

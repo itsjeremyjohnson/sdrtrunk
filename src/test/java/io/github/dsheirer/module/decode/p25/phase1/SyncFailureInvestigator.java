@@ -49,7 +49,7 @@ public class SyncFailureInvestigator
     private static final double WEAK_SIGNAL_PERCENTILE = 0.10;
 
     // Configuration
-    private static int sConfiguredNAC = 0;
+    private static int sConfiguredNAC = -1;
 
     // Collected data
     private final List<TransmissionDecodeResult> allResults = new ArrayList<>();
@@ -126,7 +126,7 @@ public class SyncFailureInvestigator
 
         System.out.println("=== SYNC FAILURE INVESTIGATION ===");
         System.out.println("Files: " + files.size());
-        if(sConfiguredNAC > 0)
+        if(sConfiguredNAC >= 0)
         {
             System.out.println("NAC: " + sConfiguredNAC);
         }
@@ -285,7 +285,7 @@ public class SyncFailureInvestigator
             {
                 P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
                 decoder.setMessageListener(messageListener);
-                if(sConfiguredNAC > 0)
+                if(sConfiguredNAC >= 0)
                 {
                     decoder.setConfiguredNAC(sConfiguredNAC);
                 }

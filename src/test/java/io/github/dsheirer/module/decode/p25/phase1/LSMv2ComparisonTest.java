@@ -39,8 +39,8 @@ import java.util.List;
  */
 public class LSMv2ComparisonTest
 {
-    // Configured NAC for testing (0 = auto-track)
-    private static int sConfiguredNAC = 0;
+    // Configured NAC for testing (-1 = auto-track)
+    private static int sConfiguredNAC = -1;
 
     public static void main(String[] args)
     {
@@ -65,7 +65,7 @@ public class LSMv2ComparisonTest
                 if(sConfiguredNAC < 0 || sConfiguredNAC > 4095)
                 {
                     System.out.println("WARNING: NAC must be 0-4095, ignoring: " + sConfiguredNAC);
-                    sConfiguredNAC = 0;
+                    sConfiguredNAC = -1;
                 }
             }
             catch(NumberFormatException e)
@@ -82,7 +82,7 @@ public class LSMv2ComparisonTest
 
         System.out.println("=== P25 LSM vs LSM v2 Comparison ===");
         System.out.println("File: " + file.getName());
-        if(sConfiguredNAC > 0)
+        if(sConfiguredNAC >= 0)
         {
             System.out.println("Configured NAC: " + sConfiguredNAC);
         }
@@ -299,7 +299,7 @@ public class LSMv2ComparisonTest
                 decoder.setMessageListener(messageListener);
 
                 // Set configured NAC if provided
-                if(sConfiguredNAC > 0)
+                if(sConfiguredNAC >= 0)
                 {
                     decoder.setConfiguredNAC(sConfiguredNAC);
                 }

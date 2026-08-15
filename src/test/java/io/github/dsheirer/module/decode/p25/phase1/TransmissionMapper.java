@@ -39,6 +39,7 @@ public class TransmissionMapper
     private static final float PEAK_DECAY = 0.99999f;
     private static final long NOISE_FLOOR_LEARNING_MS = 100;
     private static final float SIGNAL_RISE_RATIO = 4.0f;
+    private static final float STARTUP_SIGNAL_MIN_ENERGY = 0.01f;
     private static final long SUSTAINED_SIGNAL_RISE_MS = 10;
 
     // Transmission detection thresholds
@@ -154,6 +155,14 @@ public class TransmissionMapper
                 mNoiseFloorSum += mEnergyAverage;
                 mNoiseFloorSampleCount++;
                 mNoiseFloor = (float)(mNoiseFloorSum / mNoiseFloorSampleCount);
+
+                if(mNoiseFloorSampleCount == noiseFloorLearningSamples() &&
+                        mEnergyAverage >= STARTUP_SIGNAL_MIN_ENERGY)
+                {
+                    startSignalPeriod(0);
+                    addSignalEnergy(mEnergyAverage);
+                }
+
                 mSampleCount++;
                 continue;
             }
@@ -224,6 +233,7 @@ public class TransmissionMapper
     {
         mSignalStartSample = startSample;
         mSignalRiseStartSample = -1;
+        mPeakEnergy = mEnergyAverage;
         mPeriodPeakEnergy = 0f;
         mPeriodSumEnergy = 0;
         mPeriodSampleCount = 0;

@@ -11,13 +11,19 @@
 package io.github.dsheirer.module.decode.p25.phase1;
 
 import io.github.dsheirer.audio.AudioSegment;
+import java.io.ByteArrayInputStream;
 import java.io.File;
 import java.io.StringReader;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import javax.sound.sampled.AudioFormat;
+import javax.sound.sampled.AudioInputStream;
+import javax.sound.sampled.AudioSystem;
+import javax.sound.sampled.AudioFileFormat;
 import javax.xml.parsers.DocumentBuilderFactory;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.xml.sax.InputSource;
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -54,6 +60,78 @@ class DecodeQualityCompatibilityTest
                 "call_baseband.wav"));
         names.sort(DecodeQualityTest::compareBasebandFileNames);
         assertEquals(List.of("call_baseband.wav", "call_baseband_2.wav", "call_baseband_10.wav"), names);
+    }
+
+    @Test
+    void rolloverFilenameMetadataStripsNumberedBasebandSuffix()
+    {
+        long frequency = 851012500L;
+        assertEquals("System_Site_Channel", DecodeQualityTest.extractChannelMetadata(
+                "capture_851012500_System_Site_Channel_17_baseband_2.wav", null, frequency));
+        assertEquals("System_Site_Channel", DecodeQualityTest.extractChannelMetadata(
+                "capture_851012500_System_Site_Channel_17_baseband_10.wav", null, frequency));
+    }
+
+    @Test
+    void segmentExtractorWritesFileRelativeSigned16BitPcm(@TempDir Path tempDir) throws Exception
+    {
+        Path source = tempDir.resolve("source.wav");
+        Path output = tempDir.resolve("segment.wav");
+        writeTestComplexWav(source, 1_000, 1_000);
+
+        SegmentExtractor.extractSegment(source.toFile(), output, 900, 1_000);
+
+        try(AudioInputStream stream = AudioSystem.getAudioInputStream(output.toFile()))
+        {
+            AudioFormat format = stream.getFormat();
+            assertEquals(AudioFormat.Encoding.PCM_SIGNED, format.getEncoding());
+            assertEquals(2, format.getChannels());
+            assertEquals(16, format.getSampleSizeInBits());
+            assertEquals(100, stream.getFrameLength());
+            byte[] firstFrame = stream.readNBytes(4);
+            short firstI = (short)((firstFrame[0] & 0xFF) | (firstFrame[1] << 8));
+            assertEquals(900, firstI);
+        }
+        assertDoesNotThrow(() -> {
+            try(TestComplexWaveSource ignored = new TestComplexWaveSource(output.toFile())) { }
+        });
+    }
+
+    @Test
+    void transmissionAnalyzerUsesFileRelativeReplayTimestamps(@TempDir Path tempDir) throws Exception
+    {
+        Path sourcePath = tempDir.resolve("timestamps.wav");
+        writeTestComplexWav(sourcePath, 1_000, 300);
+        TransmissionAnalyzer analyzer = new TransmissionAnalyzer(sourcePath.toFile());
+        List<Long> timestamps = new java.util.ArrayList<>();
+
+        try(TestComplexWaveSource source = analyzer.createFileRelativeSource())
+        {
+            source.setListener(buffer -> buffer.iterator().forEachRemaining(samples -> timestamps.add(samples.timestamp())));
+            source.next(100);
+            source.next(100);
+        }
+
+        assertEquals(List.of(0L, 100L), timestamps);
+    }
+
+    @Test
+    void missedTransmissionResultsRetainTheirOwnSourceFile()
+    {
+        MissedTransmissionAnalyzer analyzer = new MissedTransmissionAnalyzer();
+        File first = new File("first.wav");
+        File second = new File("second.wav");
+        Transmission transmission = new Transmission(1, 0, 200, 1.0f, 1.0f, 1.0f, 0.0f, true);
+        TransmissionDecodeResult firstResult = new TransmissionDecodeResult(transmission, 0, 0, 0, 0,
+                false, false, false, false);
+        TransmissionDecodeResult secondResult = new TransmissionDecodeResult(transmission, 0, 0, 0, 0,
+                false, false, false, false);
+
+        analyzer.recordResult(first, firstResult);
+        analyzer.recordResult(second, secondResult);
+
+        assertEquals(first, analyzer.sourceFileFor(firstResult));
+        assertEquals(second, analyzer.sourceFileFor(secondResult));
     }
 
     @Test
@@ -485,6 +563,27 @@ class DecodeQualityCompatibilityTest
 
         assertDoesNotThrow(() -> DecodeQualityTest.configureDecoder(decoder, 0x293, 3));
         assertEquals(0, decoder.getCalls());
+    }
+
+    private static void writeTestComplexWav(Path path, int sampleRate, int frames) throws Exception
+    {
+        byte[] pcm = new byte[frames * 4];
+        for(int frame = 0; frame < frames; frame++)
+        {
+            short i = (short)frame;
+            short q = (short)-frame;
+            int offset = frame * 4;
+            pcm[offset] = (byte)i;
+            pcm[offset + 1] = (byte)(i >>> 8);
+            pcm[offset + 2] = (byte)q;
+            pcm[offset + 3] = (byte)(q >>> 8);
+        }
+
+        AudioFormat format = new AudioFormat(sampleRate, 16, 2, true, false);
+        try(AudioInputStream stream = new AudioInputStream(new ByteArrayInputStream(pcm), format, frames))
+        {
+            AudioSystem.write(stream, AudioFileFormat.Type.WAVE, path.toFile());
+        }
     }
 
     public static class HistoricalLdu

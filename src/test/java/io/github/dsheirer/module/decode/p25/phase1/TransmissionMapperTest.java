@@ -61,6 +61,37 @@ class TransmissionMapperTest
         assertTrue(transmission.isComplete());
     }
 
+    @Test
+    void recordingStartingMidCarrierRetainsStartupTransmission()
+    {
+        ComplexSamples samples = concatenatedSamples(
+                new Segment(300, SIGNAL_AMPLITUDE),
+                new Segment(600, NOISE_AMPLITUDE));
+
+        List<Transmission> transmissions = new TransmissionMapper().mapSamplesForTest(samples, SAMPLE_RATE);
+
+        assertEquals(1, transmissions.size());
+        assertEquals(0, transmissions.getFirst().startMs());
+        assertTrue(transmissions.getFirst().endMs() > 300);
+        assertTrue(transmissions.getFirst().isComplete());
+    }
+
+    @Test
+    void weakerSecondCarrierUsesItsOwnPeakForSilenceThreshold()
+    {
+        ComplexSamples samples = concatenatedSamples(
+                new Segment(200, NOISE_AMPLITUDE),
+                new Segment(300, SIGNAL_AMPLITUDE),
+                new Segment(600, NOISE_AMPLITUDE),
+                new Segment(300, 0.3f),
+                new Segment(100, NOISE_AMPLITUDE));
+
+        List<Transmission> transmissions = new TransmissionMapper().mapSamplesForTest(samples, SAMPLE_RATE);
+
+        assertEquals(2, transmissions.size());
+        assertTrue(transmissions.get(1).durationMs() >= 180);
+    }
+
     private ComplexSamples constantSamples(int durationMs, float amplitude)
     {
         return concatenatedSamples(new Segment(durationMs, amplitude));
