@@ -246,9 +246,18 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
                 continue;
             }
 
-            if(!audioSegment.isComplete() && !includeIncomplete)
+            if(!audioSegment.isComplete())
             {
-                blockedKeys.add(key.key());
+                if(!includeIncomplete)
+                {
+                    blockedKeys.add(key.key());
+                }
+                else if(shouldRecord(audioSegment))
+                {
+                    // Flush the active call into the ending session, but retain it so a new
+                    // session started before the call completes can capture it too.
+                    record(audioSegment, key);
+                }
                 continue;
             }
 

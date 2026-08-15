@@ -90,6 +90,26 @@ class LiveAudioRecordingManagerTest
     }
 
     @Test
+    void activeCallRemainsAvailableAfterRecordingRestart() throws IOException
+    {
+        LiveAudioRecordingManager manager = new LiveAudioRecordingManager(mUserPreferences);
+        AudioSegment active = baseSegment();
+        active.addIdentifier(APCO25Talkgroup.create(100));
+
+        manager.startRecording();
+        receive(manager, active);
+        manager.processAudioSegments();
+        manager.stopRecording();
+
+        manager.startRecording();
+        active.completeProperty().set(true);
+        manager.processAudioSegments();
+
+        assertEquals(1, manager.getActiveRecordingCount());
+        manager.stopRecording();
+    }
+
+    @Test
     void laterSameKeySegmentWaitsForEarlierIncompleteSegment() throws IOException
     {
         LiveAudioRecordingManager manager = new LiveAudioRecordingManager(mUserPreferences);
