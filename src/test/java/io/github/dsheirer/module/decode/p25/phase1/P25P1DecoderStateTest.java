@@ -11,6 +11,7 @@
 package io.github.dsheirer.module.decode.p25.phase1;
 
 import io.github.dsheirer.channel.state.DecoderStateEvent;
+import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.message.SyncLossMessage;
 import io.github.dsheirer.protocol.Protocol;
@@ -40,6 +41,23 @@ class P25P1DecoderStateTest
 
         assertTrue(state.updateEncryptionState(true));
         assertFalse(state.updateEncryptionState(false));
+        state.stop();
+    }
+
+    @Test
+    void requestResetClearsEncryptionConfirmation()
+    {
+        P25P1DecoderState state = createState(new ArrayList<>());
+        int threshold = state.getEncryptionConfirmationThreshold();
+
+        for(int x = 0; x < threshold; x++)
+        {
+            state.updateEncryptionState(true);
+        }
+
+        state.receiveDecoderStateEvent(new DecoderStateEvent(this, DecoderStateEvent.Event.REQUEST_RESET, State.IDLE));
+
+        assertFalse(state.updateEncryptionState(true));
         state.stop();
     }
 

@@ -61,6 +61,8 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
     private static final float ENERGY_EMA_FACTOR = 0.002f;  // Faster response to energy changes
     private static final float ENERGY_SILENCE_RATIO = 0.15f; // silence = below 15% of peak
     private static final float SIGNAL_RISE_RATIO = 4.0f;
+    private static final float STARTUP_SIGNAL_ENERGY =
+            Float.parseFloat(System.getProperty("p25.energy.startup.floor", "0.001"));
     private static final double SILENCE_DURATION_SECONDS = 0.5; // 500ms silence threshold
 
     // Strategy 3: Fade detection for TDU recovery
@@ -277,10 +279,15 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
                 mNoiseFloorSampleCount++;
                 mNoiseFloor += (mEnergyAverage - mNoiseFloor) * 0.001f;
 
-                if(mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
-                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO)
+                boolean learnedFloorRise = mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
+                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO;
+                boolean startupSignal = mBoundaryResetCount == 0 &&
+                        mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold &&
+                        mEnergyAverage >= STARTUP_SIGNAL_ENERGY;
+
+                if(learnedFloorRise || startupSignal)
                 {
-                    // A relative rise above the learned idle floor marks a new transmission.
+                    // A relative rise above idle or sustained startup energy marks a transmission.
                     mBoundaryResetCount++;
                     mInSilence = false;
                     mSilenceSampleCount = 0;

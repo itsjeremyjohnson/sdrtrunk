@@ -81,6 +81,8 @@ public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferPr
     private static final float ENERGY_EMA_FACTOR = 0.001f;
     private static final float ENERGY_SILENCE_RATIO = 0.10f;
     private static final float SIGNAL_RISE_RATIO = 4.0f;
+    private static final float STARTUP_SIGNAL_ENERGY =
+            Float.parseFloat(System.getProperty("p25.energy.startup.floor", "0.001"));
 
     private final P25P1DemodulatorC4FMv2 mSymbolProcessor;
     private final P25P1MessageFramer mMessageFramer = new P25P1MessageFramer();
@@ -304,8 +306,13 @@ public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferPr
                 mNoiseFloorSampleCount++;
                 mNoiseFloor += (mEnergyAverage - mNoiseFloor) * ENERGY_EMA_FACTOR;
 
-                if(mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
-                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO)
+                boolean learnedFloorRise = mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
+                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO;
+                boolean startupSignal = mBoundaryResetCount == 0 &&
+                        mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold &&
+                        mEnergyAverage >= STARTUP_SIGNAL_ENERGY;
+
+                if(learnedFloorRise || startupSignal)
                 {
                     if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
                     {

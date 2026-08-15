@@ -18,6 +18,22 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class P25P1DecoderLSMv2Test
 {
     @Test
+    void carriersPresentAtStartupAreDetectedAcrossEnergyProviders()
+    {
+        P25P1DecoderLSMv2 lsmV2 = new P25P1DecoderLSMv2();
+        assertTrue(lsmV2.detectTransmissionBoundary(samples(3000, 0.10f), samples(3000, 0.0f)) >= 0);
+        assertTrue(lsmV2.isSignalPresent());
+
+        P25P1DecoderC4FM c4fm = new P25P1DecoderC4FM();
+        assertTrue(c4fm.detectTransmissionBoundary(samples(3000, 0.10f), samples(3000, 0.0f)) >= 0);
+        assertTrue(c4fm.isSignalPresent());
+
+        P25P1DecoderC4FMv2 c4fmV2 = new P25P1DecoderC4FMv2();
+        assertTrue(c4fmV2.detectTransmissionBoundary(samples(3000, 0.10f), samples(3000, 0.0f)) >= 0);
+        assertTrue(c4fmV2.isSignalPresent());
+    }
+
+    @Test
     void idleNoiseRemainsSilenceUntilEnergyRisesAboveTheLearnedFloor()
     {
         P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();

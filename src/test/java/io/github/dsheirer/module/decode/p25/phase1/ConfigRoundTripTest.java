@@ -5,13 +5,17 @@ import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.xml.JacksonXmlModule;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import io.github.dsheirer.alias.AliasFactory;
+import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.alias.action.beep.BeepAction;
 import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.controller.channel.Channel;
+import io.github.dsheirer.controller.channel.map.ChannelMapModel;
+import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.dsp.squelch.CTCSSFrequency;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.record.RecorderType;
 import io.github.dsheirer.record.config.RecordConfiguration;
@@ -224,6 +228,27 @@ public class ConfigRoundTripTest
         tracker.setConfiguredNAC(0);
         assertTrue(tracker.hasConfiguredNAC());
         assertEquals(0, tracker.getTrackedNAC());
+    }
+
+    @Test
+    void decoderFactoryAppliesBchLimitDuringAutomaticNacTracking()
+    {
+        Channel channel = new Channel("test");
+        DecodeConfigP25Phase1 configuration = new DecodeConfigP25Phase1();
+        configuration.setModulation(Modulation.C4FM_V2);
+        configuration.setMaxBchErrors(5);
+        assertFalse(configuration.hasConfiguredNAC());
+        channel.setDecodeConfiguration(configuration);
+
+        java.util.List<Module> modules = DecoderFactory.getModules(new ChannelMapModel(), channel, new AliasModel(),
+                new UserPreferences(), null, null);
+        P25P1DecoderC4FMv2 decoder = modules.stream()
+                .filter(P25P1DecoderC4FMv2.class::isInstance)
+                .map(P25P1DecoderC4FMv2.class::cast)
+                .findFirst()
+                .orElseThrow();
+
+        assertEquals(5, decoder.getMessageFramer().getMaxBchErrors());
     }
 
     @Test

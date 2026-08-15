@@ -2417,6 +2417,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         {
             case REQUEST_RESET:
                 resetState();
+                resetEncryptionConfirmation();
                 mNetworkConfigurationMonitor.reset();
                 break;
             case NOTIFICATION_SOURCE_FREQUENCY:

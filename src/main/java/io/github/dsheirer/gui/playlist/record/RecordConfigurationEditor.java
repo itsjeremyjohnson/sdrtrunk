@@ -117,12 +117,19 @@ public class RecordConfigurationEditor extends Editor<RecordConfiguration>
             control.getToggleSwitch().setSelected(item.getRecorders().contains(control.getRecorderType()));
         }
 
+        boolean activityEnabled = isActivityRecordingEnabled(item);
         mActivityToggle.setDisable(false);
-        mActivityToggle.setSelected(item.isActivityTriggeredRecording());
+        mActivityToggle.setSelected(activityEnabled);
         mThresholdSpinner.getValueFactory().setValue(Math.round(item.getActivitySquelchThreshold()));
-        updateThresholdVisibility(item.isActivityTriggeredRecording());
+        updateThresholdVisibility(activityEnabled);
 
         modifiedProperty().set(false);
+    }
+
+    static boolean isActivityRecordingEnabled(RecordConfiguration configuration)
+    {
+        return configuration.isActivityTriggeredRecording() ||
+                configuration.contains(RecorderType.ACTIVITY_BASEBAND);
     }
 
     @Override

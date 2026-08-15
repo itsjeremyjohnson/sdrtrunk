@@ -287,8 +287,8 @@ public class DecoderFactory
                     if(p1.hasConfiguredNAC())
                     {
                         c4fmDecoder.setConfiguredNAC(p1.getConfiguredNAC());
-                        c4fmDecoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     }
+                    c4fmDecoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     modules.add(c4fmDecoder);
                     signalEnergyProvider = c4fmDecoder;
                     break;
@@ -303,8 +303,8 @@ public class DecoderFactory
                     if(p1.hasConfiguredNAC())
                     {
                         c4fmv2Decoder.setConfiguredNAC(p1.getConfiguredNAC());
-                        c4fmv2Decoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     }
+                    c4fmv2Decoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     modules.add(c4fmv2Decoder);
                     signalEnergyProvider = c4fmv2Decoder;
                     break;
@@ -313,8 +313,8 @@ public class DecoderFactory
                     if(p1.hasConfiguredNAC())
                     {
                         lsmDecoder.setConfiguredNAC(p1.getConfiguredNAC());
-                        lsmDecoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     }
+                    lsmDecoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     modules.add(lsmDecoder);
                     break;
                 case CQPSK_V2:
@@ -323,8 +323,8 @@ public class DecoderFactory
                     if(p1.hasConfiguredNAC())
                     {
                         lsmv2Decoder.setConfiguredNAC(p1.getConfiguredNAC());
-                        lsmv2Decoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     }
+                    lsmv2Decoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     // Apply per-channel CMA equalizer config (0 values = use system defaults)
                     lsmv2Decoder.setCMAConfig(p1.getCmaAcquisitionMu(),
                             p1.getCmaTrackingMu(), p1.getCmaGearShiftMs());

@@ -468,40 +468,37 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     }
 
     /**
-     * Updates the visibility of LSM v2 specific options based on the selected modulation.
-     * NAC is shown for all modulations. Other options are LSM v2 only.
+     * Updates modulation-specific option visibility. Decoder-independent audio and BCH controls remain visible for every
+     * modulation because their configured values are applied by DecoderFactory regardless of the selected demodulator.
      */
     private void updateLSMv2OptionsVisibility()
     {
         boolean showLsmV2Options = getLSMv2ToggleButton().isSelected();
         boolean showCmaOptions = showLsmV2Options;
 
-        // Skip encryption switch - LSM v2 only
         if(mIgnoreEncryptionLabel != null)
         {
-            mIgnoreEncryptionLabel.setVisible(showLsmV2Options);
-            mIgnoreEncryptionLabel.setManaged(showLsmV2Options);
+            mIgnoreEncryptionLabel.setVisible(true);
+            mIgnoreEncryptionLabel.setManaged(true);
         }
-        getIgnoreEncryptionSwitch().setVisible(showLsmV2Options);
-        getIgnoreEncryptionSwitch().setManaged(showLsmV2Options);
+        getIgnoreEncryptionSwitch().setVisible(true);
+        getIgnoreEncryptionSwitch().setManaged(true);
 
-        // Max IMBE errors spinner - LSM v2 only
         if(mMaxImbeErrorsLabel != null)
         {
-            mMaxImbeErrorsLabel.setVisible(showLsmV2Options);
-            mMaxImbeErrorsLabel.setManaged(showLsmV2Options);
+            mMaxImbeErrorsLabel.setVisible(true);
+            mMaxImbeErrorsLabel.setManaged(true);
         }
-        getMaxImbeErrorsSpinner().setVisible(showLsmV2Options);
-        getMaxImbeErrorsSpinner().setManaged(showLsmV2Options);
+        getMaxImbeErrorsSpinner().setVisible(true);
+        getMaxImbeErrorsSpinner().setManaged(true);
 
-        // BCH threshold spinner - LSM v2 only
         if(mMaxBchErrorsLabel != null)
         {
-            mMaxBchErrorsLabel.setVisible(showLsmV2Options);
-            mMaxBchErrorsLabel.setManaged(showLsmV2Options);
+            mMaxBchErrorsLabel.setVisible(true);
+            mMaxBchErrorsLabel.setManaged(true);
         }
-        getMaxBchErrorsSpinner().setVisible(showLsmV2Options);
-        getMaxBchErrorsSpinner().setManaged(showLsmV2Options);
+        getMaxBchErrorsSpinner().setVisible(true);
+        getMaxBchErrorsSpinner().setManaged(true);
 
         // CMA acquisition mu spinner - both LSM v2 and C4FM v2
         if(mCmaAcquisitionMuLabel != null)
