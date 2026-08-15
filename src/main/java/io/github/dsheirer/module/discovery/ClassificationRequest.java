@@ -62,7 +62,7 @@ public record ClassificationRequest(
             throw new IllegalArgumentException("approximateBandwidthHz must not be negative, got: " + approximateBandwidthHz);
         }
 
-        if(candidateDecoders == null || candidateDecoders.isEmpty())
+        if(candidateDecoders == null)
         {
             candidateDecoders = EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
         }
@@ -128,14 +128,14 @@ public record ClassificationRequest(
      *
      * @param frequencyHz        center frequency to probe
      * @param bandwidthHz        approximate occupied bandwidth of the signal
-     * @param candidateDecoders  set of decoders to try; if null or empty, all primaries are used
+     * @param candidateDecoders  set of decoders to try; if null, all primaries are used; empty explicitly selects no candidates
      * @param label              short label for logging
      * @return a new {@link ClassificationRequest}
      */
     public static ClassificationRequest forFrequency(long frequencyHz, int bandwidthHz,
                                                       EnumSet<DecoderType> candidateDecoders, String label)
     {
-        EnumSet<DecoderType> decoders = (candidateDecoders == null || candidateDecoders.isEmpty())
+        EnumSet<DecoderType> decoders = (candidateDecoders == null)
             ? EnumSet.copyOf(DecoderType.PRIMARY_DECODERS)
             : EnumSet.copyOf(candidateDecoders);
 
@@ -159,7 +159,7 @@ public record ClassificationRequest(
      *
      * @param frequencyHz        center frequency to probe
      * @param bandwidthHz        approximate occupied bandwidth of the signal
-     * @param candidateDecoders  set of decoders to try; if null or empty, all primaries are used
+     * @param candidateDecoders  set of decoders to try; if null, all primaries are used; empty explicitly selects no candidates
      * @param label              short label for logging
      * @param deadline           total time budget for this classification attempt; if null or
      *                           non-positive the default (12 s) is used
@@ -169,7 +169,7 @@ public record ClassificationRequest(
                                                       EnumSet<DecoderType> candidateDecoders,
                                                       String label, Duration deadline)
     {
-        EnumSet<DecoderType> decoders = (candidateDecoders == null || candidateDecoders.isEmpty())
+        EnumSet<DecoderType> decoders = (candidateDecoders == null)
             ? EnumSet.copyOf(DecoderType.PRIMARY_DECODERS)
             : EnumSet.copyOf(candidateDecoders);
 

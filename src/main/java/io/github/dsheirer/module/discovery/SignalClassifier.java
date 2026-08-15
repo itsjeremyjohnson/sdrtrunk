@@ -339,6 +339,10 @@ public class SignalClassifier implements Classifier
                                                      AtomicBoolean cancelledFlag,
                                                      Instant overallDeadline)
     {
+        if(request.candidateDecoders().isEmpty())
+        {
+            return ClassificationResult.unidentified(freqHz, List.of(), Double.NaN);
+        }
 
         // --- Step 1: Acquire source ------------------------------------------
         SourceConfigTuner sourceConfig = new SourceConfigTuner();
@@ -400,7 +404,7 @@ public class SignalClassifier implements Classifier
             // contributes separate C4FM and CQPSK variants at the same decoder priority.
             List<ProbeChain> activeChains = new ArrayList<>(maxConcurrent);
             List<Instant> activeDeadlines = new ArrayList<>(maxConcurrent);
-            Deque<ProbeChain> pendingVariants = new ArrayDeque<>();
+            Deque<PendingProbe> pendingVariants = new ArrayDeque<>();
             int[] nextIndex = {0};
             int lockedPriority = Integer.MAX_VALUE;
 
@@ -530,8 +534,10 @@ public class SignalClassifier implements Classifier
         }
     }
 
+    private record PendingProbe(ProbeChain chain, Duration window) {}
+
     private void launchAvailableProbes(List<DecoderType> ordered, int[] nextIndex, int lockedPriority,
-                                       Deque<ProbeChain> pendingVariants, List<ProbeChain> activeChains,
+                                       Deque<PendingProbe> pendingVariants, List<ProbeChain> activeChains,
                                        List<Instant> activeDeadlines, int maxConcurrent,
                                        ComplexSampleFanout fanout, ClassificationSession session,
                                        long freqHz, List<Candidate> candidates)
@@ -548,7 +554,10 @@ public class SignalClassifier implements Classifier
                 DecoderType decoderType = ordered.get(nextIndex[0]++);
                 try
                 {
-                    pendingVariants.addAll(mProbeChainFactory.buildAll(decoderType));
+                    List<ProbeChain> variants = mProbeChainFactory.buildAll(decoderType);
+                    Duration variantWindow = dividedProbeWindow(mDiscoveryPreference.probeWindow(decoderType),
+                        variants.size(), maxConcurrent);
+                    variants.forEach(variant -> pendingVariants.addLast(new PendingProbe(variant, variantWindow)));
                 }
                 catch(Exception e)
                 {
@@ -559,12 +568,12 @@ public class SignalClassifier implements Classifier
                 }
             }
 
-            ProbeChain launched = launchProbeChain(pendingVariants.removeFirst(), fanout, session,
-                freqHz, candidates);
+            PendingProbe pending = pendingVariants.removeFirst();
+            ProbeChain launched = launchProbeChain(pending.chain(), fanout, session, freqHz, candidates);
             if(launched != null)
             {
                 activeChains.add(launched);
-                activeDeadlines.add(Instant.now().plus(mDiscoveryPreference.probeWindow(launched.decoderType())));
+                activeDeadlines.add(Instant.now().plus(pending.window()));
             }
         }
     }
@@ -605,13 +614,23 @@ public class SignalClassifier implements Classifier
         }
     }
 
-    private static void disposePendingProbes(Deque<ProbeChain> pendingVariants)
+    static Duration dividedProbeWindow(Duration decoderWindow, int variantCount, int maxConcurrent)
     {
-        for(ProbeChain pending : pendingVariants)
+        if(maxConcurrent == 1 && variantCount > 1)
+        {
+            return decoderWindow.dividedBy(variantCount);
+        }
+
+        return decoderWindow;
+    }
+
+    private static void disposePendingProbes(Deque<PendingProbe> pendingVariants)
+    {
+        for(PendingProbe pending : pendingVariants)
         {
             try
             {
-                pending.chain().dispose();
+                pending.chain().chain().dispose();
             }
             catch(Exception ignored)
             {

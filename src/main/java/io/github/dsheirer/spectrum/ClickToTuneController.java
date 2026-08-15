@@ -704,12 +704,6 @@ public class ClickToTuneController
         EnumSet<DecoderType> candidates = EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
         candidates.removeAll(mUserPreferences.getDiscoveryPreference().getExcludedDecoders());
 
-        if(candidates.isEmpty())
-        {
-            mLog.info("All discovery decoders are excluded; using the primary decoder set");
-            return EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
-        }
-
         return candidates;
     }
 

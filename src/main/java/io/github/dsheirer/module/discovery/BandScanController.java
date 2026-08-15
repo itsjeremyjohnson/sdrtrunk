@@ -1335,12 +1335,6 @@ public class BandScanController
         EnumSet<DecoderType> candidates = EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
         candidates.removeAll(mUserPreferences.getDiscoveryPreference().getExcludedDecoders());
 
-        if(candidates.isEmpty())
-        {
-            mLog.info("All discovery decoders are excluded; using the primary decoder set");
-            return EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
-        }
-
         return candidates;
     }
 
@@ -1366,12 +1360,6 @@ public class BandScanController
 
         EnumSet<DecoderType> filtered = EnumSet.copyOf(request.candidateDecoders());
         filtered.removeAll(excluded);
-
-        if(filtered.isEmpty())
-        {
-            mLog.info("applyExclusions: all decoders excluded for this scan; ignoring the exclusion list");
-            return request;
-        }
 
         if(filtered.equals(request.candidateDecoders()))
         {

@@ -38,6 +38,7 @@ import java.util.Collections;
 import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
@@ -802,6 +803,21 @@ class BandScanControllerTest
         ClassificationRequest received = classifier.getReceivedRequests().get(0);
         assertEquals(requestedDecoders, received.candidateDecoders(),
             "ClassificationRequest.candidateDecoders() must equal ScanRequest.candidateDecoders()");
+    }
+
+    @Test
+    void allPrimaryDecodersExcludedProducesEmptyScanCandidates() throws InterruptedException
+    {
+        mUserPreferences.getDiscoveryPreference().setExcludedDecoders(
+            Set.copyOf(DecoderType.PRIMARY_DECODERS));
+        FakeClassifier classifier = new FakeClassifier(Map.of());
+        BandScanController ctrl = makeController(new FakeSurvey(List.of(makePeak(FREQ_A))), classifier);
+
+        ctrl.startScan(simpleScan());
+        awaitState(ctrl, ScanState.DONE, 5_000);
+
+        assertEquals(1, classifier.getCallCount());
+        assertTrue(classifier.getReceivedRequests().getFirst().candidateDecoders().isEmpty());
     }
 
     // -------------------------------------------------------------------------

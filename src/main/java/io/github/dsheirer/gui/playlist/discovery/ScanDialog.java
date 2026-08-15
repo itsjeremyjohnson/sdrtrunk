@@ -32,7 +32,9 @@ import java.util.Locale;
 import java.util.Set;
 import javafx.geometry.Insets;
 import javafx.scene.Scene;
+import javafx.scene.control.Alert;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.CheckBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
@@ -58,8 +60,8 @@ import org.slf4j.LoggerFactory;
  *
  * <h3>Stepped-sweep warning</h3>
  * <p>A warning banner is shown whenever the requested bounds do not fit inside the active tuner's
- * current usable window, matching the path selected by the spectral survey.  The Scan button is
- * never disabled — stepped sweeps run normally after warning the operator.</p>
+ * current usable window, matching the path selected by the spectral survey.  Starting a stepped
+ * sweep requires explicit confirmation after editable spinner values have been committed.</p>
  */
 public class ScanDialog extends Stage
 {
@@ -345,6 +347,14 @@ public class ScanDialog extends Stage
             return;
         }
 
+        updateSteppedWarning();
+        boolean steppedSweep = isLikelySteppedSweep(minHz, maxHz);
+        boolean confirmed = !steppedSweep || confirmSteppedSweep();
+        if(!shouldProceedWithScan(steppedSweep, confirmed))
+        {
+            return;
+        }
+
         EnumSet<DecoderType> selectedDecoders = EnumSet.noneOf(DecoderType.class);
 
         for(CheckBox cb : mDecoderCheckBoxes)
@@ -353,11 +363,6 @@ public class ScanDialog extends Stage
             {
                 selectedDecoders.add(dt);
             }
-        }
-
-        if(selectedDecoders.isEmpty())
-        {
-            selectedDecoders = EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
         }
 
         int dwellSeconds = safeSpinnerValue(mDwellSpinner);
@@ -383,6 +388,21 @@ public class ScanDialog extends Stage
 
         mBandScanController.startScan(request);
         close();
+    }
+
+    static boolean shouldProceedWithScan(boolean steppedSweep, boolean confirmed)
+    {
+        return !steppedSweep || confirmed;
+    }
+
+    private boolean confirmSteppedSweep()
+    {
+        Alert confirmation = new Alert(Alert.AlertType.CONFIRMATION);
+        confirmation.initOwner(this);
+        confirmation.setTitle("Confirm Stepped Band Scan");
+        confirmation.setHeaderText("This scan will retune the active SDR across the selected range.");
+        confirmation.setContentText("Decoding on that tuner will be interrupted for the duration of the scan. Continue?");
+        return confirmation.showAndWait().filter(ButtonType.OK::equals).isPresent();
     }
 
     /** Safely reads a Spinner's value, falling back to the factory initial value on parse error. */

@@ -333,6 +333,35 @@ class SignalClassifierTest
     }
 
     @Test
+    void singleProbeSlotSharesDecoderWindowAcrossVariants()
+    {
+        assertEquals(Duration.ofMillis(2_500),
+            SignalClassifier.dividedProbeWindow(Duration.ofSeconds(5), 2, 1));
+        assertEquals(Duration.ofSeconds(5),
+            SignalClassifier.dividedProbeWindow(Duration.ofSeconds(5), 2, 2));
+    }
+
+    @Test
+    void emptyCandidateSetShortCircuitsWithoutAcquiringSource() throws Exception
+    {
+        AtomicBoolean acquired = new AtomicBoolean();
+        SourceProvider provider = (config, spec, name) ->
+        {
+            acquired.set(true);
+            return new FakeComplexSource();
+        };
+        ClassificationRequest request = new ClassificationRequest(FREQ, 12_500,
+            EnumSet.noneOf(DecoderType.class), Duration.ofSeconds(2), false, "no-candidates");
+
+        ClassificationResult result = buildClassifier(provider, new FakeProbeChainFactory(Map.of(), Map.of()))
+            .classify(request).get();
+
+        assertEquals(ClassificationOutcome.UNIDENTIFIED, result.outcome());
+        assertTrue(result.candidates().isEmpty());
+        assertFalse(acquired.get(), "No-candidate classification must not reserve a tuner source");
+    }
+
+    @Test
     void sharedChannelSpecification_coversCandidatesAndRequestedBandwidth()
     {
         ClassificationRequest request = new ClassificationRequest(

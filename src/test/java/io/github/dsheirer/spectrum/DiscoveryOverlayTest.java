@@ -17,12 +17,14 @@ import io.github.dsheirer.module.discovery.Discovery;
 import io.github.dsheirer.module.discovery.DiscoveryModel;
 import io.github.dsheirer.module.discovery.DiscoveryState;
 import io.github.dsheirer.preference.discovery.DiscoveryPreference;
+import io.github.dsheirer.preference.discovery.OverlayDisplay;
 import io.github.dsheirer.settings.SettingsManager;
 import java.awt.event.MouseEvent;
 import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.prefs.Preferences;
+import javax.swing.SwingUtilities;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -63,6 +65,42 @@ class DiscoveryOverlayTest
             assertFalse(overlay.contains(100, 50));
             overlay.setDiscoveryDisplay(DiscoveryOverlay.DiscoveryDisplay.ALL);
             assertTrue(overlay.contains(100, 50), "Session ALL must display unidentified discoveries");
+        }
+        finally
+        {
+            overlay.dispose();
+            axis.dispose();
+        }
+    }
+
+    @Test
+    void preferenceChangesApplyLiveUntilSessionOverride() throws Exception
+    {
+        DiscoveryModel model = new DiscoveryModel();
+        Discovery discovery = new Discovery(100_100_000L, 10_000, -70.0, 15.0, Instant.now());
+        discovery.setState(DiscoveryState.UNIDENTIFIED);
+        model.add(discovery);
+        mPreferenceNode = Preferences.userRoot().node("sdrtrunk-discovery-overlay-" + UUID.randomUUID());
+        DiscoveryPreference preference = new DiscoveryPreference(type -> {}, mPreferenceNode);
+        OverlayPanel axis = new OverlayPanel(new SettingsManager(), null, null)
+        {
+            @Override public double getAxisFromFrequency(long value) { return (value - 100_000_000L) / 1_000.0; }
+        };
+        DiscoveryOverlay overlay = new DiscoveryOverlay(model, preference, axis);
+        overlay.setSize(300, 100);
+
+        try
+        {
+            assertFalse(overlay.contains(100, 50));
+            preference.setOverlayDisplay(OverlayDisplay.ALL);
+            SwingUtilities.invokeAndWait(() -> {});
+            assertTrue(overlay.contains(100, 50), "Preference changes must update the installed overlay");
+
+            overlay.setDiscoveryDisplay(DiscoveryOverlay.DiscoveryDisplay.NONE);
+            preference.setOverlayDisplay(OverlayDisplay.IDENTIFIED_ONLY);
+            SwingUtilities.invokeAndWait(() -> {});
+            assertEquals(DiscoveryOverlay.DiscoveryDisplay.NONE, overlay.getDiscoveryDisplay());
+            assertFalse(overlay.contains(100, 50), "A session override must remain authoritative");
         }
         finally
         {

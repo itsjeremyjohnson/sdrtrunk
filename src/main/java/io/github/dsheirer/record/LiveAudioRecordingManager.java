@@ -41,6 +41,7 @@ import java.io.Closeable;
 import java.io.FileOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -321,14 +322,15 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
     {
         String filename = clean(key.filename());
         String extension = RecordFormat.MP3.getExtension();
-        int maxLength = 255 - extension.length();
-        Path path = mSessionDirectory.resolve(truncate(filename, maxLength) + extension);
+        int maxBytes = 255 - utf8Length(extension);
+        Path path = mSessionDirectory.resolve(truncateUtf8(filename, maxBytes) + extension);
         int duplicate = 2;
 
         while(isRecordingPathInUse(path))
         {
             String suffix = "-" + duplicate++;
-            path = mSessionDirectory.resolve(truncate(filename, maxLength - suffix.length()) + suffix + extension);
+            path = mSessionDirectory.resolve(truncateUtf8(filename, maxBytes - utf8Length(suffix))
+                + suffix + extension);
         }
 
         return path;
@@ -339,9 +341,35 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
         return mWriters.values().stream().anyMatch(writer -> writer.getPath().equals(path));
     }
 
-    private static String truncate(String value, int maxLength)
+    static String truncateUtf8(String value, int maxBytes)
     {
-        return value.length() > maxLength ? value.substring(0, maxLength) : value;
+        if(utf8Length(value) <= maxBytes)
+        {
+            return value;
+        }
+
+        StringBuilder truncated = new StringBuilder();
+        int byteCount = 0;
+        for(int offset = 0; offset < value.length();)
+        {
+            int codePoint = value.codePointAt(offset);
+            String character = new String(Character.toChars(codePoint));
+            int characterBytes = utf8Length(character);
+            if(byteCount + characterBytes > maxBytes)
+            {
+                break;
+            }
+
+            truncated.appendCodePoint(codePoint);
+            byteCount += characterBytes;
+            offset += Character.charCount(codePoint);
+        }
+        return truncated.toString();
+    }
+
+    private static int utf8Length(String value)
+    {
+        return value.getBytes(StandardCharsets.UTF_8).length;
     }
 
     private void closeWriters()

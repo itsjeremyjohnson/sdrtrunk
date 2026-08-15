@@ -20,6 +20,7 @@ package io.github.dsheirer.preference.discovery;
 
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.discovery.IgnoreRange;
+import io.github.dsheirer.module.discovery.ScanRequest;
 import io.github.dsheirer.preference.PreferenceType;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -163,6 +164,28 @@ class DiscoveryPreferenceTest
     // -------------------------------------------------------------------------
 
     @Test
+    void legacyZeroSecondDurationsFallBackToDefaults()
+    {
+        mTestNode.putInt("discovery.survey.dwell.seconds", 0);
+        mTestNode.putInt("discovery.keep.listening.seconds", 0);
+        DiscoveryPreference reloaded = freshPreference();
+
+        assertEquals(Duration.ofSeconds(3), reloaded.getSurveyDwell());
+        assertEquals(Duration.ofSeconds(30), reloaded.getKeepListeningDuration());
+    }
+
+    @Test
+    void subSecondDurationsAreRejectedBeforePersistence()
+    {
+        assertThrows(IllegalArgumentException.class,
+            () -> mPreference.setSurveyDwell(Duration.ofMillis(500)));
+        assertThrows(IllegalArgumentException.class,
+            () -> mPreference.setKeepListeningDuration(Duration.ofMillis(500)));
+        assertEquals(Duration.ofSeconds(3), freshPreference().getSurveyDwell());
+        assertEquals(Duration.ofSeconds(30), freshPreference().getKeepListeningDuration());
+    }
+
+    @Test
     void set_surveyDwellPersists()
     {
         mPreference.setSurveyDwell(Duration.ofSeconds(10));
@@ -222,6 +245,16 @@ class DiscoveryPreferenceTest
         DiscoveryPreference reloaded = freshPreference();
         assertEquals(exclusions, reloaded.getExcludedDecoders());
         assertEquals(defaults, reloaded.getDefaultScanDecoders());
+    }
+
+    @Test
+    void scanDefaultsPreserveAllPrimaryDecodersExcluded()
+    {
+        mPreference.setExcludedDecoders(Set.copyOf(DecoderType.PRIMARY_DECODERS));
+
+        ScanRequest request = ScanRequest.defaults(150_000_000L, 160_000_000L, mPreference);
+
+        assertTrue(request.candidateDecoders().isEmpty());
     }
 
     @Test

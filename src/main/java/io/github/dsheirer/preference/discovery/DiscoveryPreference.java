@@ -33,6 +33,7 @@ import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.prefs.Preferences;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -136,6 +137,7 @@ public class DiscoveryPreference extends Preference
     private List<IgnoreRange> mIgnoreList;
     private Set<DecoderType> mExcludedDecoders;
     private Set<DecoderType> mDefaultScanDecoders;
+    private final List<Listener<OverlayDisplay>> mOverlayDisplayListeners = new CopyOnWriteArrayList<>();
 
     // -------------------------------------------------------------------------
     // Constructor
@@ -197,7 +199,8 @@ public class DiscoveryPreference extends Preference
     {
         if(mSurveyDwellSeconds == null)
         {
-            mSurveyDwellSeconds = mPreferences.getInt(KEY_SURVEY_DWELL_SECONDS, DEFAULT_SURVEY_DWELL_SECONDS);
+            int storedSeconds = mPreferences.getInt(KEY_SURVEY_DWELL_SECONDS, DEFAULT_SURVEY_DWELL_SECONDS);
+            mSurveyDwellSeconds = storedSeconds > 0 ? storedSeconds : DEFAULT_SURVEY_DWELL_SECONDS;
         }
 
         return Duration.ofSeconds(mSurveyDwellSeconds);
@@ -210,12 +213,12 @@ public class DiscoveryPreference extends Preference
      */
     public void setSurveyDwell(Duration dwell)
     {
-        if(dwell == null || dwell.isNegative() || dwell.isZero())
+        if(dwell == null || dwell.compareTo(Duration.ofSeconds(1)) < 0)
         {
-            throw new IllegalArgumentException("survey dwell must be positive");
+            throw new IllegalArgumentException("survey dwell must be at least one second");
         }
 
-        mSurveyDwellSeconds = (int) dwell.getSeconds();
+        mSurveyDwellSeconds = (int)dwell.getSeconds();
         mPreferences.putInt(KEY_SURVEY_DWELL_SECONDS, mSurveyDwellSeconds);
         notifyPreferenceUpdated();
     }
@@ -416,7 +419,8 @@ public class DiscoveryPreference extends Preference
     {
         if(mKeepListeningSeconds == null)
         {
-            mKeepListeningSeconds = mPreferences.getInt(KEY_KEEP_LISTENING_SECONDS, DEFAULT_KEEP_LISTENING_SECONDS);
+            int storedSeconds = mPreferences.getInt(KEY_KEEP_LISTENING_SECONDS, DEFAULT_KEEP_LISTENING_SECONDS);
+            mKeepListeningSeconds = storedSeconds > 0 ? storedSeconds : DEFAULT_KEEP_LISTENING_SECONDS;
         }
 
         return Duration.ofSeconds(mKeepListeningSeconds);
@@ -429,12 +433,12 @@ public class DiscoveryPreference extends Preference
      */
     public void setKeepListeningDuration(Duration duration)
     {
-        if(duration == null || duration.isNegative() || duration.isZero())
+        if(duration == null || duration.compareTo(Duration.ofSeconds(1)) < 0)
         {
-            throw new IllegalArgumentException("keep-listening duration must be positive");
+            throw new IllegalArgumentException("keep-listening duration must be at least one second");
         }
 
-        mKeepListeningSeconds = (int) duration.getSeconds();
+        mKeepListeningSeconds = (int)duration.getSeconds();
         mPreferences.putInt(KEY_KEEP_LISTENING_SECONDS, mKeepListeningSeconds);
         notifyPreferenceUpdated();
     }
@@ -483,6 +487,20 @@ public class DiscoveryPreference extends Preference
         mOverlayDisplay = mode;
         mPreferences.put(KEY_OVERLAY_DISPLAY, mode.name());
         notifyPreferenceUpdated();
+        mOverlayDisplayListeners.forEach(listener -> listener.receive(mode));
+    }
+
+    public void addOverlayDisplayListener(Listener<OverlayDisplay> listener)
+    {
+        if(listener != null)
+        {
+            mOverlayDisplayListeners.add(listener);
+        }
+    }
+
+    public void removeOverlayDisplayListener(Listener<OverlayDisplay> listener)
+    {
+        mOverlayDisplayListeners.remove(listener);
     }
 
     // -------------------------------------------------------------------------

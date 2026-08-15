@@ -96,13 +96,16 @@ public class DiscoveryOverlay extends JComponent
 
     // ---- dependencies -------------------------------------------------------
     private final DiscoveryModel mDiscoveryModel;
+    private final DiscoveryPreference mDiscoveryPreference;
     private final OverlayPanel mOverlayPanel;
 
     // ---- per-session display toggle (from context menu) ---------------------
     private DiscoveryDisplay mDiscoveryDisplay;
+    private boolean mSessionOverride;
 
-    // ---- DiscoveryModel listener (held so we can unregister on dispose) -----
+    // ---- listeners (held so we can unregister on dispose) -------------------
     private final Listener<DiscoveryEvent> mDiscoveryListener;
+    private final Listener<OverlayDisplay> mPreferenceListener;
 
     /**
      * Display mode initialized from preferences and mutable for the current session
@@ -127,18 +130,23 @@ public class DiscoveryOverlay extends JComponent
                              OverlayPanel overlayPanel)
     {
         mDiscoveryModel = discoveryModel;
+        mDiscoveryPreference = discoveryPreference;
         mOverlayPanel = overlayPanel;
-        mDiscoveryDisplay = switch(discoveryPreference.getOverlayDisplay())
-        {
-            case ALL -> DiscoveryDisplay.ALL;
-            case IDENTIFIED_ONLY -> DiscoveryDisplay.IDENTIFIED_ONLY;
-            case NONE -> DiscoveryDisplay.NONE;
-        };
+        mDiscoveryDisplay = toDiscoveryDisplay(discoveryPreference.getOverlayDisplay());
 
         setOpaque(false);
 
         mDiscoveryListener = event -> SwingUtilities.invokeLater(this::repaint);
+        mPreferenceListener = display -> SwingUtilities.invokeLater(() ->
+        {
+            if(!mSessionOverride)
+            {
+                mDiscoveryDisplay = toDiscoveryDisplay(display);
+                repaint();
+            }
+        });
         mDiscoveryModel.addListener(mDiscoveryListener);
+        mDiscoveryPreference.addOverlayDisplayListener(mPreferenceListener);
         addMouseListener(new MouseAdapter()
         {
             @Override
@@ -178,6 +186,7 @@ public class DiscoveryOverlay extends JComponent
     public void setDiscoveryDisplay(DiscoveryDisplay display)
     {
         if(display == null) return;
+        mSessionOverride = true;
         mDiscoveryDisplay = display;
         SwingUtilities.invokeLater(this::repaint);
     }
@@ -198,6 +207,17 @@ public class DiscoveryOverlay extends JComponent
     public void dispose()
     {
         mDiscoveryModel.removeListener(mDiscoveryListener);
+        mDiscoveryPreference.removeOverlayDisplayListener(mPreferenceListener);
+    }
+
+    private static DiscoveryDisplay toDiscoveryDisplay(OverlayDisplay display)
+    {
+        return switch(display)
+        {
+            case ALL -> DiscoveryDisplay.ALL;
+            case IDENTIFIED_ONLY -> DiscoveryDisplay.IDENTIFIED_ONLY;
+            case NONE -> DiscoveryDisplay.NONE;
+        };
     }
 
     // -------------------------------------------------------------------------

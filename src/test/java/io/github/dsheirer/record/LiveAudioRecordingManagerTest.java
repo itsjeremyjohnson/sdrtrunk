@@ -32,6 +32,7 @@ import io.github.dsheirer.module.decode.nbfm.NBFMTalkgroup;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import io.github.dsheirer.preference.UserPreferences;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.lang.reflect.Modifier;
@@ -70,6 +71,18 @@ class LiveAudioRecordingManagerTest
         {
             mUserPreferences.getDirectoryPreference().setDirectoryRecording(mOriginalRecordingDirectory);
         }
+    }
+
+    @Test
+    void recordingFilenameTruncationUsesUtf8BytesWithoutSplittingCodePoints()
+    {
+        String value = "é".repeat(124) + "😀" + "é".repeat(100);
+
+        String truncated = LiveAudioRecordingManager.truncateUtf8(value, 251);
+
+        assertTrue(truncated.getBytes(StandardCharsets.UTF_8).length <= 251);
+        assertEquals("é".repeat(124), truncated,
+            "A supplementary code point that exceeds the remaining byte budget must be omitted whole");
     }
 
     @Test

@@ -26,6 +26,14 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 class ScanDialogTest
 {
     @Test
+    void steppedSweepRequiresExplicitConfirmation()
+    {
+        assertTrue(ScanDialog.shouldProceedWithScan(false, false));
+        assertFalse(ScanDialog.shouldProceedWithScan(true, false));
+        assertTrue(ScanDialog.shouldProceedWithScan(true, true));
+    }
+
+    @Test
     void steppedWarningMatchesCurrentUsableWindow()
     {
         long centerHz = 154_000_000L;

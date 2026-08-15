@@ -341,6 +341,20 @@ class ClickToTuneControllerTest
     }
 
     @Test
+    void classifyAndTune_allPrimaryDecodersExcludedPreservesEmptyCandidates() throws Exception
+    {
+        mUserPreferences.getDiscoveryPreference().setExcludedDecoders(
+            Set.copyOf(DecoderType.PRIMARY_DECODERS));
+        mFakeClassifier.setNextResult(ClassificationResult.unidentified(FREQ, List.of(), Double.NaN));
+
+        mController.classifyAndTune(FREQ, 12_500);
+        drainEdt();
+
+        assertEquals(1, mFakeClassifier.getReceivedRequests().size());
+        assertTrue(mFakeClassifier.getReceivedRequests().getFirst().candidateDecoders().isEmpty());
+    }
+
+    @Test
     void classifyAndTune_unidentified_showsMissPopup() throws Exception
     {
         mFakeClassifier.setNextResult(ClassificationResult.unidentified(FREQ, List.of(), -70.0));

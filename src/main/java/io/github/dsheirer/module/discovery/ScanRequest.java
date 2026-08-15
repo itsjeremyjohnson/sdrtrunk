@@ -85,7 +85,7 @@ public record ScanRequest(
             throw new IllegalArgumentException("maxSignalsToProbe must not be negative, got: " + maxSignalsToProbe);
         }
 
-        if(candidateDecoders == null || candidateDecoders.isEmpty())
+        if(candidateDecoders == null)
         {
             candidateDecoders = EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
         }
@@ -104,7 +104,7 @@ public record ScanRequest(
      * Creates a scan request seeded from the user's current discovery preferences.
      *
      * <p>The candidate decoder set is {@code getDefaultScanDecoders() minus getExcludedDecoders()}.
-     * If the resulting set is empty, all {@link DecoderType#PRIMARY_DECODERS} are used.</p>
+     * An empty result is preserved so a globally all-excluded configuration probes no decoders.</p>
      *
      * @param minFrequencyHz lower bound of the scan span in Hz
      * @param maxFrequencyHz upper bound of the scan span in Hz
@@ -117,8 +117,7 @@ public record ScanRequest(
         candidates.removeAll(prefs.getExcludedDecoders());
 
         EnumSet<DecoderType> decoderSet = candidates.isEmpty()
-            ? EnumSet.copyOf(DecoderType.PRIMARY_DECODERS)
-            : EnumSet.copyOf(candidates);
+            ? EnumSet.noneOf(DecoderType.class) : EnumSet.copyOf(candidates);
 
         return new ScanRequest(
             minFrequencyHz,
