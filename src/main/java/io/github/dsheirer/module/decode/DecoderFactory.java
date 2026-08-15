@@ -113,7 +113,6 @@ import io.github.dsheirer.module.decode.p25.phase1.ControlChannelHeartbeat;
 import io.github.dsheirer.module.decode.p25.phase1.NetworkEventBroadcastModule;
 import io.github.dsheirer.module.decode.p25.phase1.NetworkStreamManager;
 import io.github.dsheirer.preference.network.HeartbeatEntry;
-import io.github.dsheirer.util.StringUtils;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.source.SourceType;
@@ -121,7 +120,9 @@ import io.github.dsheirer.source.config.SourceConfigTunerMultipleFrequency;
 import io.github.dsheirer.source.tuner.channel.rotation.ChannelRotationMonitor;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -267,7 +268,7 @@ public class DecoderFactory
 
         if(channel.isStandardChannel())
         {
-            attachTalkerAliasLogger(userPreferences, getSafeSystemName(channel), Protocol.APCO25,
+            attachTalkerAliasLogger(userPreferences, getSystemName(channel), Protocol.APCO25,
                 p25TrafficChannelManager.getTalkerAliasManager());
         }
 
@@ -322,7 +323,7 @@ public class DecoderFactory
             P25P1DecoderState p25DecoderState = new P25P1DecoderState(channel, primaryTCM);
             modules.add(p25DecoderState);
 
-            attachTalkerAliasLogger(userPreferences, getSafeSystemName(channel), Protocol.APCO25,
+            attachTalkerAliasLogger(userPreferences, getSystemName(channel), Protocol.APCO25,
                 primaryTCM.getTalkerAliasManager());
 
             p25DecoderState.setHeartbeatMonitors(loadHeartbeatMonitors(userPreferences));
@@ -627,7 +628,7 @@ public class DecoderFactory
 
         if(channel.isStandardChannel())
         {
-            attachTalkerAliasLogger(userPreferences, getSafeSystemName(channel), Protocol.DMR,
+            attachTalkerAliasLogger(userPreferences, getSystemName(channel), Protocol.DMR,
                 dmrTrafficChannelManager.getTalkerAliasManager());
         }
 
@@ -873,9 +874,36 @@ public class DecoderFactory
         return null;
     }
 
+    private static boolean hasUniqueEnabledStreamPorts(UserPreferences userPreferences)
+    {
+        boolean unique = areStreamPortsUnique(
+            userPreferences.getNetworkStreamPreference().isEnabled(),
+            userPreferences.getNetworkStreamPreference().getEventPort(),
+            userPreferences.getNetworkStreamPreference().getRawPort(),
+            userPreferences.getPcmStreamPreference().isEnabled(),
+            userPreferences.getPcmStreamPreference().getPort(),
+            userPreferences.getImbeStreamPreference().isEnabled(),
+            userPreferences.getImbeStreamPreference().getPort());
+        if(!unique)
+        {
+            mLog.error("All enabled event, raw, PCM, and IMBE stream ports must be distinct; streaming is disabled");
+        }
+        return unique;
+    }
+
+    static boolean areStreamPortsUnique(boolean networkEnabled, int eventPort, int rawPort,
+                                        boolean pcmEnabled, int pcmPort, boolean imbeEnabled, int imbePort)
+    {
+        Set<Integer> ports = new HashSet<>();
+        return (!networkEnabled || ports.add(eventPort) && ports.add(rawPort)) &&
+            (!pcmEnabled || ports.add(pcmPort)) &&
+            (!imbeEnabled || ports.add(imbePort));
+    }
+
     private static ImbeStreamManager loadImbeStreamManager(UserPreferences userPreferences)
     {
-        if(!userPreferences.getImbeStreamPreference().isEnabled())
+        if(!hasUniqueEnabledStreamPorts(userPreferences) ||
+            !userPreferences.getImbeStreamPreference().isEnabled())
         {
             return null;
         }
@@ -885,7 +913,8 @@ public class DecoderFactory
 
     private static PcmStreamManager loadPcmStreamManager(UserPreferences userPreferences)
     {
-        if(!userPreferences.getPcmStreamPreference().isEnabled())
+        if(!hasUniqueEnabledStreamPorts(userPreferences) ||
+            !userPreferences.getPcmStreamPreference().isEnabled())
         {
             return null;
         }
@@ -903,11 +932,6 @@ public class DecoderFactory
         return systemName.trim();
     }
 
-    private static String getSafeSystemName(Channel channel)
-    {
-        return StringUtils.replaceIllegalCharacters(getSystemName(channel));
-    }
-
     private static void attachTalkerAliasLogger(UserPreferences userPreferences, String systemName,
                                                 Protocol protocol, TalkerAliasManager manager)
     {
@@ -919,7 +943,8 @@ public class DecoderFactory
 
     private static NetworkStreamManager loadNetworkStreamManager(UserPreferences userPreferences)
     {
-        if(!userPreferences.getNetworkStreamPreference().isEnabled())
+        if(!hasUniqueEnabledStreamPorts(userPreferences) ||
+            !userPreferences.getNetworkStreamPreference().isEnabled())
         {
             return null;
         }

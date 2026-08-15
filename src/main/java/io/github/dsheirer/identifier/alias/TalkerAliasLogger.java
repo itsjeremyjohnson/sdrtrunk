@@ -19,6 +19,7 @@
 package io.github.dsheirer.identifier.alias;
 
 import io.github.dsheirer.protocol.Protocol;
+import io.github.dsheirer.util.StringUtils;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
@@ -28,8 +29,11 @@ import java.nio.file.NoSuchFileException;
 import java.nio.file.Path;
 import java.nio.file.StandardCopyOption;
 import java.nio.file.StandardOpenOption;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -78,12 +82,27 @@ public class TalkerAliasLogger
      */
     public TalkerAliasLogger(Path logDirectory, String systemName, Protocol protocol)
     {
-        String protocolSuffix = protocol == Protocol.DMR ? "_dmr" : "";
-        mAliasFile = logDirectory.resolve(systemName + protocolSuffix + "_talker_aliases.csv")
-            .toAbsolutePath().normalize();
+        mAliasFile = logDirectory.resolve(getAliasFileName(systemName, protocol)).toAbsolutePath().normalize();
         mIdentifierFactory = protocol == Protocol.DMR ? DmrTalkerAliasIdentifier::create :
             P25TalkerAliasIdentifier::create;
         mFileState = FILE_STATES.computeIfAbsent(mAliasFile, ignored -> new AliasFileState());
+    }
+
+    static String getAliasFileName(String systemIdentity, Protocol protocol)
+    {
+        try
+        {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(systemIdentity.getBytes(StandardCharsets.UTF_8));
+            String identitySuffix = HexFormat.of().formatHex(digest, 0, 16);
+            String protocolSuffix = protocol == Protocol.DMR ? "_dmr" : "";
+            return StringUtils.replaceIllegalCharacters(systemIdentity) + "_" + identitySuffix + protocolSuffix +
+                "_talker_aliases.csv";
+        }
+        catch(NoSuchAlgorithmException e)
+        {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 
     /**
@@ -101,7 +120,7 @@ public class TalkerAliasLogger
      */
     public void bootstrap(TalkerAliasManager manager)
     {
-        Map<Integer, String> loaded = mFileState.bootstrap(mAliasFile);
+        Map<Integer, String> loaded = mFileState.bootstrap(mAliasFile, mSourceKey);
         Map<Integer, TalkerAliasIdentifier> identifiers = new HashMap<>();
         loaded.forEach((radioId, alias) -> identifiers.put(radioId, mIdentifierFactory.apply(alias)));
 
@@ -118,25 +137,29 @@ public class TalkerAliasLogger
     private static class AliasFileState
     {
         private final Map<Integer, String> mBaseline = new HashMap<>();
+        private final Map<Object, Map<Integer, String>> mInheritedAliases = new HashMap<>();
         private final Map<Object, Map<Integer, String>> mSnapshots = new LinkedHashMap<>();
         private boolean mLoaded;
         private String mLastWrittenContent;
 
-        public synchronized Map<Integer, String> bootstrap(Path aliasFile)
+        public synchronized Map<Integer, String> bootstrap(Path aliasFile, Object sourceKey)
         {
             ensureLoaded(aliasFile);
-            return getMergedAliases();
+            Map<Integer, String> inherited = getMergedAliases();
+            mInheritedAliases.put(sourceKey, new HashMap<>(inherited));
+            return inherited;
         }
 
         public synchronized void update(Path aliasFile, Object sourceKey,
                                         Map<Integer, TalkerAliasIdentifier> aliases)
         {
             ensureLoaded(aliasFile);
+            Map<Integer, String> inherited = mInheritedAliases.getOrDefault(sourceKey, mBaseline);
             Map<Integer, String> snapshot = new HashMap<>();
             aliases.forEach((radioId, alias) ->
             {
                 String aliasValue = alias.getValue();
-                if(!Objects.equals(aliasValue, mBaseline.get(radioId)))
+                if(!Objects.equals(aliasValue, inherited.get(radioId)))
                 {
                     snapshot.put(radioId, aliasValue);
                 }

@@ -34,6 +34,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class TalkerAliasLoggerTest
@@ -48,7 +49,7 @@ public class TalkerAliasLoggerTest
 
         logger.onAliasUpdate(aliases);
 
-        Path aliasFile = logDirectory.resolve("test-system_talker_aliases.csv");
+        Path aliasFile = logDirectory.resolve(TalkerAliasLogger.getAliasFileName("test-system", Protocol.APCO25));
         assertEquals("RADIO_ID,TALKER_ALIAS\n10,\"First,\nAlias\"\n20,Second\n", Files.readString(aliasFile));
 
         TalkerAliasManager manager = new TalkerAliasManager();
@@ -76,13 +77,13 @@ public class TalkerAliasLoggerTest
         secondLogger.onAliasUpdate(Map.of(20, P25TalkerAliasIdentifier.create("Second")));
 
         assertEquals("RADIO_ID,TALKER_ALIAS\n10,First\n20,Second\n",
-            Files.readString(logDirectory.resolve("shared-system_talker_aliases.csv")));
+            Files.readString(logDirectory.resolve(TalkerAliasLogger.getAliasFileName("shared-system", Protocol.APCO25))));
     }
 
     @Test
     void keepsBootstrappedAliasesAsSharedBaseline(@TempDir Path logDirectory) throws IOException
     {
-        Path aliasFile = logDirectory.resolve("baseline-system_talker_aliases.csv");
+        Path aliasFile = logDirectory.resolve(TalkerAliasLogger.getAliasFileName("baseline-system", Protocol.APCO25));
         Files.writeString(aliasFile, "RADIO_ID,TALKER_ALIAS\n10,Original\n");
         TalkerAliasLogger firstLogger = new TalkerAliasLogger(logDirectory, "baseline-system");
         TalkerAliasLogger secondLogger = new TalkerAliasLogger(logDirectory, "baseline-system");
@@ -98,6 +99,41 @@ public class TalkerAliasLoggerTest
     }
 
     @Test
+    void excludesAliasesInheritedFromLiveSnapshotsAfterRestart(@TempDir Path logDirectory) throws IOException
+    {
+        String systemName = "restart-system";
+        Path aliasFile = logDirectory.resolve(TalkerAliasLogger.getAliasFileName(systemName, Protocol.APCO25));
+        TalkerAliasLogger firstLogger = new TalkerAliasLogger(logDirectory, systemName);
+        firstLogger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Original")));
+
+        TalkerAliasLogger restartedLogger = new TalkerAliasLogger(logDirectory, systemName);
+        restartedLogger.bootstrap(new TalkerAliasManager());
+        firstLogger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Updated")));
+        restartedLogger.onAliasUpdate(Map.of(
+            10, P25TalkerAliasIdentifier.create("Original"),
+            20, P25TalkerAliasIdentifier.create("New")));
+
+        assertEquals("RADIO_ID,TALKER_ALIAS\n10,Updated\n20,New\n", Files.readString(aliasFile));
+    }
+
+    @Test
+    void separatesSystemIdentitiesThatSanitizeToTheSameName(@TempDir Path logDirectory) throws IOException
+    {
+        TalkerAliasLogger spaced = new TalkerAliasLogger(logDirectory, "County P25");
+        TalkerAliasLogger dashed = new TalkerAliasLogger(logDirectory, "County-P25");
+        spaced.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Spaced")));
+        dashed.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Dashed")));
+
+        Path spacedFile = logDirectory.resolve(
+            TalkerAliasLogger.getAliasFileName("County P25", Protocol.APCO25));
+        Path dashedFile = logDirectory.resolve(
+            TalkerAliasLogger.getAliasFileName("County-P25", Protocol.APCO25));
+        assertTrue(Files.readString(spacedFile).contains("Spaced"));
+        assertTrue(Files.readString(dashedFile).contains("Dashed"));
+        assertNotEquals(spacedFile, dashedFile);
+    }
+
+    @Test
     void separatesAliasFilesByProtocol(@TempDir Path logDirectory) throws IOException
     {
         TalkerAliasLogger p25Logger = new TalkerAliasLogger(logDirectory, "shared-name", Protocol.APCO25);
@@ -106,14 +142,14 @@ public class TalkerAliasLoggerTest
         p25Logger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("P25 Alias")));
         dmrLogger.onAliasUpdate(Map.of(10, DmrTalkerAliasIdentifier.create("DMR Alias")));
 
-        assertTrue(Files.readString(logDirectory.resolve("shared-name_talker_aliases.csv")).contains("P25 Alias"));
-        assertTrue(Files.readString(logDirectory.resolve("shared-name_dmr_talker_aliases.csv")).contains("DMR Alias"));
+        assertTrue(Files.readString(logDirectory.resolve(TalkerAliasLogger.getAliasFileName("shared-name", Protocol.APCO25))).contains("P25 Alias"));
+        assertTrue(Files.readString(logDirectory.resolve(TalkerAliasLogger.getAliasFileName("shared-name", Protocol.DMR))).contains("DMR Alias"));
     }
 
     @Test
     void bootstrapsDmrAliasesAsDmrIdentifiers(@TempDir Path logDirectory) throws IOException
     {
-        Files.writeString(logDirectory.resolve("dmr-system_dmr_talker_aliases.csv"),
+        Files.writeString(logDirectory.resolve(TalkerAliasLogger.getAliasFileName("dmr-system", Protocol.DMR)),
             "RADIO_ID,TALKER_ALIAS\n10,Dispatch\n");
         TalkerAliasLogger logger = new TalkerAliasLogger(logDirectory, "dmr-system", Protocol.DMR);
         TalkerAliasManager manager = new TalkerAliasManager();
