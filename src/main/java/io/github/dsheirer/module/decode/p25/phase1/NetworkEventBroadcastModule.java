@@ -28,6 +28,7 @@ import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.event.IDecodeEvent;
 import io.github.dsheirer.module.decode.event.IDecodeEventListener;
 import io.github.dsheirer.sample.Listener;
+import io.github.dsheirer.util.JsonUtils;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
@@ -150,7 +151,8 @@ public class NetworkEventBroadcastModule extends Module implements IDecodeEventL
         {
             sb.append(",");
         }
-        sb.append("\"").append(escape(key)).append("\":\"").append(escape(value)).append("\"");
+        sb.append("\"").append(JsonUtils.escape(key)).append("\":\"")
+            .append(JsonUtils.escape(value)).append("\"");
     }
 
     private String safeString(Object obj)
@@ -158,16 +160,4 @@ public class NetworkEventBroadcastModule extends Module implements IDecodeEventL
         return obj != null ? obj.toString() : "";
     }
 
-    private String escape(String s)
-    {
-        if(s == null)
-        {
-            return "";
-        }
-        return s.replace("\\", "\\\\")
-                .replace("\"", "\\\"")
-                .replace("\n", "\\n")
-                .replace("\r", "\\r")
-                .replace("\t", "\\t");
-    }
 }

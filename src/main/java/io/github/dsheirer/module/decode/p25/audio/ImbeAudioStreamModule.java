@@ -176,18 +176,21 @@ public class ImbeAudioStreamModule extends Module
      */
     private synchronized void endCall()
     {
-        if (mCallId == null) return; // nothing open
-        String closingCallId = mCallId;
-        int totalFrames = mFrameCount.get();
-        mCallId = null;
+        if(mCallId != null)
+        {
+            String closingCallId = mCallId;
+            int totalFrames = mFrameCount.get();
+            mCallId = null;
 
-        String json = "{\"type\":\"call_end\"" +
-                ",\"callId\":\"" + closingCallId + "\"" +
-                ",\"system\":\"" + JsonUtils.escape(mSystemName) + "\"" +
-                ",\"talkgroup\":\"" + JsonUtils.escape(currentTalkgroup()) + "\"" +
-                ",\"frames\":" + totalFrames + "}";
+            String json = "{\"type\":\"call_end\"" +
+                    ",\"callId\":\"" + closingCallId + "\"" +
+                    ",\"system\":\"" + JsonUtils.escape(mSystemName) + "\"" +
+                    ",\"talkgroup\":\"" + JsonUtils.escape(currentTalkgroup()) + "\"" +
+                    ",\"frames\":" + totalFrames + "}";
 
-        mStreamManager.broadcast(json);
+            mStreamManager.broadcast(json);
+        }
+
         mIdentifiers.clear();
     }
 

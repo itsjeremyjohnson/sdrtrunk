@@ -18,6 +18,14 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 class HydraSdrNativeBufferFactoryTest
 {
 	@Test
+	void reportsComplexSampleCount()
+	{
+		HydraSdrNativeBuffer buffer = new HydraSdrNativeBuffer(new float[32], new float[32], 1_000, 128.0f);
+
+		assertEquals(32, buffer.sampleCount());
+	}
+
+	@Test
 	void preservesTimestampAcrossResidualBuffers()
 	{
 		HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(128_000);

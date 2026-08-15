@@ -203,6 +203,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private ServiceOptions mCurrentServiceOptions;
     private List<ControlChannelHeartbeat> mHeartbeatMonitors = new ArrayList<>();
     private Listener<IMessage> mRawStreamListener;
+    private boolean mPcmVoiceIdBroadcast;
 
     /**
      * Constructs an APCO-25 decoder state with an optional traffic channel manager.
@@ -876,6 +877,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
             if(headerData.isValid())
             {
+                mPcmVoiceIdBroadcast = false;
                 Identifier talkgroup = headerData.getTalkgroup();
 
                 //Run the talkgroup through the patch group manager so we don't get a plain talkgroup in addition to the patch
@@ -920,7 +922,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 processLC(lcw, message.getTimestamp(), false);
                 // Broadcast fast voice_id (~180ms after squelch open, before audio module releases audio)
                 PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
-                if(pcmMgr != null)
+                if(pcmMgr != null && !mPcmVoiceIdBroadcast)
                 {
                     pcmMgr.broadcastVoiceId(
                             pcmVidGetSystem(),
@@ -928,6 +930,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                             pcmVidGetIdentifier(getIdentifierCollection().getToIdentifier()),
                             pcmVidGetIdentifier(getIdentifierCollection().getFromIdentifier()),
                             PCM_VID_TIMESTAMP_FMT.format(Instant.ofEpochMilli(message.getTimestamp())));
+                    mPcmVoiceIdBroadcast = true;
                 }
                 mTrafficChannelManager.processP1TrafficLDU1(getCurrentFrequency(),
                         getIdentifierCollection().getIdentifiers(), message.getTimestamp(), ldu1.toString());
@@ -963,6 +966,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
      */
     private void processTDU(P25P1Message message)
     {
+        mPcmVoiceIdBroadcast = false;
         mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDU:" + message);
         broadcast(new DecoderStateEvent(this, Event.DECODE, State.ACTIVE));
     }
@@ -981,6 +985,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
             if(lcw != null && lcw.isValid())
             {
+                mPcmVoiceIdBroadcast = false;
                 mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDULC:" + message);
                 broadcast(new DecoderStateEvent(this, Event.DECODE, State.ACTIVE));
                 processLC(lcw, message.getTimestamp(), true);
@@ -2209,6 +2214,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         switch(event.getEvent())
         {
             case REQUEST_RESET:
+                mPcmVoiceIdBroadcast = false;
                 resetState();
                 mNetworkConfigurationMonitor.reset();
                 break;

@@ -127,10 +127,30 @@ public class HydraSdrNative
 		}
 	}
 
+	/**
+	 * Directory containing the application classes or JAR. Packaged launchers place the application JAR under lib,
+	 * alongside the bundled lib/native directory.
+	 */
+	private static File getApplicationDirectory()
+	{
+		try
+		{
+			File location = new File(HydraSdrNative.class.getProtectionDomain().getCodeSource().getLocation().toURI());
+			return location.isDirectory() ? location : location.getParentFile();
+		}
+		catch(Exception e)
+		{
+			mLog.debug("Unable to determine HydraSDR application directory", e);
+			return null;
+		}
+	}
+
 	private static boolean loadFromPlatformPath()
 	{
 		String os = System.getProperty("os.name", "").toLowerCase();
 		String arch = System.getProperty("os.arch", "").toLowerCase();
+		File applicationDirectory = getApplicationDirectory();
+		String applicationPath = applicationDirectory != null ? applicationDirectory.getAbsolutePath() : "";
 		String[][] searchDirs;
 		String jniName;
 		String[] depNames;
@@ -146,6 +166,9 @@ public class HydraSdrNative
 			 * via depFile.exists(), so listing both is safe on both toolchains. */
 			depNames = new String[] {"libusb-1.0.dll", "libhydrasdr.dll", "hydrasdr.dll"};
 			searchDirs = new String[][] {
+				{applicationPath + "\\native"},
+				{applicationPath + "\\lib\\native"},
+				{applicationPath + "\\..\\lib\\native"},
 				{userDir + "\\jni\\build"},
 				{userDir + "\\lib\\native"},
 				{userDir + "\\..\\lib\\native"},
@@ -160,6 +183,9 @@ public class HydraSdrNative
 			jniName = "libhydrasdr_jni.so";
 			depNames = new String[] {"libusb-1.0.so", "libhydrasdr.so"};
 			searchDirs = new String[][] {
+				{applicationPath + "/native"},
+				{applicationPath + "/lib/native"},
+				{applicationPath + "/../lib/native"},
 				{userDir + "/jni/build"},
 				{userDir + "/lib/native"},
 				{userDir + "/../lib/native"},
@@ -174,6 +200,9 @@ public class HydraSdrNative
 			jniName = "libhydrasdr_jni.dylib";
 			depNames = new String[] {"libusb-1.0.dylib", "libhydrasdr.dylib"};
 			searchDirs = new String[][] {
+				{applicationPath + "/native"},
+				{applicationPath + "/lib/native"},
+				{applicationPath + "/../lib/native"},
 				{userDir + "/jni/build"},
 				{userDir + "/lib/native"},
 				{userDir + "/../lib/native"},
