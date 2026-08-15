@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.identifier.alias;
 
+import io.github.dsheirer.module.Module;
 import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.util.StringUtils;
 import java.io.IOException;
@@ -49,7 +50,7 @@ import org.slf4j.LoggerFactory;
 /**
  * Persists observed talker aliases to a CSV file and bootstraps them back on startup.
  */
-public class TalkerAliasLogger
+public class TalkerAliasLogger extends Module
 {
     private static final Logger mLog = LoggerFactory.getLogger(TalkerAliasLogger.class);
     private static final CSVFormat CSV_FORMAT = CSVFormat.DEFAULT.builder()
@@ -131,6 +132,28 @@ public class TalkerAliasLogger
         }
     }
 
+    @Override
+    public void reset()
+    {
+    }
+
+    @Override
+    public void start()
+    {
+    }
+
+    @Override
+    public void stop()
+    {
+    }
+
+    @Override
+    public void dispose()
+    {
+        mFileState.release(mSourceKey);
+        super.dispose();
+    }
+
     /**
      * Coordinates snapshots from all logger instances that target the same system file.
      */
@@ -169,6 +192,16 @@ public class TalkerAliasLogger
             mSnapshots.remove(sourceKey);
             mSnapshots.put(sourceKey, snapshot);
             write(aliasFile, getMergedAliases());
+        }
+
+        public synchronized void release(Object sourceKey)
+        {
+            Map<Integer, String> snapshot = mSnapshots.remove(sourceKey);
+            if(snapshot != null)
+            {
+                mBaseline.putAll(snapshot);
+            }
+            mInheritedAliases.remove(sourceKey);
         }
 
         private void ensureLoaded(Path aliasFile)

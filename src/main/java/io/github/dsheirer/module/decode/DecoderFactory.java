@@ -268,7 +268,7 @@ public class DecoderFactory
 
         if(channel.isStandardChannel())
         {
-            attachTalkerAliasLogger(userPreferences, getSystemName(channel), Protocol.APCO25,
+            attachTalkerAliasLogger(userPreferences, modules, getSystemName(channel), Protocol.APCO25,
                 p25TrafficChannelManager.getTalkerAliasManager());
         }
 
@@ -323,7 +323,7 @@ public class DecoderFactory
             P25P1DecoderState p25DecoderState = new P25P1DecoderState(channel, primaryTCM);
             modules.add(p25DecoderState);
 
-            attachTalkerAliasLogger(userPreferences, getSystemName(channel), Protocol.APCO25,
+            attachTalkerAliasLogger(userPreferences, modules, getSystemName(channel), Protocol.APCO25,
                 primaryTCM.getTalkerAliasManager());
 
             p25DecoderState.setHeartbeatMonitors(loadHeartbeatMonitors(userPreferences));
@@ -628,7 +628,7 @@ public class DecoderFactory
 
         if(channel.isStandardChannel())
         {
-            attachTalkerAliasLogger(userPreferences, getSystemName(channel), Protocol.DMR,
+            attachTalkerAliasLogger(userPreferences, modules, getSystemName(channel), Protocol.DMR,
                 dmrTrafficChannelManager.getTalkerAliasManager());
         }
 
@@ -932,13 +932,14 @@ public class DecoderFactory
         return systemName.trim();
     }
 
-    private static void attachTalkerAliasLogger(UserPreferences userPreferences, String systemName,
-                                                Protocol protocol, TalkerAliasManager manager)
+    private static void attachTalkerAliasLogger(UserPreferences userPreferences, List<Module> modules,
+                                                String systemName, Protocol protocol, TalkerAliasManager manager)
     {
         Path eventLogDir = userPreferences.getDirectoryPreference().getDirectoryEventLog();
         TalkerAliasLogger aliasLogger = new TalkerAliasLogger(eventLogDir, systemName, protocol);
         manager.setChangeListener(aliasLogger::onAliasUpdate);
         aliasLogger.bootstrap(manager);
+        modules.add(aliasLogger);
     }
 
     private static NetworkStreamManager loadNetworkStreamManager(UserPreferences userPreferences)

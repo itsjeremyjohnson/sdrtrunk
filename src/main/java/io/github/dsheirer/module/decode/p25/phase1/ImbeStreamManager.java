@@ -47,7 +47,10 @@ public class ImbeStreamManager
 
     private final CopyOnWriteArrayList<ClientWriter> mClients = new CopyOnWriteArrayList<>();
 
-    private ImbeStreamManager() {}
+    private ImbeStreamManager(ServerSocket serverSocket)
+    {
+        startAcceptLoop(serverSocket);
+    }
 
     /**
      * Returns the singleton instance, creating and starting it if necessary.
@@ -55,11 +58,16 @@ public class ImbeStreamManager
      */
     public static synchronized ImbeStreamManager getInstance(int port)
     {
-        if (sInstance == null)
+        if(sInstance == null)
         {
-            ImbeStreamManager mgr = new ImbeStreamManager();
-            mgr.startAcceptLoop(port);
-            sInstance = mgr;
+            try
+            {
+                sInstance = new ImbeStreamManager(new ServerSocket(port));
+            }
+            catch(IOException e)
+            {
+                mLog.error("Failed to bind IMBE stream TCP port {}: {}", port, e.getMessage());
+            }
         }
         return sInstance;
     }
@@ -77,18 +85,20 @@ public class ImbeStreamManager
             {
                 mClients.remove(writer);
             }
-            else
+            else if(!writer.offer(json))
             {
-                writer.offer(json);
+                writer.close();
+                mClients.remove(writer);
             }
         }
     }
 
-    private void startAcceptLoop(int port)
+    private void startAcceptLoop(ServerSocket serverSocket)
     {
         Thread.ofVirtual().start(() ->
         {
-            try (ServerSocket serverSocket = new ServerSocket(port))
+            int port = serverSocket.getLocalPort();
+            try(serverSocket)
             {
                 mLog.info("ImbeStreamManager listening on port {}", port);
                 while (true)
@@ -141,16 +151,22 @@ public class ImbeStreamManager
     {
         private final Socket mSocket;
         private final PrintWriter mWriter;
-        private final ArrayBlockingQueue<String> mQueue = new ArrayBlockingQueue<>(1024);
+        private final ArrayBlockingQueue<String> mQueue;
         private final Thread mWriterThread;
         private volatile boolean mAlive = true;
 
         public ClientWriter(Socket socket) throws IOException
         {
+            this(socket, 1024, true);
+        }
+
+        ClientWriter(Socket socket, int queueCapacity, boolean startWriter) throws IOException
+        {
             mSocket = socket;
             mWriter = new PrintWriter(socket.getOutputStream(), false);
+            mQueue = new ArrayBlockingQueue<>(queueCapacity);
 
-            mWriterThread = Thread.ofVirtual().start(() ->
+            mWriterThread = startWriter ? Thread.ofVirtual().start(() ->
             {
                 while (mAlive)
                 {
@@ -170,12 +186,17 @@ public class ImbeStreamManager
                         mAlive = false;
                     }
                 }
-            });
+            }) : null;
         }
 
         public boolean offer(String json)
         {
-            return mQueue.offer(json);
+            boolean accepted = mQueue.offer(json);
+            if(!accepted)
+            {
+                close();
+            }
+            return accepted;
         }
 
         public boolean isAlive()
@@ -186,7 +207,10 @@ public class ImbeStreamManager
         public void close()
         {
             mAlive = false;
-            mWriterThread.interrupt();
+            if(mWriterThread != null)
+            {
+                mWriterThread.interrupt();
+            }
             try
             {
                 mSocket.close();

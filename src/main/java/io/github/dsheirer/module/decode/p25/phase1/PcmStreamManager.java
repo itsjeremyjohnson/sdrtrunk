@@ -55,7 +55,11 @@ public class PcmStreamManager
     private final CopyOnWriteArrayList<ClientWriter> mClients = new CopyOnWriteArrayList<>();
     private volatile boolean mRunning = false;
 
-    private PcmStreamManager() {}
+    private PcmStreamManager(ServerSocket serverSocket)
+    {
+        mRunning = true;
+        startAcceptLoop(serverSocket);
+    }
 
     /**
      * Returns the singleton instance, creating and starting it if necessary.
@@ -63,11 +67,16 @@ public class PcmStreamManager
      */
     public static synchronized PcmStreamManager getInstance(int port)
     {
-        if (sInstance == null)
+        if(sInstance == null)
         {
-            PcmStreamManager mgr = new PcmStreamManager();
-            mgr.startAcceptLoop(port);
-            sInstance = mgr;
+            try
+            {
+                sInstance = new PcmStreamManager(new ServerSocket(port));
+            }
+            catch(IOException e)
+            {
+                mLog.error("Failed to bind PCM stream TCP port {}: {}", port, e.getMessage());
+            }
         }
         return sInstance;
     }
@@ -102,9 +111,10 @@ public class PcmStreamManager
             {
                 mClients.remove(writer);
             }
-            else
+            else if(!writer.offer(json))
             {
-                writer.offer(json);
+                writer.close();
+                mClients.remove(writer);
             }
         }
     }
@@ -204,13 +214,13 @@ public class PcmStreamManager
         broadcast(json);
     }
 
-    private void startAcceptLoop(int port)
+    private void startAcceptLoop(ServerSocket serverSocket)
     {
         Thread.ofVirtual().start(() ->
         {
-            try (ServerSocket serverSocket = new ServerSocket(port))
+            int port = serverSocket.getLocalPort();
+            try(serverSocket)
             {
-                mRunning = true;
                 mLog.info("PcmStreamManager listening on port {}", port);
                 while (true)
                 {
@@ -262,16 +272,22 @@ public class PcmStreamManager
     {
         private final Socket mSocket;
         private final PrintWriter mWriter;
-        private final ArrayBlockingQueue<String> mQueue = new ArrayBlockingQueue<>(1024);
+        private final ArrayBlockingQueue<String> mQueue;
         private final Thread mWriterThread;
         private volatile boolean mAlive = true;
 
         public ClientWriter(Socket socket) throws IOException
         {
+            this(socket, 1024, true);
+        }
+
+        ClientWriter(Socket socket, int queueCapacity, boolean startWriter) throws IOException
+        {
             mSocket = socket;
             mWriter = new PrintWriter(socket.getOutputStream(), false);
+            mQueue = new ArrayBlockingQueue<>(queueCapacity);
 
-            mWriterThread = Thread.ofVirtual().start(() ->
+            mWriterThread = startWriter ? Thread.ofVirtual().start(() ->
             {
                 while (mAlive)
                 {
@@ -291,12 +307,17 @@ public class PcmStreamManager
                         mAlive = false;
                     }
                 }
-            });
+            }) : null;
         }
 
         public boolean offer(String json)
         {
-            return mQueue.offer(json);
+            boolean accepted = mQueue.offer(json);
+            if(!accepted)
+            {
+                close();
+            }
+            return accepted;
         }
 
         public boolean isAlive()
@@ -307,7 +328,10 @@ public class PcmStreamManager
         public void close()
         {
             mAlive = false;
-            mWriterThread.interrupt();
+            if(mWriterThread != null)
+            {
+                mWriterThread.interrupt();
+            }
             try
             {
                 mSocket.close();

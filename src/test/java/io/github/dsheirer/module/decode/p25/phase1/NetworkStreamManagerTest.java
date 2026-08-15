@@ -10,8 +10,16 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
+import java.io.OutputStream;
+import java.net.ServerSocket;
+import java.net.Socket;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
 class NetworkStreamManagerTest
@@ -20,5 +28,70 @@ class NetworkStreamManagerTest
     void rejectsIdenticalEventAndRawPorts()
     {
         assertThrows(IllegalArgumentException.class, () -> NetworkStreamManager.getInstance(9500, 9500));
+    }
+
+    @Test
+    void retriesNetworkStreamBindingAfterStartupFailure() throws IOException
+    {
+        int rawPort;
+        try(ServerSocket available = new ServerSocket(0))
+        {
+            rawPort = available.getLocalPort();
+        }
+
+        try(ServerSocket occupied = new ServerSocket(0))
+        {
+            assertNull(NetworkStreamManager.getInstance(occupied.getLocalPort(), rawPort));
+            int eventPort = occupied.getLocalPort();
+            occupied.close();
+            assertNotNull(NetworkStreamManager.getInstance(eventPort, rawPort));
+        }
+    }
+
+    @Test
+    void disconnectsAudioClientsWhenTheirQueuesOverflow() throws IOException
+    {
+        ImbeStreamManager.ClientWriter imbeWriter =
+            new ImbeStreamManager.ClientWriter(new TestSocket(), 1, false);
+        PcmStreamManager.ClientWriter pcmWriter =
+            new PcmStreamManager.ClientWriter(new TestSocket(), 1, false);
+
+        imbeWriter.offer("frame");
+        pcmWriter.offer("pcm");
+        assertFalse(imbeWriter.offer("call_end"));
+        assertFalse(pcmWriter.offer("call_end"));
+        assertFalse(imbeWriter.isAlive());
+        assertFalse(pcmWriter.isAlive());
+    }
+
+    @Test
+    void retriesAudioStreamBindingAfterStartupFailure() throws IOException
+    {
+        try(ServerSocket occupiedImbe = new ServerSocket(0))
+        {
+            int port = occupiedImbe.getLocalPort();
+            assertNull(ImbeStreamManager.getInstance(port));
+            occupiedImbe.close();
+            assertNotNull(ImbeStreamManager.getInstance(port));
+        }
+
+        try(ServerSocket occupiedPcm = new ServerSocket(0))
+        {
+            int port = occupiedPcm.getLocalPort();
+            assertNull(PcmStreamManager.getInstance(port));
+            occupiedPcm.close();
+            assertNotNull(PcmStreamManager.getInstance(port));
+        }
+    }
+
+    private static class TestSocket extends Socket
+    {
+        private final OutputStream mOutputStream = new ByteArrayOutputStream();
+
+        @Override
+        public OutputStream getOutputStream()
+        {
+            return mOutputStream;
+        }
     }
 }

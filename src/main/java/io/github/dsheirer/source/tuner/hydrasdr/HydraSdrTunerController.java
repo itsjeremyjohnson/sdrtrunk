@@ -497,6 +497,11 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				}
 
 				int gainMode = config.getGainMode();
+				if((gainMode == GAIN_MODE_LINEARITY && !hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN)) ||
+					(gainMode == GAIN_MODE_SENSITIVITY && !hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN)))
+				{
+					gainMode = GAIN_MODE_CUSTOM;
+				}
 
 				if(gainMode == GAIN_MODE_CUSTOM)
 				{

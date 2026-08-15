@@ -40,8 +40,10 @@ public class NetworkStreamManager
     private final CopyOnWriteArrayList<ClientWriter> mEventClients = new CopyOnWriteArrayList<>();
     private final CopyOnWriteArrayList<ClientWriter> mRawClients = new CopyOnWriteArrayList<>();
 
-    private NetworkStreamManager()
+    private NetworkStreamManager(ServerSocket eventServerSocket, ServerSocket rawServerSocket)
     {
+        startAcceptLoop(eventServerSocket, mEventClients);
+        startAcceptLoop(rawServerSocket, mRawClients);
     }
 
     /**
@@ -59,10 +61,19 @@ public class NetworkStreamManager
 
         if(sInstance == null)
         {
-            NetworkStreamManager mgr = new NetworkStreamManager();
-            mgr.startAcceptLoop(eventPort, mgr.mEventClients);
-            mgr.startAcceptLoop(rawPort, mgr.mRawClients);
-            sInstance = mgr;
+            ServerSocket eventServerSocket = null;
+            try
+            {
+                eventServerSocket = new ServerSocket(eventPort);
+                ServerSocket rawServerSocket = new ServerSocket(rawPort);
+                sInstance = new NetworkStreamManager(eventServerSocket, rawServerSocket);
+            }
+            catch(IOException e)
+            {
+                close(eventServerSocket);
+                mLog.error("Failed to bind network stream TCP ports {} and {}: {}", eventPort, rawPort,
+                    e.getMessage());
+            }
         }
         return sInstance;
     }
@@ -100,11 +111,27 @@ public class NetworkStreamManager
         }
     }
 
-    private void startAcceptLoop(int port, CopyOnWriteArrayList<ClientWriter> clients)
+    private static void close(ServerSocket serverSocket)
+    {
+        if(serverSocket != null)
+        {
+            try
+            {
+                serverSocket.close();
+            }
+            catch(IOException e)
+            {
+                //Ignore cleanup failure after bind failure.
+            }
+        }
+    }
+
+    private void startAcceptLoop(ServerSocket serverSocket, CopyOnWriteArrayList<ClientWriter> clients)
     {
         Thread.ofVirtual().start(() ->
         {
-            try(ServerSocket serverSocket = new ServerSocket(port))
+            int port = serverSocket.getLocalPort();
+            try(serverSocket)
             {
                 mLog.info("NetworkStreamManager listening on port {}", port);
                 while(true)

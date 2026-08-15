@@ -494,13 +494,22 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			{
 				if(hasTuner() && !isLoading())
 				{
-					int mode = mGainModeCombo.getSelectedIndex();
+					HydraSdrTunerController controller = getTuner().getController();
+					int requestedMode = mGainModeCombo.getSelectedIndex();
+					int mode = getSupportedGainMode(requestedMode,
+						controller.hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN),
+						controller.hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN));
+					if(mode != requestedMode)
+					{
+						setLoading(true);
+						mGainModeCombo.setSelectedIndex(mode);
+						setLoading(false);
+					}
 					mLog.info("Gain mode changed to: " + GAIN_MODES[mode] + " (" + mode + ")");
 
 					/* Apply the mode change to the device */
 					try
 					{
-						HydraSdrTunerController controller = getTuner().getController();
 						if(mode == 0)
 						{
 							/* Linearity: disable supported AGCs and apply the saved preset. */
@@ -631,6 +640,17 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		return mTunerInfoButton;
 	}
 
+	static int getSupportedGainMode(int requestedMode, boolean hasLinearityGain, boolean hasSensitivityGain)
+	{
+		if(requestedMode < HydraSdrTunerController.GAIN_MODE_LINEARITY ||
+			requestedMode > HydraSdrTunerController.GAIN_MODE_CUSTOM ||
+			(requestedMode == 0 && !hasLinearityGain) || (requestedMode == 1 && !hasSensitivityGain))
+		{
+			return HydraSdrTunerController.GAIN_MODE_CUSTOM;
+		}
+		return requestedMode;
+	}
+
 	/**
 	 * Updates gain control enabled/disabled state based on gain mode.
 	 * Reads the current mode from the combo box (user selection), not from saved config.
@@ -644,24 +664,19 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 	{
 		if(hasTuner())
 		{
+			HydraSdrTunerController controller = getTuner().getController();
 			int mode = getGainModeCombo().getSelectedIndex();
-			if(mode < 0)
+			if(mode < 0 || loadConfiguredMode && hasConfiguration())
 			{
 				mode = hasConfiguration() ? getConfiguration().getGainMode() : 0;
 			}
-			boolean isCustom = (mode == 2);
+			mode = getSupportedGainMode(mode,
+				controller.hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN),
+				controller.hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN));
+			boolean isCustom = (mode == HydraSdrTunerController.GAIN_MODE_CUSTOM);
 
 			getGainModeCombo().setEnabled(true);
-
-			/* Only set combo index from config during tuner status loading (not user interaction). */
-			if(loadConfiguredMode && hasConfiguration())
-			{
-				getGainModeCombo().setSelectedIndex(getConfiguration().getGainMode());
-				mode = getConfiguration().getGainMode();
-				isCustom = (mode == 2);
-			}
-
-			HydraSdrTunerController controller = getTuner().getController();
+			getGainModeCombo().setSelectedIndex(mode);
 			boolean hasPresetGain = mode == 0 ? controller.hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN) :
 				controller.hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN);
 			boolean hasLnaAgc = controller.hasCapability(HydraSdrNative.CAP_LNA_AGC);
@@ -685,6 +700,9 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 				(!hasMixerAgc || !(hasConfiguration() && getConfiguration().isMixerAgc())));
 			getMixerGainValueLabel().setEnabled(isCustom && hasMixerGain);
 
+			/* Apply device ranges before restoring values so Swing does not clamp valid saved gains. */
+			updateGainRangesFromDevice();
+
 			if(hasConfiguration())
 			{
 				if(isCustom)
@@ -707,8 +725,6 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 				}
 			}
 
-			/* Update slider ranges from device if available */
-			updateGainRangesFromDevice();
 		}
 		else
 		{
@@ -780,10 +796,10 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			}
 
 			int mode = getGainModeCombo().getSelectedIndex();
-			if(mode < 0)
-			{
-				mode = 0;
-			}
+			HydraSdrTunerController controller = getTuner().getController();
+			mode = getSupportedGainMode(mode,
+				controller.hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN),
+				controller.hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN));
 			getConfiguration().setGainMode(mode);
 
 			if(mode == 0)
