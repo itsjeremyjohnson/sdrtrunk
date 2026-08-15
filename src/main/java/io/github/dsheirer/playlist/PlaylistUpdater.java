@@ -214,18 +214,9 @@ public class PlaylistUpdater
         {
             EventLogConfiguration eventLogConfiguration = channel.getEventLogConfiguration();
 
-            if(eventLogConfiguration.getLoggers().contains(EventLogType.BINARY_MESSAGE))
+            if(eventLogConfiguration.removeLogger(EventLogType.BINARY_MESSAGE))
             {
-                Iterator<EventLogType> it = eventLogConfiguration.getLoggers().iterator();
-
-                while(it.hasNext())
-                {
-                    if(it.next() == EventLogType.BINARY_MESSAGE)
-                    {
-                        it.remove();
-                        removed++;
-                    }
-                }
+                removed++;
             }
         }
 

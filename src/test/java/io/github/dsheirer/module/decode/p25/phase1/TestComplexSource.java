@@ -128,11 +128,13 @@ public class TestComplexSource extends ComplexSource implements AutoCloseable
         if(bytesRead <= 0) return false;
 
         int samplesRead = bytesRead / mBytesPerFrame;
+        if(samplesRead == 0) return false;
+        byte[] validBytes = TestComplexWaveSource.frameAlignedBytes(buffer, bytesRead, mBytesPerFrame);
         long timestamp = (long)((mSampleCount / mSampleRate) * 1000.0);
         mSampleCount += samplesRead;
 
         // Convert to interleaved floats, then deinterleave to ComplexSamples
-        float[] interleaved = ConversionUtils.convertFromSigned16BitSamples(buffer);
+        float[] interleaved = ConversionUtils.convertFromSigned16BitSamples(validBytes);
         ComplexSamples cs = SampleUtils.deinterleave(interleaved, timestamp);
         mListener.receive(cs);
         return true;

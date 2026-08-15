@@ -325,6 +325,12 @@ def generate_report(control_metrics, test_metrics, control_audio=None, test_audi
     total_test_valid = 0
     total_control_sync_blocked = 0
     total_test_sync_blocked = 0
+    total_control_audio_seconds = 0.0
+    total_test_audio_seconds = 0.0
+    total_control_silence_seconds = 0.0
+    total_test_silence_seconds = 0.0
+    total_control_silence_regions = 0
+    total_test_silence_regions = 0
 
     # Per-modulation aggregates
     mod_stats = {}
@@ -419,10 +425,26 @@ def generate_report(control_metrics, test_metrics, control_audio=None, test_audi
             t_segs = t_audio.get('segment_count', t.get('audio_segments', 0))
             c_avg = c_audio.get('avg_segment_seconds', c_secs / c_segs if c_segs > 0 else 0)
             t_avg = t_audio.get('avg_segment_seconds', t_secs / t_segs if t_segs > 0 else 0)
+            c_silence_secs = c.get('silence_seconds', 0)
+            t_silence_secs = t.get('silence_seconds', 0)
+            c_silence_pct = c.get('silence_percentage', 0)
+            t_silence_pct = t.get('silence_percentage', 0)
+            c_silence_regions = c.get('silence_region_count', 0)
+            t_silence_regions = t.get('silence_region_count', 0)
+
+            total_control_audio_seconds += c_secs
+            total_test_audio_seconds += t_secs
+            total_control_silence_seconds += c_silence_secs
+            total_test_silence_seconds += t_silence_secs
+            total_control_silence_regions += c_silence_regions
+            total_test_silence_regions += t_silence_regions
 
             lines.append(f"  Total Audio:     {format_delta(c_secs, t_secs, True, '.1f')}s  (control: {c_secs:.1f}s)")
             lines.append(f"  Segments:        {format_delta(c_segs, t_segs, False)}  (control: {c_segs})")
             lines.append(f"  Avg Seg Length:  {format_delta(c_avg, t_avg, True, '.1f')}s  (control: {c_avg:.1f}s)")
+            lines.append(f"  Silence:         {format_delta(c_silence_secs, t_silence_secs, False, '.1f')}s  (control: {c_silence_secs:.1f}s)")
+            lines.append(f"  Silence Percent: {format_delta(c_silence_pct, t_silence_pct, False, '.1f')}%  (control: {c_silence_pct:.1f}%)")
+            lines.append(f"  Silence Regions: {format_delta(c_silence_regions, t_silence_regions, False)}  (control: {c_silence_regions})")
 
             if is_fd:
                 c_tones = c_audio.get('tone_count', 0)
@@ -461,6 +483,14 @@ def generate_report(control_metrics, test_metrics, control_audio=None, test_audi
     lines.append(f"  Total Valid Test:     {total_test_valid}")
     lines.append(f"  Sync Blocked Ctrl:    {total_control_sync_blocked}")
     lines.append(f"  Sync Blocked Test:    {total_test_sync_blocked}")
+    if has_audio:
+        control_silence_pct = (total_control_silence_seconds / total_control_audio_seconds * 100
+                               if total_control_audio_seconds > 0 else 0)
+        test_silence_pct = (total_test_silence_seconds / total_test_audio_seconds * 100
+                            if total_test_audio_seconds > 0 else 0)
+        lines.append(f"  Silence Seconds:      {total_control_silence_seconds:.1f} → {total_test_silence_seconds:.1f}")
+        lines.append(f"  Silence Percentage:   {control_silence_pct:.1f}% → {test_silence_pct:.1f}%")
+        lines.append(f"  Silence Regions:      {total_control_silence_regions} → {total_test_silence_regions}")
     lines.append("")
 
     # Per-modulation summary
@@ -474,7 +504,15 @@ def generate_report(control_metrics, test_metrics, control_audio=None, test_audi
     lines.append("")
 
     # Verdict
-    if total_delta > 0:
+    if has_audio:
+        if total_delta > 0:
+            lines.append("  LDU RESULT: TEST DECODED MORE LDUs")
+        elif total_delta < 0:
+            lines.append("  LDU RESULT: CONTROL DECODED MORE LDUs")
+        else:
+            lines.append("  LDU RESULT: IDENTICAL LDU COUNTS")
+        lines.append("  OVERALL VERDICT: Review all decode and audio metrics; LDU count alone does not determine quality.")
+    elif total_delta > 0:
         lines.append("  VERDICT: TEST IS BETTER (+LDUs)")
     elif total_delta < 0:
         lines.append("  VERDICT: CONTROL IS BETTER (test lost LDUs)")

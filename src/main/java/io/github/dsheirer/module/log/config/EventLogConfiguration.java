@@ -90,6 +90,13 @@ public class EventLogConfiguration extends Configuration
         mLoggerValues.add(logger.name());
     }
 
+    public boolean removeLogger(EventLogType logger)
+    {
+        boolean removed = mLoggers.removeIf(value -> value == logger);
+        mLoggerValues.removeIf(value -> logger.name().equals(value));
+        return removed;
+    }
+
     public void clear()
     {
         mLoggers.clear();

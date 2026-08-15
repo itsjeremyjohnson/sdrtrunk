@@ -95,6 +95,35 @@ public class ConfigRoundTripTest
     }
 
     @Test
+    void repeatedUnknownPropertiesRoundTrip() throws Exception
+    {
+        XmlMapper mapper = createMapper();
+        String xml = """
+                <decode_configuration type="decodeConfigP25Phase1" modulation="C4FM">
+                  <futureTone>one</futureTone>
+                  <futureTone>two</futureTone>
+                </decode_configuration>
+                """;
+
+        DecodeConfiguration configuration = mapper.readValue(xml, DecodeConfiguration.class);
+        assertEquals(java.util.List.of("one", "two"), configuration.getUnknownProperties().get("futureTone"));
+
+        String output = mapper.writeValueAsString(configuration);
+        assertEquals(2, output.split("<futureTone>", -1).length - 1);
+    }
+
+    @Test
+    void loggerRemovalUpdatesSerializedValues()
+    {
+        EventLogConfiguration configuration = new EventLogConfiguration();
+        configuration.setLoggerValues(java.util.List.of("BINARY_MESSAGE", "FUTURE_LOGGER"));
+
+        assertTrue(configuration.removeLogger(EventLogType.BINARY_MESSAGE));
+        assertFalse(configuration.getLoggerValues().contains("BINARY_MESSAGE"));
+        assertTrue(configuration.getLoggerValues().contains("FUTURE_LOGGER"));
+    }
+
+    @Test
     void unknownScalarEnumWithoutDefaultFailsInsteadOfCoercingToNull()
     {
         XmlMapper mapper = createMapper();

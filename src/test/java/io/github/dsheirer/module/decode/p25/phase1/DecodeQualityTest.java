@@ -170,7 +170,7 @@ public class DecodeQualityTest
         for(File bbFile : basebandFiles)
         {
             long freq = extractFrequency(bbFile.getName());
-            ChannelConfig config = findChannel(channels, freq);
+            ChannelConfig config = findChannel(channels, freq, bbFile.getName());
 
             String channelName = config != null ? config.name() : "Unknown";
             String modulation = forceMod != null ? forceMod : (config != null ? config.modulation() : "C4FM");
@@ -631,6 +631,11 @@ public class DecodeQualityTest
         return maxImbeErrors > 0;
     }
 
+    static boolean shouldDecodeAudio(boolean encryptionStateEstablished, boolean encryptedCall)
+    {
+        return encryptionStateEstablished && !encryptedCall;
+    }
+
     static boolean startsAudioSegment(boolean explicitTerminator, long previousTimestamp, long currentTimestamp,
                                       int segmentGapMs)
     {
@@ -652,6 +657,7 @@ public class DecodeQualityTest
         int[] adaptiveIdx = {0};
         int[] adaptivePass = {0};
         boolean[] adaptiveDisabled = {false};
+        boolean[] encryptionStateEstablished = {false};
         boolean[] encryptedCall = {false};
         boolean[] explicitSegmentBoundary = {false};
         long[] lastDecodedLduTimestamp = {0};
@@ -665,23 +671,26 @@ public class DecodeQualityTest
 
             if(msg instanceof HDUMessage hdu && hdu.getHeaderData() != null && hdu.getHeaderData().isValid())
             {
+                encryptionStateEstablished[0] = true;
                 encryptedCall[0] = hdu.getHeaderData().isEncryptedAudio();
             }
             else if(msg instanceof LDU2Message ldu2 && ldu2.getEncryptionSyncParameters() != null &&
                     ldu2.getEncryptionSyncParameters().isValid())
             {
+                encryptionStateEstablished[0] = true;
                 encryptedCall[0] = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
             }
             else if(p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT ||
                     p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL)
             {
+                encryptionStateEstablished[0] = false;
                 encryptedCall[0] = false;
                 explicitSegmentBoundary[0] = true;
                 lastDecodedLduTimestamp[0] = 0;
                 codec.reset();
             }
 
-            if(msg instanceof LDUMessage ldu && !encryptedCall[0])
+            if(msg instanceof LDUMessage ldu && shouldDecodeAudio(encryptionStateEstablished[0], encryptedCall[0]))
             {
                 long timestamp = p25Message.getTimestamp();
                 boolean startsSegment = startsAudioSegment(explicitSegmentBoundary[0],
@@ -1158,8 +1167,59 @@ public class DecodeQualityTest
 
     static ChannelConfig findChannel(List<ChannelConfig> channels, long frequency)
     {
-        for(ChannelConfig ch : channels) { if(ch.frequency() == frequency) return ch; }
-        return null;
+        return findChannel(channels, frequency, null);
+    }
+
+    static ChannelConfig findChannel(List<ChannelConfig> channels, long frequency, String filename)
+    {
+        List<ChannelConfig> matches = channels.stream().filter(channel -> channel.frequency() == frequency).toList();
+        if(matches.size() <= 1)
+        {
+            return matches.isEmpty() ? null : matches.getFirst();
+        }
+
+        String[] parts = filename != null ? filename.split("_") : new String[0];
+        if(parts.length >= 6)
+        {
+            String system = normalizeChannelField(parts[3]);
+            String site = normalizeChannelField(parts[4]);
+            String name = normalizeChannelField(parts[5]);
+            ChannelConfig bestMatch = null;
+            int bestScore = 0;
+            boolean tied = false;
+
+            for(ChannelConfig match : matches)
+            {
+                int score = 0;
+                if(normalizeChannelField(match.system()).equals(system)) score += 4;
+                if(normalizeChannelField(match.site()).equals(site)) score += 2;
+                if(normalizeChannelField(match.name()).equals(name)) score += 1;
+
+                if(score > bestScore)
+                {
+                    bestMatch = match;
+                    bestScore = score;
+                    tied = false;
+                }
+                else if(score == bestScore && score > 0)
+                {
+                    tied = true;
+                }
+            }
+
+            if(bestScore > 0 && !tied)
+            {
+                return bestMatch;
+            }
+        }
+
+        throw new IllegalArgumentException("Multiple playlist channels match frequency " + frequency +
+                " and filename metadata did not identify one uniquely: " + filename);
+    }
+
+    private static String normalizeChannelField(String value)
+    {
+        return value == null ? "" : value.replaceAll("[^a-zA-Z0-9]", "").toLowerCase();
     }
 
     static List<File> findBasebandFiles(File dir)

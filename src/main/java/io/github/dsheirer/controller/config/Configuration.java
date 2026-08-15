@@ -20,7 +20,9 @@ package io.github.dsheirer.controller.config;
 import com.fasterxml.jackson.annotation.JsonAnyGetter;
 import com.fasterxml.jackson.annotation.JsonAnySetter;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlRootElement;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 @JacksonXmlRootElement(localName = "configuration")
@@ -39,7 +41,24 @@ public abstract class Configuration
         {
             mUnknownProperties = new LinkedHashMap<>();
         }
-        mUnknownProperties.put(key, value);
+        Object existing = mUnknownProperties.get(key);
+        if(existing == null)
+        {
+            mUnknownProperties.put(key, value);
+        }
+        else if(existing instanceof List<?> list)
+        {
+            List<Object> values = new ArrayList<>(list);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
+        else
+        {
+            List<Object> values = new ArrayList<>();
+            values.add(existing);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
     }
 
     @JsonAnyGetter
@@ -52,7 +71,9 @@ public abstract class Configuration
     {
         if(configuration != null && configuration.mUnknownProperties != null)
         {
-            mUnknownProperties = new LinkedHashMap<>(configuration.mUnknownProperties);
+            mUnknownProperties = new LinkedHashMap<>();
+            configuration.mUnknownProperties.forEach((key, value) -> mUnknownProperties.put(key,
+                    value instanceof List<?> list ? new ArrayList<>(list) : value));
         }
     }
 }

@@ -183,6 +183,7 @@ if [[ "$MODE" == "full" ]]; then
         --test-metrics "$TEST_METRICS" \
         --control-audio "$CONTROL_OUTPUT" \
         --test-audio "$TEST_OUTPUT" \
+        --stt \
         --output "$OUTPUT_DIR/report.txt"
 else
     python3 "$SCRIPT_DIR/audio_scorer.py" \

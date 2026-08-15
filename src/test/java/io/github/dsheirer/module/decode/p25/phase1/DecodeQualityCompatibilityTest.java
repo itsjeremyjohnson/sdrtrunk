@@ -78,6 +78,23 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void duplicateFrequencyUsesFilenameChannelMetadata()
+    {
+        List<DecodeQualityTest.ChannelConfig> channels = List.of(
+                new DecodeQualityTest.ChannelConfig("Channel One", "System", "North", 155000000,
+                        "C4FM", 1, "N/A"),
+                new DecodeQualityTest.ChannelConfig("Channel Two", "System", "South", 155000000,
+                        "CQPSK", 2, "N/A"));
+
+        DecodeQualityTest.ChannelConfig match = DecodeQualityTest.findChannel(channels, 155000000,
+                "20260815_120000_155000000_System_South_Channel-Two_1_baseband.wav");
+
+        assertEquals("Channel Two", match.name());
+        assertEquals("CQPSK", match.modulation());
+        assertEquals(2, match.nac());
+    }
+
+    @Test
     void codecResetBoundaryUsesConfiguredTransmissionGap()
     {
         assertEquals(false, DecodeQualityTest.isSegmentBoundary(1000, 1500, 500));
@@ -93,6 +110,15 @@ class DecodeQualityCompatibilityTest
         assertEquals(false, DecodeQualityTest.shouldGateImbeFrames(-1));
         assertEquals(false, DecodeQualityTest.shouldGateImbeFrames(0));
         assertEquals(true, DecodeQualityTest.shouldGateImbeFrames(1));
+    }
+
+    @Test
+    void audioRequiresEstablishedClearEncryptionState()
+    {
+        assertEquals(false, DecodeQualityTest.shouldDecodeAudio(false, false));
+        assertEquals(false, DecodeQualityTest.shouldDecodeAudio(false, true));
+        assertEquals(false, DecodeQualityTest.shouldDecodeAudio(true, true));
+        assertEquals(true, DecodeQualityTest.shouldDecodeAudio(true, false));
     }
 
     @Test
