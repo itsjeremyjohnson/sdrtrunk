@@ -98,6 +98,18 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private Spinner<Integer> mCmaGearShiftMsSpinner;
     private Label mCmaGearShiftMsLabel;
 
+    // C4FM v2 channel options
+    private Spinner<Double> mGardnerBandwidthSpinner;
+    private Label mGardnerBandwidthLabel;
+    private Spinner<Double> mAfcAlphaSpinner;
+    private Label mAfcAlphaLabel;
+    private ToggleSwitch mAdaptiveThresholdsSwitch;
+    private Label mAdaptiveThresholdsLabel;
+    private ToggleSwitch mDfeEnabledSwitch;
+    private Label mDfeEnabledLabel;
+    private Spinner<Double> mDfeMuSpinner;
+    private Label mDfeMuLabel;
+
     /**
      * Constructs an instance
      * @param playlistManager for playlists
@@ -267,14 +279,51 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             GridPane.setConstraints(getCmaGearShiftMsSpinner(), 1, 7);
             gridPane.getChildren().add(getCmaGearShiftMsSpinner());
 
-            // Pipeline diagnostics (row 8) - visible for all modulations
+            // C4FM v2 timing and tracking options (row 8)
+            mGardnerBandwidthLabel = new Label("Gardner Bandwidth:");
+            GridPane.setHalignment(mGardnerBandwidthLabel, HPos.RIGHT);
+            GridPane.setConstraints(mGardnerBandwidthLabel, 0, 8);
+            gridPane.getChildren().add(mGardnerBandwidthLabel);
+            GridPane.setConstraints(getGardnerBandwidthSpinner(), 1, 8);
+            gridPane.getChildren().add(getGardnerBandwidthSpinner());
+
+            mAfcAlphaLabel = new Label("AFC Alpha:");
+            GridPane.setHalignment(mAfcAlphaLabel, HPos.RIGHT);
+            GridPane.setConstraints(mAfcAlphaLabel, 2, 8);
+            gridPane.getChildren().add(mAfcAlphaLabel);
+            GridPane.setConstraints(getAfcAlphaSpinner(), 3, 8);
+            gridPane.getChildren().add(getAfcAlphaSpinner());
+
+            // C4FM v2 adaptive options (row 9)
+            mAdaptiveThresholdsLabel = new Label("Adaptive Thresholds:");
+            GridPane.setHalignment(mAdaptiveThresholdsLabel, HPos.RIGHT);
+            GridPane.setConstraints(mAdaptiveThresholdsLabel, 0, 9);
+            gridPane.getChildren().add(mAdaptiveThresholdsLabel);
+            GridPane.setConstraints(getAdaptiveThresholdsSwitch(), 1, 9);
+            gridPane.getChildren().add(getAdaptiveThresholdsSwitch());
+
+            mDfeEnabledLabel = new Label("DFE Enabled:");
+            GridPane.setHalignment(mDfeEnabledLabel, HPos.RIGHT);
+            GridPane.setConstraints(mDfeEnabledLabel, 2, 9);
+            gridPane.getChildren().add(mDfeEnabledLabel);
+            GridPane.setConstraints(getDfeEnabledSwitch(), 3, 9);
+            gridPane.getChildren().add(getDfeEnabledSwitch());
+
+            mDfeMuLabel = new Label("DFE Mu:");
+            GridPane.setHalignment(mDfeMuLabel, HPos.RIGHT);
+            GridPane.setConstraints(mDfeMuLabel, 4, 9);
+            gridPane.getChildren().add(mDfeMuLabel);
+            GridPane.setConstraints(getDfeMuSpinner(), 5, 9);
+            gridPane.getChildren().add(getDfeMuSpinner());
+
+            // Pipeline diagnostics (row 10) - visible for all modulations
             mPipelineDiagnosticsLabel = new Label("Pipeline Diagnostics:");
             mPipelineDiagnosticsLabel.setTooltip(new Tooltip("Log decode pipeline events to SDRTrunk/logs/p25_logs/ for this channel.\nCaptures messages, state transitions, squelch, and boundary detection."));
             GridPane.setHalignment(mPipelineDiagnosticsLabel, HPos.RIGHT);
-            GridPane.setConstraints(mPipelineDiagnosticsLabel, 0, 8);
+            GridPane.setConstraints(mPipelineDiagnosticsLabel, 0, 10);
             gridPane.getChildren().add(mPipelineDiagnosticsLabel);
 
-            GridPane.setConstraints(getPipelineDiagnosticsSwitch(), 1, 8);
+            GridPane.setConstraints(getPipelineDiagnosticsSwitch(), 1, 10);
             gridPane.getChildren().add(getPipelineDiagnosticsSwitch());
 
             // Update visibility based on modulation selection
@@ -510,6 +559,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     {
         boolean showLsmV2Options = getLSMv2ToggleButton().isSelected();
         boolean showCmaOptions = showLsmV2Options;
+        boolean showC4fmV2Options = getC4FMv2ToggleButton().isSelected();
 
         if(mIgnoreEncryptionLabel != null)
         {
@@ -561,6 +611,23 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         }
         getCmaGearShiftMsSpinner().setVisible(showCmaOptions);
         getCmaGearShiftMsSpinner().setManaged(showCmaOptions);
+
+        setOptionVisibility(mGardnerBandwidthLabel, getGardnerBandwidthSpinner(), showC4fmV2Options);
+        setOptionVisibility(mAfcAlphaLabel, getAfcAlphaSpinner(), showC4fmV2Options);
+        setOptionVisibility(mAdaptiveThresholdsLabel, getAdaptiveThresholdsSwitch(), showC4fmV2Options);
+        setOptionVisibility(mDfeEnabledLabel, getDfeEnabledSwitch(), showC4fmV2Options);
+        setOptionVisibility(mDfeMuLabel, getDfeMuSpinner(), showC4fmV2Options);
+    }
+
+    private void setOptionVisibility(Label label, javafx.scene.Node control, boolean visible)
+    {
+        if(label != null)
+        {
+            label.setVisible(visible);
+            label.setManaged(visible);
+        }
+        control.setVisible(visible);
+        control.setManaged(visible);
     }
 
     private ToggleSwitch getPipelineDiagnosticsSwitch()
@@ -699,6 +766,82 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         return mCmaGearShiftMsSpinner;
     }
 
+    private Spinner<Double> getGardnerBandwidthSpinner()
+    {
+        if(mGardnerBandwidthSpinner == null)
+        {
+            mGardnerBandwidthSpinner = createC4fmV2Spinner(0.001, 0.1, 0.01, 0.001,
+                    "Gardner timing-loop bandwidth (0.001-0.1).");
+        }
+        return mGardnerBandwidthSpinner;
+    }
+
+    private Spinner<Double> getAfcAlphaSpinner()
+    {
+        if(mAfcAlphaSpinner == null)
+        {
+            mAfcAlphaSpinner = createC4fmV2Spinner(0.001, 0.1, 0.01, 0.001,
+                    "Automatic frequency-control tracking alpha (0.001-0.1).");
+        }
+        return mAfcAlphaSpinner;
+    }
+
+    private Spinner<Double> getDfeMuSpinner()
+    {
+        if(mDfeMuSpinner == null)
+        {
+            mDfeMuSpinner = createC4fmV2Spinner(0.0001, 0.05, 0.005, 0.0001,
+                    "Decision-feedback equalizer adaptation step size (0.0001-0.05).");
+        }
+        return mDfeMuSpinner;
+    }
+
+    private Spinner<Double> createC4fmV2Spinner(double minimum, double maximum, double initialValue,
+                                                 double step, String tooltip)
+    {
+        Spinner<Double> spinner = new Spinner<>();
+        spinner.setDisable(true);
+        spinner.setTooltip(new Tooltip(tooltip));
+        spinner.getStyleClass().add(Spinner.STYLE_CLASS_SPLIT_ARROWS_HORIZONTAL);
+        spinner.setEditable(true);
+        spinner.setPrefWidth(100);
+        spinner.setValueFactory(new SpinnerValueFactory.DoubleSpinnerValueFactory(
+                minimum, maximum, initialValue, step));
+        spinner.getValueFactory().valueProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        return spinner;
+    }
+
+    private ToggleSwitch getAdaptiveThresholdsSwitch()
+    {
+        if(mAdaptiveThresholdsSwitch == null)
+        {
+            mAdaptiveThresholdsSwitch = createC4fmV2Switch(
+                    "Adapt C4FM symbol decision thresholds to the received signal.");
+        }
+        return mAdaptiveThresholdsSwitch;
+    }
+
+    private ToggleSwitch getDfeEnabledSwitch()
+    {
+        if(mDfeEnabledSwitch == null)
+        {
+            mDfeEnabledSwitch = createC4fmV2Switch(
+                    "Enable the C4FM decision-feedback equalizer.");
+        }
+        return mDfeEnabledSwitch;
+    }
+
+    private ToggleSwitch createC4fmV2Switch(String tooltip)
+    {
+        ToggleSwitch toggleSwitch = new ToggleSwitch();
+        toggleSwitch.setDisable(true);
+        toggleSwitch.setTooltip(new Tooltip(tooltip));
+        toggleSwitch.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        return toggleSwitch;
+    }
+
     private RecordConfigurationEditor getRecordConfigurationEditor()
     {
         if(mRecordConfigurationEditor == null)
@@ -733,6 +876,11 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         getCmaAcquisitionMuSpinner().setDisable(!enabled);
         getCmaTrackingMuSpinner().setDisable(!enabled);
         getCmaGearShiftMsSpinner().setDisable(!enabled);
+        getGardnerBandwidthSpinner().setDisable(!enabled);
+        getAfcAlphaSpinner().setDisable(!enabled);
+        getAdaptiveThresholdsSwitch().setDisable(!enabled);
+        getDfeEnabledSwitch().setDisable(!enabled);
+        getDfeMuSpinner().setDisable(!enabled);
         getPipelineDiagnosticsSwitch().setDisable(!enabled);
 
         if(config instanceof DecodeConfigP25Phase1 decodeConfig)
@@ -750,6 +898,11 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getCmaAcquisitionMuSpinner().getValueFactory().setValue((double)decodeConfig.getCmaAcquisitionMu());
             getCmaTrackingMuSpinner().getValueFactory().setValue((double)decodeConfig.getCmaTrackingMu());
             getCmaGearShiftMsSpinner().getValueFactory().setValue(decodeConfig.getCmaGearShiftMs());
+            getGardnerBandwidthSpinner().getValueFactory().setValue((double)decodeConfig.getGardnerBandwidth());
+            getAfcAlphaSpinner().getValueFactory().setValue((double)decodeConfig.getAfcAlpha());
+            getAdaptiveThresholdsSwitch().setSelected(decodeConfig.isAdaptiveThresholds());
+            getDfeEnabledSwitch().setSelected(decodeConfig.isDfeEnabled());
+            getDfeMuSpinner().getValueFactory().setValue((double)decodeConfig.getDfeMu());
 
             getC4FMToggleButton().setSelected(false);
             getC4FMv2ToggleButton().setSelected(false);
@@ -784,6 +937,11 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             getCmaAcquisitionMuSpinner().getValueFactory().setValue(0.0);
             getCmaTrackingMuSpinner().getValueFactory().setValue(0.0);
             getCmaGearShiftMsSpinner().getValueFactory().setValue(0);
+            getGardnerBandwidthSpinner().getValueFactory().setValue(0.01);
+            getAfcAlphaSpinner().getValueFactory().setValue(0.01);
+            getAdaptiveThresholdsSwitch().setSelected(false);
+            getDfeEnabledSwitch().setSelected(false);
+            getDfeMuSpinner().getValueFactory().setValue(0.005);
             getPipelineDiagnosticsSwitch().setSelected(false);
         }
     }
@@ -815,6 +973,11 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         config.setCmaAcquisitionMu(getCmaAcquisitionMuSpinner().getValue() != null ? getCmaAcquisitionMuSpinner().getValue().floatValue() : 0.0f);
         config.setCmaTrackingMu(getCmaTrackingMuSpinner().getValue() != null ? getCmaTrackingMuSpinner().getValue().floatValue() : 0.0f);
         config.setCmaGearShiftMs(getCmaGearShiftMsSpinner().getValue() != null ? getCmaGearShiftMsSpinner().getValue() : 0);
+        config.setGardnerBandwidth(getGardnerBandwidthSpinner().getValue().floatValue());
+        config.setAfcAlpha(getAfcAlphaSpinner().getValue().floatValue());
+        config.setAdaptiveThresholds(getAdaptiveThresholdsSwitch().isSelected());
+        config.setDfeEnabled(getDfeEnabledSwitch().isSelected());
+        config.setDfeMu(getDfeMuSpinner().getValue().floatValue());
 
         Modulation selectedModulation;
         if(getC4FMToggleButton().isSelected())

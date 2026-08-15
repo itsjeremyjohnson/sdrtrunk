@@ -48,7 +48,9 @@ import io.github.dsheirer.alias.id.talkgroup.StreamAsTalkgroup;
 import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.alias.id.talkgroup.TalkgroupRange;
 import io.github.dsheirer.alias.id.tone.TonesID;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import javafx.beans.Observable;
 import javafx.beans.property.BooleanProperty;
@@ -181,7 +183,24 @@ public abstract class AliasID
         {
             mUnknownProperties = new LinkedHashMap<>();
         }
-        mUnknownProperties.put(key, value);
+        Object existing = mUnknownProperties.get(key);
+        if(existing == null)
+        {
+            mUnknownProperties.put(key, value);
+        }
+        else if(existing instanceof List<?> list)
+        {
+            List<Object> values = new ArrayList<>(list);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
+        else
+        {
+            List<Object> values = new ArrayList<>();
+            values.add(existing);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
     }
 
     @JsonAnyGetter
@@ -194,7 +213,9 @@ public abstract class AliasID
     {
         if(aliasID != null && aliasID.mUnknownProperties != null)
         {
-            mUnknownProperties = new LinkedHashMap<>(aliasID.mUnknownProperties);
+            mUnknownProperties = new LinkedHashMap<>();
+            aliasID.mUnknownProperties.forEach((key, value) -> mUnknownProperties.put(key,
+                    value instanceof List<?> list ? new ArrayList<>(list) : value));
         }
     }
 }

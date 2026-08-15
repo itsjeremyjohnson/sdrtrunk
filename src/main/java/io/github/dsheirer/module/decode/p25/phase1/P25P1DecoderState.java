@@ -220,7 +220,6 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
     // Periodic holdover check for extended call continuity
     private static final int HOLDOVER_CHECK_INTERVAL_MS = 100;
-    private static final int EXTENDED_HOLDOVER_GRACE_MS = 500;
     private ScheduledExecutorService mHoldoverExecutor;
     private ScheduledFuture<?> mHoldoverTask;
 
@@ -1112,11 +1111,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         {
             long timeSinceLastValidLDU = syncLoss.getTimestamp() - mLastValidLDUTimestamp;
 
-            // Use extended holdover period for sync loss (holdoverMs + 500ms grace)
-            // This allows more time during sync loss since we can't receive LDU messages
-            int extendedHoldoverMs = mHoldoverMs + 500;
-
-            if(timeSinceLastValidLDU <= extendedHoldoverMs)
+            if(timeSinceLastValidLDU <= mHoldoverMs)
             {
                 // Broadcast continuation event to keep the call state alive during sync loss
                 broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
@@ -2534,9 +2529,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             }
 
             long timeSinceLastValidLDU = System.currentTimeMillis() - lastValidLDUTimestamp;
-            int extendedHoldoverMs = holdoverMs + EXTENDED_HOLDOVER_GRACE_MS;
 
-            if(timeSinceLastValidLDU > extendedHoldoverMs)
+            if(timeSinceLastValidLDU > holdoverMs)
             {
                 if(mHoldoverTask != null)
                 {

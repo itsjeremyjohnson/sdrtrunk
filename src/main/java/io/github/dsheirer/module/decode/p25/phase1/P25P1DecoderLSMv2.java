@@ -449,7 +449,7 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
         switch(sourceEvent.getEvent())
         {
             case NOTIFICATION_FREQUENCY_CHANGE:
-                mDemodulator.resetPLL();
+                resetAtTransmissionBoundary();
                 resetTransmissionDetection();
                 break;
             case NOTIFICATION_FREQUENCY_CORRECTION_CHANGE:

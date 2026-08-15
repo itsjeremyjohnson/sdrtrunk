@@ -113,6 +113,25 @@ public class ConfigRoundTripTest
     }
 
     @Test
+    void repeatedUnknownAliasPropertiesRoundTrip() throws Exception
+    {
+        XmlMapper mapper = createMapper();
+        String xml = """
+                <Talkgroup type="talkgroup" protocol="APCO25" value="100">
+                  <futureAliasValue>one</futureAliasValue>
+                  <futureAliasValue>two</futureAliasValue>
+                </Talkgroup>
+                """;
+
+        Talkgroup talkgroup = mapper.readValue(xml, Talkgroup.class);
+        assertEquals(java.util.List.of("one", "two"),
+                talkgroup.getUnknownProperties().get("futureAliasValue"));
+
+        String output = mapper.writeValueAsString(talkgroup);
+        assertEquals(2, output.split("<futureAliasValue>", -1).length - 1);
+    }
+
+    @Test
     void loggerRemovalUpdatesSerializedValues()
     {
         EventLogConfiguration configuration = new EventLogConfiguration();

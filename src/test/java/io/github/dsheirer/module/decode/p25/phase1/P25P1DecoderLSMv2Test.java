@@ -43,18 +43,21 @@ class P25P1DecoderLSMv2Test
         P25P1DecoderLSMv2 lsmV2 = new P25P1DecoderLSMv2();
         lsmV2.detectTransmissionBoundary(samples(3000, 1.0f), samples(3000, 0.0f));
         lsmV2.getSourceEventListener().receive(SourceEvent.frequencyChange(null, 155250000));
+        assertTrue(lsmV2.getMessageFramer().isInitialAcquisitionActive());
         assertEquals(-1, lsmV2.detectTransmissionBoundary(samples(3000, 0.04f), samples(3000, 0.0f)));
         assertTrue(lsmV2.isSignalPresent());
 
         P25P1DecoderC4FM c4fm = new P25P1DecoderC4FM();
         c4fm.detectTransmissionBoundary(samples(3000, 1.0f), samples(3000, 0.0f));
         c4fm.getSourceEventListener().receive(SourceEvent.frequencyChange(null, 155250000));
+        assertTrue(c4fm.getMessageFramer().isInitialAcquisitionActive());
         assertEquals(-1, c4fm.detectTransmissionBoundary(samples(3000, 0.04f), samples(3000, 0.0f)));
         assertTrue(c4fm.isSignalPresent());
 
         P25P1DecoderC4FMv2 c4fmV2 = new P25P1DecoderC4FMv2();
         c4fmV2.detectTransmissionBoundary(samples(3000, 1.0f), samples(3000, 0.0f));
         c4fmV2.getSourceEventListener().receive(SourceEvent.frequencyChange(null, 155250000));
+        assertTrue(c4fmV2.getMessageFramer().isInitialAcquisitionActive());
         assertEquals(-1, c4fmV2.detectTransmissionBoundary(samples(3000, 0.04f), samples(3000, 0.0f)));
         assertTrue(c4fmV2.isSignalPresent());
     }

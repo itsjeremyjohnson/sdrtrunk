@@ -90,6 +90,23 @@ class P25P1DecoderStateTest
     }
 
     @Test
+    void configuredHoldoverDurationHasNoExtraGrace() throws Exception
+    {
+        List<DecoderStateEvent> events = new ArrayList<>();
+        P25P1DecoderState state = createState(events);
+        state.setSignalEnergyProvider(new ConstantEnergyProvider());
+        state.setHoldoverMs(100);
+        long timestamp = System.currentTimeMillis() - 300;
+        setLastValidLduTimestamp(state, timestamp);
+
+        state.receive(new SyncLossMessage(System.currentTimeMillis(), 9600, Protocol.APCO25));
+        invokePeriodicHoldoverCheck(state);
+
+        assertEquals(0, events.size());
+        state.stop();
+    }
+
+    @Test
     void invalidTdulcDoesNotClearCallHoldover() throws Exception
     {
         P25P1DecoderState state = createState(new ArrayList<>());

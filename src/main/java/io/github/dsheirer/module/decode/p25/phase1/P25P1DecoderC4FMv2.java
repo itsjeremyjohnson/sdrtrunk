@@ -501,7 +501,7 @@ public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferPr
         switch(sourceEvent.getEvent())
         {
             case NOTIFICATION_FREQUENCY_CHANGE:
-                mSymbolProcessor.resetPLL();
+                resetAtTransmissionBoundary();
                 resetTransmissionDetection();
                 break;
             case NOTIFICATION_FREQUENCY_CORRECTION_CHANGE:
