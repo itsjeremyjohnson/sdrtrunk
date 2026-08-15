@@ -529,6 +529,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				}
 				else if(gainMode == GAIN_MODE_SENSITIVITY)
 				{
+					disableSupportedAgcs(deviceInfo);
 					int sensitivity = normalizePresetGain(config.getSensitivityGain(), SENSITIVITY_GAIN_DEFAULT,
 						getGainInfo(HydraSdrNative.GAIN_TYPE_SENSITIVITY));
 					setGain(HydraSdrNative.GAIN_TYPE_SENSITIVITY, sensitivity);
@@ -536,6 +537,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				}
 				else
 				{
+					disableSupportedAgcs(deviceInfo);
 					int linearity = normalizePresetGain(config.getLinearityGain(), LINEARITY_GAIN_DEFAULT,
 						getGainInfo(HydraSdrNative.GAIN_TYPE_LINEARITY));
 					setGain(HydraSdrNative.GAIN_TYPE_LINEARITY, linearity);
@@ -734,6 +736,36 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			defaultValue = gainInfo[HydraSdrNative.GAIN_INFO_DEFAULT];
 		}
 		return normalizeGainValue(value > 0 ? value : defaultValue, gainInfo);
+	}
+
+	static int[] getSupportedPresetAgcTypes(HydraSdrDeviceInfo deviceInfo)
+	{
+		if(deviceInfo == null)
+		{
+			return new int[0];
+		}
+
+		int count = (deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_AGC) ? 1 : 0) +
+			(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC) ? 1 : 0);
+		int[] gainTypes = new int[count];
+		int index = 0;
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_AGC))
+		{
+			gainTypes[index++] = HydraSdrNative.GAIN_TYPE_LNA_AGC;
+		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC))
+		{
+			gainTypes[index] = HydraSdrNative.GAIN_TYPE_MIXER_AGC;
+		}
+		return gainTypes;
+	}
+
+	private void disableSupportedAgcs(HydraSdrDeviceInfo deviceInfo) throws SourceException
+	{
+		for(int gainType: getSupportedPresetAgcTypes(deviceInfo))
+		{
+			setGain(gainType, 0);
+		}
 	}
 
 	/**

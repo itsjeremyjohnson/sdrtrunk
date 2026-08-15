@@ -774,6 +774,18 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		}
 	}
 
+	static void savePresetGain(HydraSdrTunerConfiguration configuration, int mode, int gain)
+	{
+		if(mode == HydraSdrTunerController.GAIN_MODE_LINEARITY)
+		{
+			configuration.setLinearityGain(gain);
+		}
+		else if(mode == HydraSdrTunerController.GAIN_MODE_SENSITIVITY)
+		{
+			configuration.setSensitivityGain(gain);
+		}
+	}
+
 	@Override
 	public void save()
 	{
@@ -801,21 +813,12 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			}
 			getConfiguration().setGainMode(mode);
 
-			if(mode == 0)
+			if(mode == 0 || mode == 1)
 			{
-				getConfiguration().setLinearityGain(getMasterGainSlider().getValue());
-				getConfiguration().setSensitivityGain(0);
-			}
-			else if(mode == 1)
-			{
-				getConfiguration().setSensitivityGain(getMasterGainSlider().getValue());
-				getConfiguration().setLinearityGain(0);
+				savePresetGain(getConfiguration(), mode, getMasterGainSlider().getValue());
 			}
 			else
 			{
-				getConfiguration().setLinearityGain(0);
-				getConfiguration().setSensitivityGain(0);
-
 				/* Preserve saved custom values when first switching from a preset mode. */
 				if(previousMode == 2)
 				{

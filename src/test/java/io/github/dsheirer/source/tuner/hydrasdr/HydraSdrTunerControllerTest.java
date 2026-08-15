@@ -10,6 +10,7 @@
  */
 package io.github.dsheirer.source.tuner.hydrasdr;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -105,5 +106,32 @@ class HydraSdrTunerControllerTest
         assertEquals(9, HydraSdrTunerController.normalizePresetGain(0, 14, gainInfo));
         assertEquals(13, HydraSdrTunerController.normalizePresetGain(12, 14, gainInfo));
         assertEquals(14, HydraSdrTunerController.normalizePresetGain(0, 14, null));
+    }
+
+    @Test
+    void identifiesOnlySupportedAgcsForPresetRestoration()
+    {
+        HydraSdrDeviceInfo deviceInfo = new HydraSdrDeviceInfo();
+        assertArrayEquals(new int[0], HydraSdrTunerController.getSupportedPresetAgcTypes(deviceInfo));
+
+        deviceInfo.setCapabilities(HydraSdrNative.CAP_LNA_AGC | HydraSdrNative.CAP_MIXER_AGC);
+        assertArrayEquals(new int[] {HydraSdrNative.GAIN_TYPE_LNA_AGC, HydraSdrNative.GAIN_TYPE_MIXER_AGC},
+            HydraSdrTunerController.getSupportedPresetAgcTypes(deviceInfo));
+    }
+
+    @Test
+    void savingActivePresetPreservesInactivePresetGain()
+    {
+        HydraSdrTunerConfiguration configuration = new HydraSdrTunerConfiguration();
+        configuration.setLinearityGain(15);
+        configuration.setSensitivityGain(11);
+
+        HydraSdrTunerEditor.savePresetGain(configuration, HydraSdrTunerController.GAIN_MODE_LINEARITY, 19);
+        assertEquals(19, configuration.getLinearityGain());
+        assertEquals(11, configuration.getSensitivityGain());
+
+        HydraSdrTunerEditor.savePresetGain(configuration, HydraSdrTunerController.GAIN_MODE_SENSITIVITY, 13);
+        assertEquals(19, configuration.getLinearityGain());
+        assertEquals(13, configuration.getSensitivityGain());
     }
 }

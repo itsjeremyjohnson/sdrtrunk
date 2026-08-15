@@ -266,21 +266,22 @@ tasks.register('buildHydraSdrJni', Exec) {
             }
         }
 
-        // On Windows, check a C compiler is available (cl.exe or gcc)
-        if(os.isWindows()) {
-            def ccCheck = ['cmd', '/c', 'where cl.exe || where gcc.exe']
-            try {
-                def proc = ccCheck.execute()
-                proc.waitFor()
-                if(proc.exitValue() != 0) {
-                    logger.warn('HydraSDR JNI: no C compiler found — skipping native build.')
-                    logger.warn('  Run from x64 Native Tools Command Prompt for VS 2022 or MSYS2 MINGW64 shell.')
-                    return false
-                }
-            } catch(Exception e) {
+        // Check that CMake can use a C compiler on the host platform.
+        def ccCheck = os.isWindows() ? ['cmd', '/c', 'where cl.exe || where gcc.exe'] :
+            ['bash', '-c', 'for compiler in cc gcc clang; do command -v "$compiler" >/dev/null 2>&1 && "$compiler" --version >/dev/null 2>&1 && exit 0; done; exit 1']
+        try {
+            def proc = ccCheck.execute()
+            proc.waitFor()
+            if(proc.exitValue() != 0) {
                 logger.warn('HydraSDR JNI: no C compiler found — skipping native build. See BUILD.md.')
+                if(os.isWindows()) {
+                    logger.warn('  Run from x64 Native Tools Command Prompt for VS 2022 or MSYS2 MINGW64 shell.')
+                }
                 return false
             }
+        } catch(Exception e) {
+            logger.warn('HydraSDR JNI: no C compiler found — skipping native build. See BUILD.md.')
+            return false
         }
         return true
     }
