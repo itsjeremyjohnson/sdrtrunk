@@ -366,6 +366,11 @@ public class PipelineReplayTest
         return sampleRate > 0 ? Math.round(sampleCount * 1_000_000_000.0 / sampleRate) : 0;
     }
 
+    static long totalAudioDurationMillis(List<AudioSegment> audioSegments)
+    {
+        return audioSegments.stream().mapToLong(AudioSegment::getDuration).sum();
+    }
+
     static class ReplayPacer
     {
         private final long mStartNanos = System.nanoTime();
@@ -412,6 +417,7 @@ public class PipelineReplayTest
         // Instrumentation — per-file tracking
         AtomicInteger totalAudioSegments = new AtomicInteger(0);
         double[] totalAudioSeconds = {0};
+        List<AudioSegment> audioSegments = new java.util.concurrent.CopyOnWriteArrayList<>();
         List<String> perFileResults = new ArrayList<>();
 
         // Create ONE ProcessingChain for ALL files
@@ -447,6 +453,7 @@ public class PipelineReplayTest
         // Audio segment listener
         processingChain.addAudioSegmentListener(segment -> {
             totalAudioSegments.incrementAndGet();
+            audioSegments.add(segment);
             segment.completeProperty().addListener((obs, oldVal, newVal) -> {
                 if(newVal) totalAudioSeconds[0] += segment.getDuration() / 1000.0;
             });
@@ -464,8 +471,6 @@ public class PipelineReplayTest
 
         for(int f = 0; f < files.length; f++)
         {
-            int segmentsBefore = totalAudioSegments.get();
-
             Listener<ComplexSamples> chainBroadcaster = firstSource.getListener();
 
             // Inject noise between files to simulate inter-call noise floor (like the live system)
@@ -473,6 +478,9 @@ public class PipelineReplayTest
             {
                 injectNoise(chainBroadcaster, 50000, 0.001f, replayPacer, firstSource); // ~1 second at 50kHz
             }
+
+            int segmentsBefore = totalAudioSegments.get();
+            long audioMillisBefore = totalAudioDurationMillis(audioSegments);
 
             try(TestComplexSource fileSource = new TestComplexSource(files[f], frequency))
             {
@@ -494,12 +502,14 @@ public class PipelineReplayTest
             firstSource.getHeartbeatManager().broadcast();
 
             int segmentsThisFile = totalAudioSegments.get() - segmentsBefore;
-            boolean hasAudio = segmentsThisFile > 0;
+            long audioMillisThisFile = totalAudioDurationMillis(audioSegments) - audioMillisBefore;
+            boolean hasAudio = audioMillisThisFile > 0;
             if(hasAudio) filesWithAudio++;
 
             String result = String.format("  [%d/%d] %s → %s",
                 f + 1, files.length, files[f].getName(),
-                hasAudio ? segmentsThisFile + " segments" : "*** NO AUDIO ***");
+                hasAudio ? String.format("%.2fs audio (%d new segments)", audioMillisThisFile / 1000.0,
+                        segmentsThisFile) : "*** NO AUDIO ***");
             perFileResults.add(result);
             System.out.println(result);
         }

@@ -994,11 +994,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         mDiagLduCount++;
         boolean validLDUProcessed = false;
 
-        // Skip DUID-corrected LDUs entirely for state and identifier processing.
-        // These are noise frames the framer corrected from TDU to LDU — their LCW/ESP
-        // data is garbage that can inject impossible identifiers (channel numbers,
-        // frequencies) and keep the state machine stuck in CALL via correction cycling.
-        // Audio suppression for these is handled separately in P25P1AudioModule.
+        // Do not trust metadata from DUID-corrected LDUs. Corrections made while the signal remains active can still
+        // contain recoverable voice, so they advance call continuity without processing their LCW/ESP identifiers.
         if(!message.isDuidCorrected())
         {
             if(message instanceof LDU1Message ldu1)
@@ -1010,7 +1007,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                     processLC(lcw, message.getTimestamp(), false);
                     mTrafficChannelManager.processP1TrafficLDU1(getCurrentFrequency(),
                             getIdentifierCollection().getIdentifiers(), message.getTimestamp(), ldu1.toString());
-                    broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
+                    broadcast(new DecoderStateEvent(this, Event.CONTINUATION, getCallState()));
                     validLDUProcessed = true;
                 }
             }
@@ -1047,6 +1044,11 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 broadcast(new DecoderStateEvent(this, Event.CONTINUATION, getCallState()));
                 validLDUProcessed = true;
             }
+        }
+        else if(message.isDuidCorrectedDuringActiveSignal() && message.isValid())
+        {
+            broadcast(new DecoderStateEvent(this, Event.CONTINUATION, getCallState()));
+            validLDUProcessed = true;
         }
 
         // Update timestamp and reset holdover state when valid LDU is processed

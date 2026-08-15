@@ -38,7 +38,9 @@ import io.github.dsheirer.source.tuner.rtl.fc0013.FC0013TunerConfiguration;
 import io.github.dsheirer.source.tuner.rtl.r8x.r820t.R820TTunerConfiguration;
 import io.github.dsheirer.source.tuner.rtl.r8x.r828d.R828DTunerConfiguration;
 import io.github.dsheirer.source.tuner.sdrplay.RspTunerConfiguration;
+import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -199,7 +201,24 @@ public abstract class TunerConfiguration
         {
             mUnknownProperties = new LinkedHashMap<>();
         }
-        mUnknownProperties.put(key, value);
+        Object existing = mUnknownProperties.get(key);
+        if(existing == null)
+        {
+            mUnknownProperties.put(key, value);
+        }
+        else if(existing instanceof List<?> list)
+        {
+            List<Object> values = new ArrayList<>(list);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
+        else
+        {
+            List<Object> values = new ArrayList<>();
+            values.add(existing);
+            values.add(value);
+            mUnknownProperties.put(key, values);
+        }
     }
 
     @JsonAnyGetter

@@ -10,6 +10,7 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import io.github.dsheirer.audio.AudioSegment;
 import java.io.File;
 import java.io.StringReader;
 import java.nio.file.Path;
@@ -139,6 +140,18 @@ class DecodeQualityCompatibilityTest
     }
 
     @Test
+    void continuousReplayMeasuresAudioAddedToExistingSegment()
+    {
+        AudioSegment segment = new AudioSegment(null, 0);
+        segment.addAudio(new float[800]);
+        long durationBefore = PipelineReplayTest.totalAudioDurationMillis(List.of(segment));
+
+        segment.addAudio(new float[160]);
+
+        assertEquals(20, PipelineReplayTest.totalAudioDurationMillis(List.of(segment)) - durationBefore);
+    }
+
+    @Test
     void codecResetBoundaryUsesConfiguredTransmissionGap()
     {
         assertEquals(false, DecodeQualityTest.isSegmentBoundary(1000, 1500, 500));
@@ -200,6 +213,34 @@ class DecodeQualityCompatibilityTest
         assertEquals(false, DecodeQualityTest.shouldDecodeAudio(false, true));
         assertEquals(false, DecodeQualityTest.shouldDecodeAudio(true, true));
         assertEquals(true, DecodeQualityTest.shouldDecodeAudio(true, false));
+    }
+
+    @Test
+    void fullScoringRequiresConsecutiveEncryptedLdu2Confirmation()
+    {
+        DecodeQualityTest.ScoringEncryptionState state = new DecodeQualityTest.ScoringEncryptionState(2);
+        state.updateFromHdu(false);
+
+        state.updateFromLdu2(true);
+        assertEquals(true, state.shouldDecodeAudio());
+
+        state.updateFromLdu2(true);
+        assertEquals(false, state.shouldDecodeAudio());
+
+        state.updateFromLdu2(false);
+        assertEquals(true, state.shouldDecodeAudio());
+    }
+
+    @Test
+    void fullScoringWaitsForEncryptionStateBeforeDecoding()
+    {
+        DecodeQualityTest.ScoringEncryptionState state = new DecodeQualityTest.ScoringEncryptionState(2);
+
+        state.updateFromLdu2(true);
+        assertEquals(false, state.shouldDecodeAudio());
+
+        state.updateFromLdu2(false);
+        assertEquals(true, state.shouldDecodeAudio());
     }
 
     @Test

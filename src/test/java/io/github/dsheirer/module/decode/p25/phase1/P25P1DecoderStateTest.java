@@ -15,7 +15,11 @@ import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.message.SyncLossMessage;
+import io.github.dsheirer.module.decode.p25.phase1.message.P25P1Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.UnknownP25Message;
+import io.github.dsheirer.module.decode.p25.phase1.message.lc.LinkControlWord;
+import io.github.dsheirer.module.decode.p25.phase1.message.lc.UnknownLinkControlWord;
+import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
 import io.github.dsheirer.protocol.Protocol;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -59,6 +63,54 @@ class P25P1DecoderStateTest
 
         assertEquals(1, events.size());
         assertEquals(State.ENCRYPTED, events.getFirst().getState());
+        state.stop();
+    }
+
+    @Test
+    void validLdu1ContinuationPreservesEncryptionState() throws Exception
+    {
+        List<DecoderStateEvent> events = new ArrayList<>();
+        P25P1DecoderState state = createState(events);
+        confirmEncryptedCall(state);
+
+        invokeProcessLdu(state, new ValidLdu1Message(System.currentTimeMillis()));
+
+        assertEquals(1, events.size());
+        assertEquals(State.ENCRYPTED, events.getFirst().getState());
+        state.stop();
+    }
+
+    @Test
+    void activeSignalDuidCorrectionAdvancesContinuityWithoutMetadata() throws Exception
+    {
+        List<DecoderStateEvent> events = new ArrayList<>();
+        P25P1DecoderState state = createState(events);
+        long timestamp = System.currentTimeMillis();
+        ValidLdu1Message correctedLdu = new ValidLdu1Message(timestamp);
+        correctedLdu.setDuidCorrected(true);
+        correctedLdu.setDuidCorrectedDuringActiveSignal(true);
+
+        invokeProcessLdu(state, correctedLdu);
+
+        assertEquals(1, events.size());
+        assertEquals(State.CALL, events.getFirst().getState());
+        assertEquals(timestamp, getLastValidLduTimestamp(state));
+        state.stop();
+    }
+
+    @Test
+    void inactiveSignalDuidCorrectionDoesNotAdvanceContinuity() throws Exception
+    {
+        List<DecoderStateEvent> events = new ArrayList<>();
+        P25P1DecoderState state = createState(events);
+        UnknownP25Message correctedLdu = new UnknownP25Message(new CorrectedBinaryMessage(1), 0,
+                System.currentTimeMillis(), P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1);
+        correctedLdu.setDuidCorrected(true);
+
+        invokeProcessLdu(state, correctedLdu);
+
+        assertEquals(0, events.size());
+        assertEquals(0, getLastValidLduTimestamp(state));
         state.stop();
     }
 
@@ -204,10 +256,9 @@ class P25P1DecoderStateTest
         }
     }
 
-    private void invokeProcessLdu(P25P1DecoderState state, UnknownP25Message message) throws Exception
+    private void invokeProcessLdu(P25P1DecoderState state, P25P1Message message) throws Exception
     {
-        Method method = P25P1DecoderState.class.getDeclaredMethod("processLDU",
-                io.github.dsheirer.module.decode.p25.phase1.message.P25P1Message.class);
+        Method method = P25P1DecoderState.class.getDeclaredMethod("processLDU", P25P1Message.class);
         method.setAccessible(true);
         method.invoke(state, message);
     }
@@ -249,6 +300,26 @@ class P25P1DecoderStateTest
         catch(Exception e)
         {
             throw new RuntimeException(e);
+        }
+    }
+
+    private static class ValidLdu1Message extends LDU1Message
+    {
+        private final LinkControlWord mLinkControlWord;
+
+        ValidLdu1Message(long timestamp)
+        {
+            super(new CorrectedBinaryMessage(1568), 0, timestamp);
+            CorrectedBinaryMessage linkControlMessage = new CorrectedBinaryMessage(72);
+            linkControlMessage.load(2, 6, 9); //SOURCE_ID_EXTENSION does not independently broadcast call state
+            mLinkControlWord = new UnknownLinkControlWord(linkControlMessage);
+            mLinkControlWord.setValid(true);
+        }
+
+        @Override
+        public LinkControlWord getLinkControlWord()
+        {
+            return mLinkControlWord;
         }
     }
 

@@ -470,10 +470,12 @@ def generate_report(control_metrics, test_metrics, control_audio=None, test_audi
 
             c_words = c_audio.get('word_count')
             t_words = t_audio.get('word_count')
-            if c_words is not None or t_words is not None:
-                c_w = c_words or 0
-                t_w = t_words or 0
-                lines.append(f"  Words (STT):     {format_delta(c_w, t_w, True)}  (control: {c_w})")
+            if c_words is not None and t_words is not None:
+                lines.append(f"  Words (STT):     {format_delta(c_words, t_words, True)}  (control: {c_words})")
+            else:
+                c_label = c_words if c_words is not None else "unavailable"
+                t_label = t_words if t_words is not None else "unavailable"
+                lines.append(f"  Words (STT):     unavailable (control: {c_label}, test: {t_label})")
 
             lines.append("")
 

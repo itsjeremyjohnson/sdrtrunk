@@ -640,6 +640,57 @@ public class DecodeQualityTest
         return encryptionStateEstablished && !encryptedCall;
     }
 
+    static class ScoringEncryptionState
+    {
+        private final int mConfirmationThreshold;
+        private int mConsecutiveEncryptedLdu2;
+        private boolean mEstablished;
+        private boolean mEncrypted;
+
+        ScoringEncryptionState(int confirmationThreshold)
+        {
+            mConfirmationThreshold = confirmationThreshold;
+        }
+
+        void updateFromHdu(boolean encrypted)
+        {
+            mEstablished = true;
+            mEncrypted = encrypted;
+            mConsecutiveEncryptedLdu2 = encrypted ? mConfirmationThreshold : 0;
+        }
+
+        void updateFromLdu2(boolean encrypted)
+        {
+            if(encrypted)
+            {
+                mConsecutiveEncryptedLdu2++;
+                if(mConsecutiveEncryptedLdu2 >= mConfirmationThreshold)
+                {
+                    mEncrypted = true;
+                    mEstablished = true;
+                }
+            }
+            else
+            {
+                mConsecutiveEncryptedLdu2 = 0;
+                mEncrypted = false;
+                mEstablished = true;
+            }
+        }
+
+        boolean shouldDecodeAudio()
+        {
+            return DecodeQualityTest.shouldDecodeAudio(mEstablished, mEncrypted);
+        }
+
+        void reset()
+        {
+            mConsecutiveEncryptedLdu2 = 0;
+            mEstablished = false;
+            mEncrypted = false;
+        }
+    }
+
     static boolean shouldSuppressCorrectedLdu(boolean duidCorrected, boolean correctedDuringActiveSignal)
     {
         return duidCorrected && !correctedDuringActiveSignal;
@@ -677,8 +728,8 @@ public class DecodeQualityTest
         int[] adaptiveIdx = {0};
         int[] adaptivePass = {0};
         boolean[] adaptiveDisabled = {false};
-        boolean[] encryptionStateEstablished = {false};
-        boolean[] encryptedCall = {false};
+        ScoringEncryptionState encryptionState = new ScoringEncryptionState(
+                Integer.parseInt(System.getProperty("p25.encrypt.confirm", "2")));
         boolean[] explicitSegmentBoundary = {false};
         long[] lastDecodedLduTimestamp = {0};
         codec.reset();
@@ -691,26 +742,23 @@ public class DecodeQualityTest
 
             if(msg instanceof HDUMessage hdu && hdu.getHeaderData() != null && hdu.getHeaderData().isValid())
             {
-                encryptionStateEstablished[0] = true;
-                encryptedCall[0] = hdu.getHeaderData().isEncryptedAudio();
+                encryptionState.updateFromHdu(hdu.getHeaderData().isEncryptedAudio());
             }
             else if(msg instanceof LDU2Message ldu2 && ldu2.getEncryptionSyncParameters() != null &&
                     ldu2.getEncryptionSyncParameters().isValid())
             {
-                encryptionStateEstablished[0] = true;
-                encryptedCall[0] = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
+                encryptionState.updateFromLdu2(ldu2.getEncryptionSyncParameters().isEncryptedAudio());
             }
             else if(p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT ||
                     p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL)
             {
-                encryptionStateEstablished[0] = false;
-                encryptedCall[0] = false;
+                encryptionState.reset();
                 explicitSegmentBoundary[0] = true;
                 lastDecodedLduTimestamp[0] = 0;
                 codec.reset();
             }
 
-            if(msg instanceof LDUMessage ldu && shouldDecodeAudio(encryptionStateEstablished[0], encryptedCall[0]))
+            if(msg instanceof LDUMessage ldu && encryptionState.shouldDecodeAudio())
             {
                 boolean suppressCorrectedLdu = shouldSuppressCorrectedLdu(ldu.isDuidCorrected(),
                         ldu.isDuidCorrectedDuringActiveSignal());
