@@ -19,6 +19,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <math.h>
+#include <stdatomic.h>
 #include <hydrasdr.h>
 
 #ifdef _WIN32
@@ -57,7 +58,7 @@ typedef struct {
 	jmethodID onSamplesMethod;
 	JNIEnv *attached_env;
 	volatile int thread_attached;
-	volatile int stopping;         /* set by stopRx before hydrasdr_stop_rx */
+	atomic_int stopping;           /* release/acquire stop signal */
 	/* Double-buffered pre-allocated Java arrays (global refs).
 	 * Two sets alternate so Java can consume one while native fills the other. */
 	jfloatArray ji_buf[2];
@@ -106,6 +107,7 @@ static jni_stream_ctx_t *get_stream_ctx(uintptr_t handle, int allocate)
 		if (g_devices[i].handle == 0) {
 			g_devices[i].handle = handle;
 			memset(&g_devices[i].ctx, 0, sizeof(jni_stream_ctx_t));
+			atomic_init(&g_devices[i].ctx.stopping, 0);
 			result = &g_devices[i].ctx;
 			goto done;
 		}
@@ -158,7 +160,7 @@ static void cleanup_stream_ctx(JNIEnv *env, jni_stream_ctx_t *ctx)
 	}
 	ctx->thread_attached = 0;
 	ctx->attached_env = NULL;
-	ctx->stopping = 0;
+	atomic_store_explicit(&ctx->stopping, 0, memory_order_relaxed);
 	ctx->active = 0;
 }
 
@@ -471,7 +473,8 @@ static void deinterleave_iq(const float *iq, float *i_out, float *q_out, int sam
 static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 {
 	jni_stream_ctx_t *ctx = (jni_stream_ctx_t *)transfer->ctx;
-	if (!ctx || !ctx->callback || ctx->stopping)
+	if (!ctx || !ctx->callback ||
+		atomic_load_explicit(&ctx->stopping, memory_order_acquire))
 		goto detach_and_exit;
 
 	JNIEnv *env = ctx->attached_env;
@@ -639,14 +642,15 @@ Java_io_github_dsheirer_source_tuner_hydrasdr_HydraSdrNative_stopRx(
 	/*
 	 * Signal the callback to detach its thread and stop processing.
 	 *
-	 * CRITICAL CONTRACT: hydrasdr_stop_rx() MUST block until the streaming
-	 * thread has fully exited and will never call the callback again.
+	 * PINNED API CONTRACT: libhydrasdr v1.1.1 documents that
+	 * hydrasdr_stop_rx() blocks until all streaming threads have terminated
+	 * and guarantees that no callbacks occur after it returns.
 	 * The callback checks 'stopping' and calls DetachCurrentThread before
 	 * the thread terminates. If hydrasdr_stop_rx() returned before the
 	 * thread exits, cleanup_stream_ctx() below would free resources still
 	 * in use by the callback — causing a use-after-free.
 	 */
-	ctx->stopping = 1;
+	atomic_store_explicit(&ctx->stopping, 1, memory_order_release);
 
 	int ret = hydrasdr_stop_rx(dev);
 
