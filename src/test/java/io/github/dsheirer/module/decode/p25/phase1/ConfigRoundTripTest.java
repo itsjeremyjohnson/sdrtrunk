@@ -179,6 +179,7 @@ public class ConfigRoundTripTest
         assertEquals(0, config.getConfiguredNAC());
 
         NACTracker tracker = new NACTracker();
+        assertEquals(DecodeConfigP25Phase1.NAC_AUTODETECT, tracker.getTrackedNAC());
         tracker.setConfiguredNAC(0);
         assertTrue(tracker.hasConfiguredNAC());
         assertEquals(0, tracker.getTrackedNAC());

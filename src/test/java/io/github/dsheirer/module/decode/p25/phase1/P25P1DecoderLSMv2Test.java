@@ -13,6 +13,7 @@ package io.github.dsheirer.module.decode.p25.phase1;
 import java.util.Arrays;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class P25P1DecoderLSMv2Test
 {
@@ -24,8 +25,9 @@ class P25P1DecoderLSMv2Test
 
         assertEquals(0, decoder.getBoundaryResetCount());
 
-        decoder.detectTransmissionBoundary(samples(1000, 0.10f), samples(1000, 0.0f));
+        int boundary = decoder.detectTransmissionBoundary(samples(1000, 0.10f), samples(1000, 0.0f));
         assertEquals(1, decoder.getBoundaryResetCount());
+        assertTrue(boundary >= 0);
     }
 
     @Test
@@ -36,8 +38,9 @@ class P25P1DecoderLSMv2Test
 
         assertEquals(0, decoder.getBoundaryResetCount());
 
-        decoder.detectTransmissionBoundary(samples(1000, 0.10f), samples(1000, 0.0f));
+        int boundary = decoder.detectTransmissionBoundary(samples(1000, 0.10f), samples(1000, 0.0f));
         assertEquals(1, decoder.getBoundaryResetCount());
+        assertTrue(boundary >= 0);
     }
 
     private float[] samples(int length, float value)

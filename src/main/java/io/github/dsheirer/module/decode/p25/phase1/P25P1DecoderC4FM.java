@@ -54,6 +54,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.DecimalFormat;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -204,18 +205,43 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
         float[] q = mDecimationFilterQ.decimateReal(samples.q());
 
         // Detect transmission boundaries on raw decimated samples (before filtering distorts energy)
-        detectTransmissionBoundary(i, q);
+        int boundary = detectTransmissionBoundary(i, q);
 
         mPowerMonitor.process(i, q);
 
+        if(boundary >= 0)
+        {
+            process(Arrays.copyOfRange(i, 0, boundary), Arrays.copyOfRange(q, 0, boundary));
+            resetAtTransmissionBoundary();
+            process(Arrays.copyOfRange(i, boundary, i.length), Arrays.copyOfRange(q, boundary, q.length));
+        }
+        else
+        {
+            process(i, q);
+        }
+    }
+
+    private void process(float[] i, float[] q)
+    {
+        if(i.length == 0)
+        {
+            return;
+        }
+
         i = mBasebandFilterI.filter(i);
         q = mBasebandFilterQ.filter(q);
-
         i = mPulseShapingFilterI.filter(i);
         q = mPulseShapingFilterQ.filter(q);
-
         float[] demodulated = mDemodulator.demodulate(i, q);
         mSymbolProcessor.process(demodulated);
+    }
+
+    private void resetAtTransmissionBoundary()
+    {
+        mSymbolProcessor.coldStartReset();
+        mMessageFramer.coldStartReset();
+        mMessageFramer.setBoundaryRecoveryActive(true);
+        mMessageFramer.setInitialAcquisitionActive(true);
     }
 
     /**
@@ -224,7 +250,7 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
      * of the demodulator and framer to clear accumulated noise state.
      * Mirrors the proven pattern in P25P1DecoderLSMv2.detectTransmissionBoundary().
      */
-    void detectTransmissionBoundary(float[] i, float[] q)
+    int detectTransmissionBoundary(float[] i, float[] q)
     {
         for(int idx = 0; idx < i.length; idx++)
         {
@@ -255,13 +281,10 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
                         P25PipelineDiagnostics.log(mDiagnosticsChannelName, "BOUNDARY", "SILENCE_TO_SIGNAL",
                             String.format("energy=%.2e noiseFloor=%.2e", mEnergyAverage, mNoiseFloor));
                     }
-                    mSymbolProcessor.coldStartReset();
-                    mMessageFramer.coldStartReset();
-                    mMessageFramer.setBoundaryRecoveryActive(true);
-                    mMessageFramer.setInitialAcquisitionActive(true);
                     mBoundaryResetCount++;
                     mInSilence = false;
                     mSilenceSampleCount = 0;
+                    return idx;
                 }
             }
             else if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
@@ -284,6 +307,8 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
                 mSilenceSampleCount = 0;
             }
         }
+
+        return -1;
     }
 
     @Override

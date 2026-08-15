@@ -39,6 +39,8 @@ public class CTCSSDetector
     private double mCoefficient;
     private double mLowerCoefficient;
     private double mUpperCoefficient;
+    private double mLowerToleranceCoefficient;
+    private double mUpperToleranceCoefficient;
     private double mS;
     private double mSPrev;
     private double mSPrev2;
@@ -48,6 +50,12 @@ public class CTCSSDetector
     private double mUpperS;
     private double mUpperSPrev;
     private double mUpperSPrev2;
+    private double mLowerToleranceS;
+    private double mLowerToleranceSPrev;
+    private double mLowerToleranceSPrev2;
+    private double mUpperToleranceS;
+    private double mUpperToleranceSPrev;
+    private double mUpperToleranceSPrev2;
     private int mSampleCount;
     private boolean mToneDetected;
     private int mHysteresisCount;
@@ -105,6 +113,8 @@ public class CTCSSDetector
         }
         mLowerCoefficient = lowerFrequency > 0 ? getCoefficient(lowerFrequency) : 0;
         mUpperCoefficient = upperFrequency > 0 ? getCoefficient(upperFrequency) : 0;
+        mLowerToleranceCoefficient = getCoefficient(mTargetFrequency * 0.98);
+        mUpperToleranceCoefficient = getCoefficient(mTargetFrequency * 1.02);
 
         reset();
     }
@@ -115,9 +125,9 @@ public class CTCSSDetector
     }
 
     /**
-     * Resets the detector state
+     * Resets accumulated samples and detection state.
      */
-    private void reset()
+    public void reset()
     {
         mS = 0;
         mSPrev = 0;
@@ -128,7 +138,15 @@ public class CTCSSDetector
         mUpperS = 0;
         mUpperSPrev = 0;
         mUpperSPrev2 = 0;
+        mLowerToleranceS = 0;
+        mLowerToleranceSPrev = 0;
+        mLowerToleranceSPrev2 = 0;
+        mUpperToleranceS = 0;
+        mUpperToleranceSPrev = 0;
+        mUpperToleranceSPrev2 = 0;
         mSampleCount = 0;
+        mHysteresisCount = 0;
+        mToneDetected = false;
     }
 
     /**
@@ -184,6 +202,15 @@ public class CTCSSDetector
                 mUpperSPrev = mUpperS;
             }
 
+            mLowerToleranceS = sample + (mLowerToleranceCoefficient * mLowerToleranceSPrev) -
+                    mLowerToleranceSPrev2;
+            mLowerToleranceSPrev2 = mLowerToleranceSPrev;
+            mLowerToleranceSPrev = mLowerToleranceS;
+            mUpperToleranceS = sample + (mUpperToleranceCoefficient * mUpperToleranceSPrev) -
+                    mUpperToleranceSPrev2;
+            mUpperToleranceSPrev2 = mUpperToleranceSPrev;
+            mUpperToleranceSPrev = mUpperToleranceS;
+
             mSampleCount++;
 
             if(mSampleCount >= mBlockSize)
@@ -207,6 +234,11 @@ public class CTCSSDetector
                 getMagnitudeSquared(mLowerSPrev, mLowerSPrev2, mLowerCoefficient) : 0;
         double upperMagnitude = mUpperCoefficient != 0 ?
                 getMagnitudeSquared(mUpperSPrev, mUpperSPrev2, mUpperCoefficient) : 0;
+        double lowerToleranceMagnitude = getMagnitudeSquared(mLowerToleranceSPrev, mLowerToleranceSPrev2,
+                mLowerToleranceCoefficient);
+        double upperToleranceMagnitude = getMagnitudeSquared(mUpperToleranceSPrev, mUpperToleranceSPrev2,
+                mUpperToleranceCoefficient);
+        double inBandMagnitude = Math.max(magnitude, Math.max(lowerToleranceMagnitude, upperToleranceMagnitude));
 
         // Fixed reference level scaled to block size
         double totalPower = (double)mBlockSize * mBlockSize * 0.01;
@@ -218,8 +250,9 @@ public class CTCSSDetector
         }
         else
         {
-            double ratio = 10.0 * Math.log10(magnitude / totalPower);
-            tonePresent = ratio > DETECTION_THRESHOLD_DB && magnitude > lowerMagnitude && magnitude > upperMagnitude;
+            double ratio = 10.0 * Math.log10(inBandMagnitude / totalPower);
+            tonePresent = ratio > DETECTION_THRESHOLD_DB && inBandMagnitude > lowerMagnitude &&
+                    inBandMagnitude > upperMagnitude;
         }
 
         // Apply hysteresis
@@ -274,5 +307,11 @@ public class CTCSSDetector
         mUpperS = 0;
         mUpperSPrev = 0;
         mUpperSPrev2 = 0;
+        mLowerToleranceS = 0;
+        mLowerToleranceSPrev = 0;
+        mLowerToleranceSPrev2 = 0;
+        mUpperToleranceS = 0;
+        mUpperToleranceSPrev = 0;
+        mUpperToleranceSPrev2 = 0;
     }
 }

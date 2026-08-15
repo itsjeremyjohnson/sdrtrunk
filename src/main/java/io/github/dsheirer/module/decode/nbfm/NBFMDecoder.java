@@ -114,6 +114,11 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mNoiseSquelch.setSquelchStateListener(squelchState -> {
             if(squelchState == SquelchState.SQUELCH)
             {
+                if(mCTCSSDetector != null)
+                {
+                    mCTCSSDetector.reset();
+                }
+
                 notifyCallEnd();
             }
             else

@@ -209,4 +209,29 @@ public class CTCSSDetectorTest
 
         assertTrue(detector.isToneDetected());
     }
+
+    @Test
+    void detectsAtPositiveToleranceLimit()
+    {
+        mDetector.process(generateTone(TARGET_FREQUENCY * 1.02, TONE_AMPLITUDE, 1.0));
+        assertTrue(mDetector.isToneDetected());
+    }
+
+    @Test
+    void detectsAtNegativeToleranceLimit()
+    {
+        mDetector.process(generateTone(TARGET_FREQUENCY * 0.98, TONE_AMPLITUDE, 1.0));
+        assertTrue(mDetector.isToneDetected());
+    }
+
+    @Test
+    void resetRequiresFreshToneDetection()
+    {
+        mDetector.process(generateTone(TARGET_FREQUENCY, TONE_AMPLITUDE, 1.0));
+        assertTrue(mDetector.isToneDetected());
+
+        mDetector.reset();
+
+        assertFalse(mDetector.isToneDetected());
+    }
 }

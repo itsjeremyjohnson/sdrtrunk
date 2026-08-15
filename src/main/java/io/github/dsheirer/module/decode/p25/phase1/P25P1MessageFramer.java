@@ -1367,7 +1367,7 @@ public class P25P1MessageFramer
         mNIDDecodeSuccessCount++;
 
         //The BCH decoder can over-correct the NID and produce an invalid NAC.  Compare it against the tracked NAC to
-        //flag it as invalid NID when this happens.  The NAC tracker will give us a value of 0 until it has enough
+        //flag it as invalid NID when this happens.  The NAC tracker will give us a value of -1 until it has enough
         //observations of a valid NID value.
         mNACTracker.track(nac);
 //        System.out.println("\t\t" + mDebugSymbolCount + " VALID NID - NAC:" + nac + " DUID:" + duid);

@@ -404,11 +404,11 @@ public class P25P1DemodulatorC4FM
         P25P1DataUnitID duid = P25P1DataUnitID.fromValue(candidateNID.getInt(DUID_FIELD));
 
         //The BCH decoder can over-correct the NID and produce an invalid NAC.  Compare it against the tracked NID to
-        //flag it as invalid NID when this happens.  The NAC tracker will give us a value of 0 until it has enough
+        //flag it as invalid NID when this happens.  The NAC tracker will give us a value of -1 until it has enough
         //observations of a valid NID value.
         mNACTracker.track(nac);
 
-        if(trackedNAC > 0 && trackedNAC != nac)
+        if(trackedNAC >= 0 && trackedNAC != nac)
         {
             mNidNacMismatch++;
             return;

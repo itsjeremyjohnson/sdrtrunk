@@ -37,6 +37,7 @@ import io.github.dsheirer.source.ISourceEventListener;
 import io.github.dsheirer.source.ISourceEventProvider;
 import io.github.dsheirer.source.SourceEvent;
 import java.nio.ByteBuffer;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -204,22 +205,45 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
         q = mDecimationFilterQ.decimateReal(q);
 
         //Detect transmission boundaries on raw decimated samples (before filtering distorts energy levels)
-        detectTransmissionBoundary(i, q);
+        int boundary = detectTransmissionBoundary(i, q);
 
         //Process buffer for power measurements
         mPowerMonitor.process(i, q);
 
+        if(boundary >= 0)
+        {
+            process(Arrays.copyOfRange(i, 0, boundary), Arrays.copyOfRange(q, 0, boundary));
+            resetAtTransmissionBoundary();
+            process(Arrays.copyOfRange(i, boundary, i.length), Arrays.copyOfRange(q, boundary, q.length));
+        }
+        else
+        {
+            process(i, q);
+        }
+    }
+
+    private void process(float[] i, float[] q)
+    {
+        if(i.length == 0)
+        {
+            return;
+        }
+
         i = mBasebandFilterI.filter(i);
         q = mBasebandFilterQ.filter(q);
-
         i = mPulseShapingFilterI.filter(i);
         q = mPulseShapingFilterQ.filter(q);
-
-        //Adaptive equalization to compensate for simulcast multipath ISI
         mEqualizer.equalize(i, q);
-
-        //Demodulate samples into symbols with timing, sync detection, and message framing.
         mDemodulator.process(i, q);
+    }
+
+    private void resetAtTransmissionBoundary()
+    {
+        mDemodulator.coldStartReset();
+        mEqualizer.reset();
+        mMessageFramer.coldStartReset();
+        mMessageFramer.setBoundaryRecoveryActive(true);
+        mMessageFramer.setInitialAcquisitionActive(true);
     }
 
     /**
@@ -228,7 +252,7 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
      * When sustained silence is followed by signal return, triggers a cold-start reset.
      * Also detects energy fade for TDU recovery (Strategy 3).
      */
-    void detectTransmissionBoundary(float[] i, float[] q)
+    int detectTransmissionBoundary(float[] i, float[] q)
     {
         for(int idx = 0; idx < i.length; idx++)
         {
@@ -257,16 +281,12 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
                         mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO)
                 {
                     // A relative rise above the learned idle floor marks a new transmission.
-                    mDemodulator.coldStartReset();
-                    mEqualizer.reset();
-                    mMessageFramer.coldStartReset();
-                    mMessageFramer.setBoundaryRecoveryActive(true);
-                    mMessageFramer.setInitialAcquisitionActive(true);
                     mBoundaryResetCount++;
                     mInSilence = false;
                     mSilenceSampleCount = 0;
                     mPreviousEnergyAverage = mEnergyAverage;
                     mFadeWindowSampleCount = 0;
+                    return idx;
                 }
             }
             else if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
@@ -307,6 +327,8 @@ public class P25P1DecoderLSMv2 extends FeedbackDecoder implements IByteBufferPro
                 }
             }
         }
+
+        return -1;
     }
 
     /**

@@ -44,7 +44,7 @@ public class NACTracker
      * Sets a user-configured NAC value. When set (0-4095), this NAC will always be returned
      * by getTrackedNAC() regardless of observed NAC values, providing optimal NID error correction.
      *
-     * @param nac the configured NAC value, or 0 to use automatic tracking
+     * @param nac the configured NAC value, or -1 to use automatic tracking
      */
     public void setConfiguredNAC(int nac)
     {
@@ -52,7 +52,7 @@ public class NACTracker
     }
 
     /**
-     * Gets the user-configured NAC value, or 0 if not configured.
+     * Gets the user-configured NAC value, or -1 if not configured.
      */
     public int getConfiguredNAC()
     {
@@ -111,7 +111,7 @@ public class NACTracker
      *
      * If a user-configured NAC is set, returns that value instead of the tracked value.
      *
-     * @return dominant tracked NAC value, or configured NAC if set.
+     * @return dominant tracked NAC value, configured NAC if set, or -1 when no value has been learned.
      */
     public int getTrackedNAC()
     {
@@ -123,7 +123,7 @@ public class NACTracker
 
         if(mTrackerMap.isEmpty())
         {
-            return 0;
+            return -1;
         }
 
         List<Tracker> trackers = new ArrayList<>(mTrackerMap.values());
@@ -135,7 +135,7 @@ public class NACTracker
             return highestCount.nac();
         }
 
-        return 0;
+        return -1;
     }
 
     /**

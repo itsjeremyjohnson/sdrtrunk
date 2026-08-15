@@ -188,7 +188,7 @@ public class CMAEqualizer
 
             for(int k = 0; k < TAP_COUNT; k++)
             {
-                int idx = (bufferPointer + k) % TAP_COUNT;
+                int idx = (bufferPointer - 1 - k + TAP_COUNT) % TAP_COUNT;
                 // Complex multiply: (tapI + j*tapQ) * (bufI + j*bufQ)
                 yI += mTapsI[k] * mBufferI[idx] - mTapsQ[k] * mBufferQ[idx];
                 yQ += mTapsI[k] * mBufferQ[idx] + mTapsQ[k] * mBufferI[idx];
@@ -212,7 +212,7 @@ public class CMAEqualizer
             // 4. Update taps: w[k] -= mu * conj(x[n-k]) * e
             for(int k = 0; k < TAP_COUNT; k++)
             {
-                int idx = (bufferPointer + k) % TAP_COUNT;
+                int idx = (bufferPointer - 1 - k + TAP_COUNT) % TAP_COUNT;
                 // conj(x) * e = (xI - j*xQ) * (eI + j*eQ)
                 float conjXeI = mBufferI[idx] * errorI + mBufferQ[idx] * errorQ;
                 float conjXeQ = mBufferI[idx] * errorQ - mBufferQ[idx] * errorI;

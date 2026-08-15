@@ -564,7 +564,14 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     @Override
     protected void saveRecordConfiguration()
     {
-        RecordConfiguration config = new RecordConfiguration();
+        RecordConfiguration config = getItem().getRecordConfiguration();
+
+        if(config == null)
+        {
+            config = new RecordConfiguration();
+        }
+
+        config.clearRecorders();
 
         if(getBasebandRecordSwitch().selectedProperty().get())
         {
