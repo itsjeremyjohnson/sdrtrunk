@@ -121,6 +121,27 @@ class LiveAudioRecordingManagerTest
     }
 
     @Test
+    void sanitizedSystemNamesRemainDistinctRecordingIdentities() throws IOException
+    {
+        LiveAudioRecordingManager manager = new LiveAudioRecordingManager(mUserPreferences);
+        AudioSegment first = baseSegment("County East", "Dispatch", 154_920_000L);
+        first.addIdentifier(APCO25Talkgroup.create(100));
+        first.completeProperty().set(true);
+        AudioSegment second = baseSegment("County-East", "Dispatch", 154_920_000L);
+        second.addIdentifier(APCO25Talkgroup.create(100));
+        second.completeProperty().set(true);
+
+        manager.startRecording();
+        receive(manager, first);
+        receive(manager, second);
+        manager.processAudioSegments();
+
+        assertEquals(2, manager.getActiveRecordingCount());
+        manager.stopRecording();
+        assertEquals(2, recordings().size());
+    }
+
+    @Test
     void skipsEncryptedDuplicateAndDoNotMonitorSegments() throws IOException
     {
         LiveAudioRecordingManager manager = new LiveAudioRecordingManager(mUserPreferences);
@@ -215,8 +236,13 @@ class LiveAudioRecordingManagerTest
 
     private static AudioSegment baseSegment(String channelName, long frequency)
     {
+        return baseSegment("System A", channelName, frequency);
+    }
+
+    private static AudioSegment baseSegment(String system, String channelName, long frequency)
+    {
         AudioSegment audioSegment = new AudioSegment(new AliasList("test"), TimeslotMessage.TIMESLOT_0);
-        audioSegment.addIdentifier(SystemConfigurationIdentifier.create("System A"));
+        audioSegment.addIdentifier(SystemConfigurationIdentifier.create(system));
         audioSegment.addIdentifier(ChannelNameConfigurationIdentifier.create(channelName));
         audioSegment.addIdentifier(FrequencyConfigurationIdentifier.create(frequency));
 

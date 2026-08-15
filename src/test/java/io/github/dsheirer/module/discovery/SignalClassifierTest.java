@@ -25,6 +25,8 @@ import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.map.ChannelMapModel;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog.Bandwidth;
+import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.discovery.DiscoveryPreference;
 import io.github.dsheirer.sample.Listener;
@@ -274,6 +276,15 @@ class SignalClassifierTest
         assertTrue(specification.getMinimumSampleRate() >= specification.getBandwidth());
         assertTrue(specification.getPassFrequency() >= 17_500.0);
         assertTrue(specification.getStopFrequency() > specification.getPassFrequency());
+    }
+
+    @Test
+    void resultConfiguration_usesObservedAnalogBandwidth()
+    {
+        DecodeConfigNBFM configuration = (DecodeConfigNBFM)SignalClassifier.buildResultConfiguration(
+            DecoderType.NBFM, 25_000);
+
+        assertEquals(Bandwidth.BW_25_0, configuration.getBandwidth());
     }
 
     // -------------------------------------------------------------------------

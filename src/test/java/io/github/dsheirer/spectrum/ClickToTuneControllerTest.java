@@ -331,6 +331,8 @@ class ClickToTuneControllerTest
         List<io.github.dsheirer.module.discovery.ClassificationRequest> requests =
             mFakeClassifier.getReceivedRequests();
         assertEquals(expectedSearchFrequencies(FREQ).size(), requests.size());
+        assertTrue(requests.get(0).overallDeadline().compareTo(Duration.ofSeconds(3)) >= 0,
+            "Each offset must retain the energy gate plus a viable decoder window");
         assertTrue(requests.get(0).overallDeadline().compareTo(
             io.github.dsheirer.module.discovery.ClassificationRequest.DEFAULT_DEADLINE) < 0,
             "The first offset must receive only its share of the total search deadline");
@@ -787,6 +789,7 @@ class ClickToTuneControllerTest
         mController.cancelPending();
 
         assertTrue(pending.isCancelled(), "Future should be cancelled");
+        assertTrue(mFakeUI.mPendingCleared, "Cancellation should clear the pending overlay");
     }
 
     // -------------------------------------------------------------------------
@@ -825,9 +828,9 @@ class ClickToTuneControllerTest
             .filter(request -> request.label().startsWith("keep-listening@"))
             .toList();
 
-        assertEquals(expectedSearchFrequencies(FREQ).size() * 2, requests.size(),
-            "Initial classify and keep-listening should each sweep the click search offsets");
-        assertEquals(expectedSearchFrequencies(FREQ), keepListeningRequests.stream()
+        assertEquals(expectedSearchFrequencies(FREQ).size() + extendedSearchFrequencies(FREQ).size(), requests.size(),
+            "Each search should sweep only the offsets its deadline can support");
+        assertEquals(extendedSearchFrequencies(FREQ), keepListeningRequests.stream()
                 .map(io.github.dsheirer.module.discovery.ClassificationRequest::centerFrequencyHz)
                 .toList(),
             "Keep-listening should sweep the same nearby offsets");
@@ -934,6 +937,14 @@ class ClickToTuneControllerTest
     }
 
     private static List<Long> expectedSearchFrequencies(long centerFrequencyHz)
+    {
+        return List.of(
+            centerFrequencyHz,
+            centerFrequencyHz - 2_500L,
+            centerFrequencyHz + 2_500L);
+    }
+
+    private static List<Long> extendedSearchFrequencies(long centerFrequencyHz)
     {
         return List.of(
             centerFrequencyHz,

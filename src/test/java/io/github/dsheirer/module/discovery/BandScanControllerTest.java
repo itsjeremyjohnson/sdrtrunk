@@ -1175,15 +1175,17 @@ class BandScanControllerTest
 
         long cleanupDeadline = System.currentTimeMillis() + 2_000;
         while(mModel.getDiscoveries().stream()
-            .anyMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED)
+            .anyMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED
+                || discovery.getState() == DiscoveryState.PROBING)
             && System.currentTimeMillis() < cleanupDeadline)
         {
             Thread.sleep(20);
         }
 
         assertTrue(mModel.getDiscoveries().stream()
-                .noneMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED),
-            "Stopping during probing must finalize newly-created energy rows");
+                .noneMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED
+                    || discovery.getState() == DiscoveryState.PROBING),
+            "Stopping during probing must finalize the active row");
     }
 
     // -------------------------------------------------------------------------

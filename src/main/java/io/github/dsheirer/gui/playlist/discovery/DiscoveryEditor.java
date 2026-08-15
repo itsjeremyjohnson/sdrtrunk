@@ -393,8 +393,7 @@ public class DiscoveryEditor extends BorderPane
 
         // --- Column: Frequency (MHz) ---
         TableColumn<Discovery, Long> freqCol = new TableColumn<>("Frequency");
-        freqCol.setCellValueFactory(f ->
-            new ReadOnlyObjectWrapper<>(f.getValue().getCenterFrequencyHz()));
+        freqCol.setCellValueFactory(f -> f.getValue().centerFrequencyHzProperty().asObject());
         freqCol.setCellFactory(col -> new TableCell<>()
         {
             @Override
@@ -410,8 +409,7 @@ public class DiscoveryEditor extends BorderPane
 
         // --- Column: Bandwidth ---
         TableColumn<Discovery, Integer> bwCol = new TableColumn<>("BW");
-        bwCol.setCellValueFactory(f ->
-            new ReadOnlyObjectWrapper<>(f.getValue().getBandwidthHz()));
+        bwCol.setCellValueFactory(f -> f.getValue().bandwidthHzProperty().asObject());
         bwCol.setCellFactory(col -> new TableCell<>()
         {
             @Override
@@ -494,8 +492,7 @@ public class DiscoveryEditor extends BorderPane
 
         // --- Column: Power / SNR ---
         TableColumn<Discovery, Double> powerCol = new TableColumn<>("Power/SNR");
-        powerCol.setCellValueFactory(f ->
-            new ReadOnlyObjectWrapper<>(f.getValue().getPowerDb()));
+        powerCol.setCellValueFactory(f -> f.getValue().powerDbProperty().asObject());
         powerCol.setCellFactory(col -> new TableCell<>()
         {
             @Override

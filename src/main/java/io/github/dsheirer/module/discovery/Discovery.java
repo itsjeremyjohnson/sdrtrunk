@@ -26,10 +26,14 @@ import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
 import javafx.beans.property.BooleanProperty;
+import javafx.beans.property.DoubleProperty;
 import javafx.beans.property.IntegerProperty;
+import javafx.beans.property.LongProperty;
 import javafx.beans.property.ObjectProperty;
 import javafx.beans.property.SimpleBooleanProperty;
+import javafx.beans.property.SimpleDoubleProperty;
 import javafx.beans.property.SimpleIntegerProperty;
+import javafx.beans.property.SimpleLongProperty;
 import javafx.beans.property.SimpleObjectProperty;
 
 /**
@@ -48,10 +52,10 @@ import javafx.beans.property.SimpleObjectProperty;
  */
 public class Discovery
 {
-    private volatile long mCenterFrequencyHz;
-    private volatile int mBandwidthHz;
-    private volatile double mPowerDb;
-    private volatile double mSnrDb;
+    private final LongProperty mCenterFrequencyHz = new SimpleLongProperty();
+    private final IntegerProperty mBandwidthHz = new SimpleIntegerProperty();
+    private final DoubleProperty mPowerDb = new SimpleDoubleProperty();
+    private final DoubleProperty mSnrDb = new SimpleDoubleProperty();
 
     private final ObjectProperty<DiscoveryState> mState = new SimpleObjectProperty<>(DiscoveryState.ENERGY_DETECTED);
     private final ObjectProperty<DecoderType> mDetectedDecoder = new SimpleObjectProperty<>(null);
@@ -78,10 +82,10 @@ public class Discovery
      */
     public Discovery(EnergyPeak peak, Instant firstSeen)
     {
-        mCenterFrequencyHz = peak.centerFrequencyHz();
-        mBandwidthHz = peak.occupiedBandwidthHz();
-        mPowerDb = peak.powerDb();
-        mSnrDb = peak.snrDb();
+        mCenterFrequencyHz.set(peak.centerFrequencyHz());
+        mBandwidthHz.set(peak.occupiedBandwidthHz());
+        mPowerDb.set(peak.powerDb());
+        mSnrDb.set(peak.snrDb());
         mFirstSeen.set(firstSeen);
         mLastSeen.set(firstSeen);
     }
@@ -97,10 +101,10 @@ public class Discovery
      */
     public Discovery(long centerFrequencyHz, int bandwidthHz, double powerDb, double snrDb, Instant firstSeen)
     {
-        mCenterFrequencyHz = centerFrequencyHz;
-        mBandwidthHz = bandwidthHz;
-        mPowerDb = powerDb;
-        mSnrDb = snrDb;
+        mCenterFrequencyHz.set(centerFrequencyHz);
+        mBandwidthHz.set(bandwidthHz);
+        mPowerDb.set(powerDb);
+        mSnrDb.set(snrDb);
         mFirstSeen.set(firstSeen);
         mLastSeen.set(firstSeen);
     }
@@ -114,9 +118,14 @@ public class Discovery
      *
      * @return center frequency in Hz
      */
-    public long getCenterFrequencyHz()
+    public LongProperty centerFrequencyHzProperty()
     {
         return mCenterFrequencyHz;
+    }
+
+    public long getCenterFrequencyHz()
+    {
+        return mCenterFrequencyHz.get();
     }
 
     /**
@@ -124,9 +133,14 @@ public class Discovery
      *
      * @return bandwidth in Hz
      */
-    public int getBandwidthHz()
+    public IntegerProperty bandwidthHzProperty()
     {
         return mBandwidthHz;
+    }
+
+    public int getBandwidthHz()
+    {
+        return mBandwidthHz.get();
     }
 
     /**
@@ -134,9 +148,14 @@ public class Discovery
      *
      * @return power in dB
      */
-    public double getPowerDb()
+    public DoubleProperty powerDbProperty()
     {
         return mPowerDb;
+    }
+
+    public double getPowerDb()
+    {
+        return mPowerDb.get();
     }
 
     /**
@@ -144,9 +163,14 @@ public class Discovery
      *
      * @return SNR in dB
      */
-    public double getSnrDb()
+    public DoubleProperty snrDbProperty()
     {
         return mSnrDb;
+    }
+
+    public double getSnrDb()
+    {
+        return mSnrDb.get();
     }
 
     /**
@@ -158,10 +182,10 @@ public class Discovery
     {
         if(peak != null)
         {
-            mCenterFrequencyHz = peak.centerFrequencyHz();
-            mBandwidthHz = peak.occupiedBandwidthHz();
-            mPowerDb = peak.powerDb();
-            mSnrDb = peak.snrDb();
+            mCenterFrequencyHz.set(peak.centerFrequencyHz());
+            mBandwidthHz.set(peak.occupiedBandwidthHz());
+            mPowerDb.set(peak.powerDb());
+            mSnrDb.set(peak.snrDb());
         }
     }
 
@@ -518,14 +542,14 @@ public class Discovery
     public String toString()
     {
         return "Discovery{"
-            + "freq=" + mCenterFrequencyHz + "Hz"
-            + ", bw=" + mBandwidthHz + "Hz"
+            + "freq=" + getCenterFrequencyHz() + "Hz"
+            + ", bw=" + getBandwidthHz() + "Hz"
             + ", state=" + mState.get()
             + ", decoder=" + mDetectedDecoder.get()
             + ", kind=" + mKind.get()
             + ", confidence=" + mConfidence.get()
-            + ", power=" + mPowerDb + "dB"
-            + ", snr=" + mSnrDb + "dB"
+            + ", power=" + getPowerDb() + "dB"
+            + ", snr=" + getSnrDb() + "dB"
             + ", watched=" + mWatched.get()
             + "}";
     }

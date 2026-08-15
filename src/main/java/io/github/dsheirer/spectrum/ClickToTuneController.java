@@ -76,6 +76,7 @@ public class ClickToTuneController
     private static final Logger mLog = LoggerFactory.getLogger(ClickToTuneController.class);
     private static final long CLICK_SEARCH_STEP_HZ = 2_500L;
     private static final long CLICK_SEARCH_MAX_OFFSET_HZ = 7_500L;
+    private static final Duration MINIMUM_OFFSET_PROBE_BUDGET = Duration.ofSeconds(3);
     private static final List<Long> CLICK_SEARCH_OFFSETS_HZ = List.of(
         0L,
         -CLICK_SEARCH_STEP_HZ,
@@ -247,6 +248,7 @@ public class ClickToTuneController
         if(f != null)
         {
             f.cancel(true);
+            mUICallbacks.clearPending();
         }
     }
 
@@ -537,6 +539,7 @@ public class ClickToTuneController
             searchDeadlineNanos = Long.MAX_VALUE;
         }
 
+        int offsetCount = searchOffsetCount(totalDeadline);
         CompletableFuture<ClassificationResult> searchFuture = new CompletableFuture<>()
         {
             @Override
@@ -555,27 +558,28 @@ public class ClickToTuneController
         };
 
         classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix,
-            searchDeadlineNanos, 0, null);
+            searchDeadlineNanos, offsetCount, 0, null);
         return searchFuture;
     }
 
     private void classifyNextSearchOffset(CompletableFuture<ClassificationResult> searchFuture,
                                            AtomicReference<CompletableFuture<ClassificationResult>> activeProbeFuture,
                                            long centerFreqHz, int bwHz, String labelPrefix,
-                                           long searchDeadlineNanos, int offsetIndex, ClassificationResult bestMiss)
+                                           long searchDeadlineNanos, int offsetCount, int offsetIndex,
+                                           ClassificationResult bestMiss)
     {
         if(searchFuture.isDone())
         {
             return;
         }
 
-        if(offsetIndex >= CLICK_SEARCH_OFFSETS_HZ.size())
+        if(offsetIndex >= offsetCount)
         {
             completeSearchMiss(searchFuture, centerFreqHz, bestMiss);
             return;
         }
 
-        Duration probeDeadline = partitionedProbeDeadline(searchDeadlineNanos, offsetIndex);
+        Duration probeDeadline = partitionedProbeDeadline(searchDeadlineNanos, offsetCount, offsetIndex);
 
         if(probeDeadline == null)
         {
@@ -588,7 +592,7 @@ public class ClickToTuneController
         if(probeFreqHz <= 0)
         {
             classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix,
-                searchDeadlineNanos, offsetIndex + 1, bestMiss);
+                searchDeadlineNanos, offsetCount, offsetIndex + 1, bestMiss);
             return;
         }
 
@@ -633,7 +637,7 @@ public class ClickToTuneController
             }
 
             classifyNextSearchOffset(searchFuture, activeProbeFuture, centerFreqHz, bwHz, labelPrefix,
-                searchDeadlineNanos, offsetIndex + 1, selectBestMiss(bestMiss, result));
+                searchDeadlineNanos, offsetCount, offsetIndex + 1, selectBestMiss(bestMiss, result));
         });
     }
 
@@ -653,10 +657,19 @@ public class ClickToTuneController
         return deadline;
     }
 
-    private static Duration partitionedProbeDeadline(long searchDeadlineNanos, int offsetIndex)
+    static int searchOffsetCount(Duration deadline)
+    {
+        long affordable = Math.max(1L, deadline.toNanos() / MINIMUM_OFFSET_PROBE_BUDGET.toNanos());
+        int count = (int)Math.min(CLICK_SEARCH_OFFSETS_HZ.size(), affordable);
+
+        // Preserve left/right symmetry around the initial center probe.
+        return count > 1 && count % 2 == 0 ? count - 1 : count;
+    }
+
+    private static Duration partitionedProbeDeadline(long searchDeadlineNanos, int offsetCount, int offsetIndex)
     {
         long remainingNanos = searchDeadlineNanos - System.nanoTime();
-        int remainingOffsets = CLICK_SEARCH_OFFSETS_HZ.size() - offsetIndex;
+        int remainingOffsets = offsetCount - offsetIndex;
         return remainingNanos > 0 && remainingOffsets > 0 ?
             Duration.ofNanos(Math.max(1L, remainingNanos / remainingOffsets)) : null;
     }
@@ -820,8 +833,13 @@ public class ClickToTuneController
      */
     private String defaultAliasListName()
     {
-        List<String> names = mChannelModel.getAliasListNames();
-        return (names != null && !names.isEmpty()) ? names.get(0) : null;
+        AtomicReference<List<String>> snapshot = new AtomicReference<>(List.of());
+        FxThreads.runAndWait(() ->
+        {
+            List<String> names = mChannelModel.getAliasListNames();
+            snapshot.set(names != null ? List.copyOf(names) : List.of());
+        });
+        return snapshot.get().isEmpty() ? null : snapshot.get().get(0);
     }
 
     /**

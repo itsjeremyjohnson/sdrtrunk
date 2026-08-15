@@ -293,14 +293,28 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
     private Path getRecordingPath(LiveRecordingKey key)
     {
         String filename = clean(key.filename());
+        String extension = RecordFormat.MP3.getExtension();
+        int maxLength = 255 - extension.length();
+        Path path = mSessionDirectory.resolve(truncate(filename, maxLength) + extension);
+        int duplicate = 2;
 
-        int maxLength = 255 - RecordFormat.MP3.getExtension().length();
-        if(filename.length() > maxLength)
+        while(isRecordingPathInUse(path))
         {
-            filename = filename.substring(0, maxLength);
+            String suffix = "-" + duplicate++;
+            path = mSessionDirectory.resolve(truncate(filename, maxLength - suffix.length()) + suffix + extension);
         }
 
-        return mSessionDirectory.resolve(filename + RecordFormat.MP3.getExtension());
+        return path;
+    }
+
+    private boolean isRecordingPathInUse(Path path)
+    {
+        return mWriters.values().stream().anyMatch(writer -> writer.getPath().equals(path));
+    }
+
+    private static String truncate(String value, int maxLength)
+    {
+        return value.length() > maxLength ? value.substring(0, maxLength) : value;
     }
 
     private void closeWriters()
@@ -433,67 +447,68 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
             List<String> keyParts = new ArrayList<>();
             List<String> fileParts = new ArrayList<>();
 
-            addPart(keyParts, "system", system);
-            addPart(fileParts, null, system);
-            addPart(keyParts, "site", site);
-            addPart(fileParts, null, site);
+            addKeyPart(keyParts, "system", system);
+            addFilePart(fileParts, null, system);
+            addKeyPart(keyParts, "site", site);
+            addFilePart(fileParts, null, site);
 
             if(to != null)
             {
-                addPart(keyParts, "to", to.getProtocol() + "-" + to.getForm() + "-" + to.getValue());
-                addPart(fileParts, "TO", to.toString() + "-" + to.getProtocol() + "-" + to.getForm());
+                addKeyPart(keyParts, "to", to.getProtocol() + "-" + to.getForm() + "-" + to.getValue());
+                addFilePart(fileParts, "TO", to.toString() + "-" + to.getProtocol() + "-" + to.getForm());
 
                 if(to.getProtocol() == Protocol.AM || to.getProtocol() == Protocol.NBFM)
                 {
-                    addPart(keyParts, "channel", channel);
-                    addPart(fileParts, "CHANNEL", channel);
-                    addPart(keyParts, "frequency", frequency);
-                    addPart(fileParts, "FREQUENCY", frequency);
+                    addKeyPart(keyParts, "channel", channel);
+                    addFilePart(fileParts, "CHANNEL", channel);
+                    addKeyPart(keyParts, "frequency", frequency);
+                    addFilePart(fileParts, "FREQUENCY", frequency);
                 }
             }
             else if(channel != null)
             {
-                addPart(keyParts, "channel", channel);
-                addPart(fileParts, "CHANNEL", channel);
+                addKeyPart(keyParts, "channel", channel);
+                addFilePart(fileParts, "CHANNEL", channel);
 
                 if(frequency != null)
                 {
-                    addPart(keyParts, "frequency", frequency);
-                    addPart(fileParts, "FREQUENCY", frequency);
+                    addKeyPart(keyParts, "frequency", frequency);
+                    addFilePart(fileParts, "FREQUENCY", frequency);
                 }
             }
             else if(frequency != null)
             {
-                addPart(keyParts, "frequency", frequency);
-                addPart(fileParts, "FREQUENCY", frequency);
+                addKeyPart(keyParts, "frequency", frequency);
+                addFilePart(fileParts, "FREQUENCY", frequency);
             }
             else
             {
-                addPart(keyParts, "timeslot", String.valueOf(timeslot));
-                addPart(fileParts, "TIMESLOT", String.valueOf(timeslot));
+                addKeyPart(keyParts, "timeslot", String.valueOf(timeslot));
+                addFilePart(fileParts, "TIMESLOT", String.valueOf(timeslot));
             }
 
             if(to == null && timeslot > 0)
             {
-                addPart(keyParts, "timeslot", String.valueOf(timeslot));
-                addPart(fileParts, "TIMESLOT", String.valueOf(timeslot));
+                addKeyPart(keyParts, "timeslot", String.valueOf(timeslot));
+                addFilePart(fileParts, "TIMESLOT", String.valueOf(timeslot));
             }
 
             return new LiveRecordingKey(String.join("|", keyParts), String.join("_", fileParts));
         }
 
-        private static void addPart(List<String> parts, String label, String value)
+        private static void addKeyPart(List<String> parts, String label, String value)
         {
             if(value != null && !value.isBlank())
             {
-                if(label != null)
-                {
-                    parts.add(clean(label + "-" + value));
-                }
-                else
-                {
-                    parts.add(clean(value));
-                }
+                parts.add(label != null ? label + "-" + value : value);
+            }
+        }
+
+        private static void addFilePart(List<String> parts, String label, String value)
+        {
+            if(value != null && !value.isBlank())
+            {
+                parts.add(clean(label != null ? label + "-" + value : value));
             }
         }
     }

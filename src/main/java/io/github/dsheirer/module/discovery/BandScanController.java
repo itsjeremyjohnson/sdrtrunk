@@ -1094,9 +1094,8 @@ public class BandScanController
     /**
      * Probes a single discovery synchronously (called on the executor thread).
      *
-     * <p>If the classifier future is cancelled ({@code CancellationException}) the discovery
-     * is left in its current state (not set to ERROR) and the method returns without touching
-     * the model, allowing the epoch check in the caller to determine the final outcome.</p>
+     * <p>If the classifier future is cancelled or interrupted, an active {@code PROBING} row is
+     * finalized as {@link DiscoveryState#UNIDENTIFIED} so it remains actionable.</p>
      *
      * @param discovery the discovery to probe
      * @param request   the active scan request (used to get the candidate decoder set)
@@ -1134,15 +1133,15 @@ public class BandScanController
         }
         catch(CancellationException e)
         {
-            // Future was cancelled (e.g. by stopInternal) — leave the discovery in its
-            // current state and let the epoch check in the caller decide the outcome.
             mLog.debug("Classification cancelled for {} Hz", discovery.getCenterFrequencyHz());
+            finalizeCancelledProbe(discovery);
         }
         catch(InterruptedException e)
         {
             // Do NOT re-interrupt: returning the thread to the pool with an interrupt set
             // causes unrelated pool housekeeping to be interrupted.
             mLog.debug("Classification interrupted for {} Hz", discovery.getCenterFrequencyHz());
+            finalizeCancelledProbe(discovery);
         }
         catch(ExecutionException e)
         {
@@ -1158,6 +1157,18 @@ public class BandScanController
         {
             mActiveClassifyFuture.compareAndSet(future, null);
         }
+    }
+
+    private void finalizeCancelledProbe(Discovery discovery)
+    {
+        FxThreads.runAndWait(() ->
+        {
+            if(discovery.getState() == DiscoveryState.PROBING)
+            {
+                discovery.setState(DiscoveryState.UNIDENTIFIED);
+            }
+        });
+        mDiscoveryModel.update(discovery);
     }
 
     /**

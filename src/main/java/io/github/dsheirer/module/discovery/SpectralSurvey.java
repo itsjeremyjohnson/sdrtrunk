@@ -420,10 +420,10 @@ public class SpectralSurvey implements SpectralSurveyApi
                 return Collections.emptyList();
             }
 
-            List<EnergyPeak> peaks = extractPeaks(accumulator, centerHz, sampleRate, thresholdDb);
-
-            // Filter to requested sub-span
-            return filterToSpan(peaks, minHz, maxHz);
+            long halfUsableBandwidthHz = getUsableBandwidthHz(tunerControl) / 2L;
+            long usableMinHz = Math.max(minHz, centerHz - halfUsableBandwidthHz);
+            long usableMaxHz = Math.min(maxHz, centerHz + halfUsableBandwidthHz);
+            return extractPeaks(accumulator, centerHz, sampleRate, thresholdDb, usableMinHz, usableMaxHz);
         }
     }
 
@@ -604,12 +604,12 @@ public class SpectralSurvey implements SpectralSurveyApi
             {
                 if(accumulator.hasData())
                 {
-                    List<EnergyPeak> stepPeaks = extractPeaks(accumulator, stepCenterFinal, sampleRate, thresholdDb);
-                    // Keep only the requested portion of this step's alias-free tuner window.
+                    // Estimate noise and detect peaks only within the requested portion of this
+                    // step's alias-free tuner window.
                     long usableMinHz = Math.max(minHz, stepCenterFinal - halfUsableBandwidthHz);
                     long usableMaxHz = Math.min(maxHz, stepCenterFinal + halfUsableBandwidthHz);
-                    List<EnergyPeak> filtered = filterToSpan(stepPeaks, usableMinHz, usableMaxHz);
-                    allPeaks.addAll(filtered);
+                    allPeaks.addAll(extractPeaks(accumulator, stepCenterFinal, sampleRate, thresholdDb,
+                        usableMinHz, usableMaxHz));
                 }
             }
         }
@@ -680,10 +680,13 @@ public class SpectralSurvey implements SpectralSurveyApi
      * @param centerHz     the tuner center frequency during accumulation
      * @param sampleRate   sample rate in Hz
      * @param thresholdDb  detection threshold
+     * @param usableMinHz  lowest usable FFT-bin frequency
+     * @param usableMaxHz  highest usable FFT-bin frequency
      * @return list of peaks in absolute Hz
      */
     private List<EnergyPeak> extractPeaks(SampleAccumulator accumulator, long centerHz,
-                                           double sampleRate, double thresholdDb)
+                                           double sampleRate, double thresholdDb,
+                                           long usableMinHz, long usableMaxHz)
     {
         float[] avgPowerDb = accumulator.getAveragedPowerDb();
 
@@ -710,7 +713,27 @@ public class SpectralSurvey implements SpectralSurveyApi
             baseFrequencyHz = binWidthHz;
         }
 
-        return findPeaks(shiftedDb, binWidthHz, baseFrequencyHz, thresholdDb);
+        return findPeaksInFrequencyRange(shiftedDb, binWidthHz, baseFrequencyHz, thresholdDb,
+            usableMinHz, usableMaxHz);
+    }
+
+    static List<EnergyPeak> findPeaksInFrequencyRange(float[] magnitudesDb, long binWidthHz,
+                                                       long baseFrequencyHz, double thresholdDb,
+                                                       long usableMinHz, long usableMaxHz)
+    {
+        int firstUsableBin = (int)Math.max(0L,
+            Math.ceil((usableMinHz - baseFrequencyHz) / (double)binWidthHz));
+        int lastUsableBin = (int)Math.min(magnitudesDb.length - 1L,
+            Math.floor((usableMaxHz - baseFrequencyHz) / (double)binWidthHz));
+
+        if(firstUsableBin > lastUsableBin)
+        {
+            return Collections.emptyList();
+        }
+
+        float[] usableDb = Arrays.copyOfRange(magnitudesDb, firstUsableBin, lastUsableBin + 1);
+        long usableBaseFrequencyHz = baseFrequencyHz + (long)firstUsableBin * binWidthHz;
+        return findPeaks(usableDb, binWidthHz, usableBaseFrequencyHz, thresholdDb);
     }
 
     /**

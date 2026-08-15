@@ -216,6 +216,21 @@ class SpectralSurveyTest
             SpectralSurvey.findPeaks(new float[]{-80.0f, -50.0f}, BIN_WIDTH_HZ, 0L, THRESHOLD_DB));
     }
 
+    @Test
+    void findPeaksInFrequencyRange_excludesUnusableEdgeBinsFromNoiseEstimate()
+    {
+        float[] magnitudes = new float[100];
+        Arrays.fill(magnitudes, -80.0f);
+        Arrays.fill(magnitudes, 0, 20, -120.0f);
+        Arrays.fill(magnitudes, 80, 100, -120.0f);
+
+        assertFalse(SpectralSurvey.findPeaks(magnitudes, 1_000L, 100_000L, 10.0).isEmpty(),
+            "Unusable roll-off wings depress the full-spectrum noise estimate");
+        assertTrue(SpectralSurvey.findPeaksInFrequencyRange(magnitudes, 1_000L, 100_000L, 10.0,
+            120_000L, 179_000L).isEmpty(),
+            "Usable passband noise must not be reported as a signal");
+    }
+
     // =========================================================================
     // estimateNoiseFloor — package-visible helper
     // =========================================================================

@@ -95,7 +95,7 @@ public final class ChannelActions
     {
         if(channel != null && channel.isTemporaryLive())
         {
-            channel.setTemporaryLive(false);
+            FxThreads.runAndWait(() -> channel.setTemporaryLive(false));
         }
     }
 }

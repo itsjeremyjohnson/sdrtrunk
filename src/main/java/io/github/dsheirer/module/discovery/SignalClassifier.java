@@ -22,6 +22,8 @@ import io.github.dsheirer.dsp.squelch.PowerMonitor;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog;
+import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog.Bandwidth;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.preference.discovery.DiscoveryPreference;
 import io.github.dsheirer.source.ComplexSource;
@@ -302,6 +304,27 @@ public class SignalClassifier implements Classifier
         return new ChannelSpecification(minimumSampleRate, bandwidth, passFrequency, stopFrequency);
     }
 
+    static DecodeConfiguration buildResultConfiguration(DecoderType decoderType, int approximateBandwidthHz)
+    {
+        DecodeConfiguration configuration = DecoderFactory.getDecodeConfiguration(decoderType);
+
+        if(configuration instanceof DecodeConfigAnalog analogConfiguration && approximateBandwidthHz > 0)
+        {
+            var supportedBandwidths = decoderType == DecoderType.NBFM
+                ? Bandwidth.FM_BANDWIDTHS
+                : Bandwidth.AM_BANDWIDTHS;
+            Bandwidth selected = supportedBandwidths.stream()
+                .filter(bandwidth -> bandwidth.getValue() >= approximateBandwidthHz)
+                .findFirst()
+                .orElseGet(() -> supportedBandwidths.stream()
+                    .max(java.util.Comparator.comparingDouble(Bandwidth::getValue))
+                    .orElse(analogConfiguration.getBandwidth()));
+            analogConfiguration.setBandwidth(selected);
+        }
+
+        return configuration;
+    }
+
     private ClassificationResult doClassifyInternal(ClassificationRequest request,
                                                      long freqHz,
                                                      AtomicBoolean cancelledFlag)
@@ -529,7 +552,8 @@ public class SignalClassifier implements Classifier
 
             if(winnerType != null)
             {
-                DecodeConfiguration bestConfig = DecoderFactory.getDecodeConfiguration(winnerType);
+                DecodeConfiguration bestConfig = buildResultConfiguration(winnerType,
+                    request.approximateBandwidthHz());
                 WatcherSnapshot snap = snapshots.getOrDefault(winnerType,
                     new WatcherSnapshot(SignalKind.UNKNOWN, "", Map.of()));
 
@@ -665,6 +689,7 @@ public class SignalClassifier implements Classifier
         // Collect power readings so we can report the peak measured signal power.
         List<Double> powerReadings = new ArrayList<>();
         Object lock = new Object();
+        boolean[] collecting = {true};
 
         PowerMonitor pm = new PowerMonitor();
         pm.setSampleRate((int) realSource.getSampleRate());
@@ -676,8 +701,11 @@ public class SignalClassifier implements Classifier
 
                 synchronized(lock)
                 {
-                    powerReadings.add(powerDb);
-                    lock.notifyAll();
+                    if(collecting[0])
+                    {
+                        powerReadings.add(powerDb);
+                        lock.notifyAll();
+                    }
                 }
             }
         });
@@ -717,20 +745,19 @@ public class SignalClassifier implements Classifier
 
         fanout.removeSubscriberSource(energySub);
 
-        // If cancelled, return NaN — caller will check cancelledFlag and return CANCELLED
-        if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
+        synchronized(lock)
         {
-            return Double.NaN;
-        }
+            collecting[0] = false;
 
-        // No readings at all → no samples → NO_SIGNAL
-        if(powerReadings.isEmpty())
-        {
-            return Double.NaN;
-        }
+            // If cancelled, return NaN — caller will check cancelledFlag and return CANCELLED
+            if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
+            {
+                return Double.NaN;
+            }
 
-        // Temporal variation of the same tuned signal is not an SNR estimate.  Any valid
-        // power reading is sufficient to continue probing; retain the peak for reporting.
-        return powerReadings.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN);
+            // Temporal variation of the same tuned signal is not an SNR estimate.  Any valid
+            // power reading is sufficient to continue probing; retain the peak for reporting.
+            return powerReadings.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN);
+        }
     }
 }

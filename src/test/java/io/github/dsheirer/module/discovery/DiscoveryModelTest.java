@@ -59,6 +59,22 @@ class DiscoveryModelTest
         return new Discovery(centerHz, bwHz, -70.0, 10.0, Instant.now());
     }
 
+    @Test
+    void updateObservationPublishesGeometryChanges()
+    {
+        Discovery discovery = makeDiscovery(154_920_000L);
+        List<Number> frequencies = new ArrayList<>();
+        discovery.centerFrequencyHzProperty().addListener((observable, oldValue, newValue) ->
+            frequencies.add(newValue));
+
+        discovery.updateObservation(new EnergyPeak(154_925_000L, 25_000, -60.0, 20.0));
+
+        assertEquals(List.of(154_925_000L), frequencies);
+        assertEquals(25_000, discovery.bandwidthHzProperty().get());
+        assertEquals(-60.0, discovery.powerDbProperty().get());
+        assertEquals(20.0, discovery.snrDbProperty().get());
+    }
+
     // -------------------------------------------------------------------------
     // add() tests
     // -------------------------------------------------------------------------
