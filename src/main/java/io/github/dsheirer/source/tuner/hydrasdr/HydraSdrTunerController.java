@@ -124,6 +124,21 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		return getInitialFrequency(TunerConfiguration.DEFAULT_FREQUENCY, minimum, maximum);
 	}
 
+	static HydraSdrSampleRate selectSupportedSampleRate(HydraSdrTunerConfiguration config,
+		List<HydraSdrSampleRate> sampleRates)
+	{
+		HydraSdrSampleRate selected = sampleRates.stream()
+			.filter(rate -> rate.getRate() == config.getSampleRate()).findFirst()
+			.orElse(sampleRates.isEmpty() ? null : sampleRates.get(0));
+
+		if(selected != null)
+		{
+			config.setSampleRate(selected.getRate());
+		}
+
+		return selected;
+	}
+
 	static long[] getIntersectedFrequencyRange(long configuredMinimum, long configuredMaximum,
 		long hardwareMinimum, long hardwareMaximum)
 	{
@@ -510,15 +525,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		if(tunerConfiguration instanceof HydraSdrTunerConfiguration config)
 		{
 			int sampleRate = config.getSampleRate();
-			HydraSdrSampleRate rate = getSampleRate(sampleRate);
-
-			if(rate == null)
-			{
-				if(!mSampleRates.isEmpty())
-				{
-					rate = mSampleRates.get(0);
-				}
-			}
+			HydraSdrSampleRate rate = selectSupportedSampleRate(config, mSampleRates);
 
 			try
 			{

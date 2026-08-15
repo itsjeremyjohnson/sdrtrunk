@@ -36,13 +36,13 @@ Configure under **View → Preferences → External Outputs → Network Stream**
 All existing CSV logging continues unchanged — TCP streaming is purely additive.
 
 ### IMBE Audio Stream
-Streams raw compressed voice frames from every active P25 Phase 1 voice channel over TCP in real-time, allowing any application on your network to decode and play live audio without waiting for a call to end and an MP3 file to be written. Latency is ~20ms — the time between a radio keying up and audio arriving at the consumer.
+Streams raw compressed voice frames from every active P25 Phase 1 voice channel over TCP in real-time, allowing any application on your network to decode and play live audio without waiting for a call to end and an MP3 file to be written. SDRTrunk receives complete LDUs and then delivers their nine 20 ms IMBE frames as a burst, so startup latency is LDU-level rather than 20 ms. Late-entry calls can wait for a subsequent LDU2 while encryption state is determined; consumers should buffer for burst delivery.
 
 When enabled, SDRTrunk opens a TCP server on the configured port (default 9502) and streams one JSON line per IMBE voice frame as calls happen. Each frame is tagged with the talkgroup, source radio unit, and a unique call ID so consumers can handle multiple simultaneous calls cleanly. The JMBE library used to decode the frames is the same open-source library SDRTrunk uses internally — audio quality is identical.
 
 Three message types flow on the stream:
 - **`call_start`** — emitted when squelch opens; carries talkgroup, source unit ID, system name, and a unique call ID
-- **`frame`** — one per 18-byte IMBE voice frame (~9 per LDU burst, one every ~20ms); carries Base64-encoded vocoder data and a sequence number for dropped-frame detection
+- **`frame`** — one per 18-byte IMBE voice frame, delivered in bursts of about nine frames per complete LDU; carries Base64-encoded vocoder data and a sequence number for dropped-frame detection
 - **`call_end`** — emitted when squelch closes; carries the call ID and total frame count for the transmission
 
 Multiple clients can connect simultaneously — each receives a full copy of the stream. Filter client-side by `talkgroup` or `system` to isolate specific channels. The `seq` field increments per call, so a gap within the same `callId` indicates lost frames.

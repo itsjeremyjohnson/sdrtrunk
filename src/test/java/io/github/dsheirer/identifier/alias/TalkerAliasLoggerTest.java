@@ -48,6 +48,7 @@ public class TalkerAliasLoggerTest
         aliases.put(10, P25TalkerAliasIdentifier.create("First,\nAlias"));
 
         logger.onAliasUpdate(aliases);
+        logger.awaitPendingWrites();
 
         Path aliasFile = logDirectory.resolve(TalkerAliasLogger.getAliasFileName("test-system", Protocol.APCO25));
         assertEquals("RADIO_ID,TALKER_ALIAS\n10,\"First,\nAlias\"\n20,Second\n", Files.readString(aliasFile));
@@ -59,12 +60,28 @@ public class TalkerAliasLoggerTest
         aliases.clear();
         aliases.put(30, P25TalkerAliasIdentifier.create("Latest"));
         logger.onAliasUpdate(aliases);
+        logger.awaitPendingWrites();
 
         assertEquals("RADIO_ID,TALKER_ALIAS\n30,Latest\n", Files.readString(aliasFile));
         try(var files = Files.list(logDirectory))
         {
             assertEquals(0, files.filter(path -> path.getFileName().toString().endsWith(".tmp")).count());
         }
+    }
+
+    @Test
+    void coalescesRapidUpdatesAndPersistsLatestSnapshot(@TempDir Path logDirectory) throws IOException
+    {
+        TalkerAliasLogger logger = new TalkerAliasLogger(logDirectory, "coalesced-system");
+        logger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("First")));
+        logger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Second")));
+        logger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Latest")));
+        logger.awaitPendingWrites();
+
+        Path aliasFile = logDirectory.resolve(
+            TalkerAliasLogger.getAliasFileName("coalesced-system", Protocol.APCO25));
+        assertEquals("RADIO_ID,TALKER_ALIAS\n10,Latest\n", Files.readString(aliasFile));
+        assertEquals(1, logger.getWriteCount());
     }
 
     @Test
@@ -75,6 +92,7 @@ public class TalkerAliasLoggerTest
 
         firstLogger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("First")));
         secondLogger.onAliasUpdate(Map.of(20, P25TalkerAliasIdentifier.create("Second")));
+        secondLogger.awaitPendingWrites();
 
         assertEquals("RADIO_ID,TALKER_ALIAS\n10,First\n20,Second\n",
             Files.readString(logDirectory.resolve(TalkerAliasLogger.getAliasFileName("shared-system", Protocol.APCO25))));
@@ -94,6 +112,7 @@ public class TalkerAliasLoggerTest
         secondLogger.onAliasUpdate(Map.of(
             10, P25TalkerAliasIdentifier.create("Original"),
             20, P25TalkerAliasIdentifier.create("New")));
+        secondLogger.awaitPendingWrites();
 
         assertEquals("RADIO_ID,TALKER_ALIAS\n10,Updated\n20,New\n", Files.readString(aliasFile));
     }
@@ -112,6 +131,7 @@ public class TalkerAliasLoggerTest
         restartedLogger.onAliasUpdate(Map.of(
             10, P25TalkerAliasIdentifier.create("Original"),
             20, P25TalkerAliasIdentifier.create("New")));
+        restartedLogger.awaitPendingWrites();
 
         assertEquals("RADIO_ID,TALKER_ALIAS\n10,Updated\n20,New\n", Files.readString(aliasFile));
     }
@@ -127,6 +147,7 @@ public class TalkerAliasLoggerTest
 
         TalkerAliasLogger secondLogger = new TalkerAliasLogger(logDirectory, systemName);
         secondLogger.onAliasUpdate(Map.of(20, P25TalkerAliasIdentifier.create("Second")));
+        secondLogger.awaitPendingWrites();
 
         assertEquals("RADIO_ID,TALKER_ALIAS\n10,First\n20,Second\n", Files.readString(aliasFile));
     }
@@ -138,6 +159,8 @@ public class TalkerAliasLoggerTest
         TalkerAliasLogger dashed = new TalkerAliasLogger(logDirectory, "County-P25");
         spaced.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Spaced")));
         dashed.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Dashed")));
+        spaced.awaitPendingWrites();
+        dashed.awaitPendingWrites();
 
         Path spacedFile = logDirectory.resolve(
             TalkerAliasLogger.getAliasFileName("County P25", Protocol.APCO25));
@@ -156,6 +179,8 @@ public class TalkerAliasLoggerTest
 
         p25Logger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("P25 Alias")));
         dmrLogger.onAliasUpdate(Map.of(10, DmrTalkerAliasIdentifier.create("DMR Alias")));
+        p25Logger.awaitPendingWrites();
+        dmrLogger.awaitPendingWrites();
 
         assertTrue(Files.readString(logDirectory.resolve(TalkerAliasLogger.getAliasFileName("shared-name", Protocol.APCO25))).contains("P25 Alias"));
         assertTrue(Files.readString(logDirectory.resolve(TalkerAliasLogger.getAliasFileName("shared-name", Protocol.DMR))).contains("DMR Alias"));
@@ -167,6 +192,7 @@ public class TalkerAliasLoggerTest
         String systemName = "prefixed-alias-system";
         TalkerAliasLogger logger = new TalkerAliasLogger(logDirectory, systemName);
         logger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("TA-Dispatch")));
+        logger.dispose();
 
         TalkerAliasManager manager = new TalkerAliasManager();
         new TalkerAliasLogger(logDirectory, systemName).bootstrap(manager);

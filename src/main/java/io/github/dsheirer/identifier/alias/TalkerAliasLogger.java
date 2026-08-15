@@ -21,6 +21,7 @@ package io.github.dsheirer.identifier.alias;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.util.StringUtils;
+import io.github.dsheirer.util.ThreadPool;
 import java.io.IOException;
 import java.io.StringWriter;
 import java.nio.charset.StandardCharsets;
@@ -39,6 +40,7 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Function;
 import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVParser;
@@ -107,7 +109,8 @@ public class TalkerAliasLogger extends Module
     }
 
     /**
-     * Called whenever the alias map changes. Writes the merged aliases from every manager using this system file.
+     * Called whenever the alias map changes. Schedules persistence of the merged aliases from every manager using this
+     * system file.
      * @param aliases current alias map (radioId -> TalkerAliasIdentifier)
      */
     public void onAliasUpdate(Map<Integer, TalkerAliasIdentifier> aliases)
@@ -147,10 +150,21 @@ public class TalkerAliasLogger extends Module
     {
     }
 
+    void awaitPendingWrites()
+    {
+        mFileState.awaitPendingWrites(mAliasFile);
+    }
+
+    int getWriteCount()
+    {
+        return mFileState.getWriteCount();
+    }
+
     @Override
     public void dispose()
     {
-        mFileState.release(mSourceKey);
+        mFileState.release(mAliasFile, mSourceKey);
+        mFileState.awaitPendingWrites(mAliasFile);
         super.dispose();
     }
 
@@ -164,6 +178,10 @@ public class TalkerAliasLogger extends Module
         private final Map<Object, Map<Integer, String>> mSnapshots = new LinkedHashMap<>();
         private boolean mLoaded;
         private String mLastWrittenContent;
+        private boolean mWriteDirty;
+        private boolean mWriteScheduled;
+        private boolean mWriterRunning;
+        private int mWriteCount;
 
         public synchronized Map<Integer, String> bootstrap(Path aliasFile, Object sourceKey)
         {
@@ -191,17 +209,81 @@ public class TalkerAliasLogger extends Module
             // Reinsert so the latest manager update wins if two managers report the same radio.
             mSnapshots.remove(sourceKey);
             mSnapshots.put(sourceKey, snapshot);
-            write(aliasFile, getMergedAliases());
+            scheduleWrite(aliasFile);
         }
 
-        public synchronized void release(Object sourceKey)
+        public synchronized void release(Path aliasFile, Object sourceKey)
         {
             Map<Integer, String> snapshot = mSnapshots.remove(sourceKey);
             if(snapshot != null)
             {
                 mBaseline.putAll(snapshot);
+                scheduleWrite(aliasFile);
             }
             mInheritedAliases.remove(sourceKey);
+        }
+
+        private synchronized void scheduleWrite(Path aliasFile)
+        {
+            mWriteDirty = true;
+            if(!mWriteScheduled && !mWriterRunning)
+            {
+                mWriteScheduled = true;
+                ThreadPool.SCHEDULED.schedule(() -> runWriter(aliasFile), 50, TimeUnit.MILLISECONDS);
+            }
+        }
+
+        private void runWriter(Path aliasFile)
+        {
+            Map<Integer, String> aliases;
+            synchronized(this)
+            {
+                mWriteScheduled = false;
+                mWriterRunning = true;
+                mWriteDirty = false;
+                aliases = getMergedAliases();
+            }
+
+            write(aliasFile, aliases);
+
+            synchronized(this)
+            {
+                mWriterRunning = false;
+                if(mWriteDirty)
+                {
+                    scheduleWrite(aliasFile);
+                }
+                else
+                {
+                    notifyAll();
+                }
+            }
+        }
+
+        public synchronized int getWriteCount()
+        {
+            return mWriteCount;
+        }
+
+        public synchronized void awaitPendingWrites(Path aliasFile)
+        {
+            if(mWriteDirty && !mWriteScheduled && !mWriterRunning)
+            {
+                scheduleWrite(aliasFile);
+            }
+
+            while(mWriteScheduled || mWriterRunning)
+            {
+                try
+                {
+                    wait();
+                }
+                catch(InterruptedException e)
+                {
+                    Thread.currentThread().interrupt();
+                    return;
+                }
+            }
         }
 
         private void ensureLoaded(Path aliasFile)
@@ -299,7 +381,11 @@ public class TalkerAliasLogger extends Module
                     Files.move(tempFile, aliasFile, StandardCopyOption.REPLACE_EXISTING);
                 }
 
-                mLastWrittenContent = content;
+                synchronized(this)
+                {
+                    mLastWrittenContent = content;
+                    mWriteCount++;
+                }
             }
             catch(IOException e)
             {

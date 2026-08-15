@@ -183,6 +183,16 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
             .format(PCM_TIMESTAMP_FMT);
     }
 
+    private synchronized void refreshPcmMetadata()
+    {
+        mPcmCachedSystem = pcmGetSystem();
+        mPcmCachedSite = pcmGetSite();
+        mPcmCachedTalkgroup = mIdentifierCollection.getToIdentifier() != null
+            ? mIdentifierCollection.getToIdentifier().toString() : "";
+        mPcmCachedFrom = mIdentifierCollection.getFromIdentifier() != null
+            ? mIdentifierCollection.getFromIdentifier().toString() : "";
+    }
+
     /** Starts PCM streaming for the current call once the asynchronously-started server is ready. */
     private synchronized void startPcmCallIfReady(long frameTimestamp)
     {
@@ -199,12 +209,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                 mPcmCallId = UUID.randomUUID().toString();
                 mPcmFrameSeq.set(0);
                 mPcmFrameCount.set(0);
-                mPcmCachedSystem = pcmGetSystem();
-                mPcmCachedSite = pcmGetSite();
-                mPcmCachedTalkgroup = mIdentifierCollection.getToIdentifier() != null
-                        ? mIdentifierCollection.getToIdentifier().toString() : "";
-                mPcmCachedFrom = mIdentifierCollection.getFromIdentifier() != null
-                        ? mIdentifierCollection.getFromIdentifier().toString() : "";
+                refreshPcmMetadata();
                 pcmMgr.broadcastCallStart(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
                         mPcmCachedTalkgroup, mPcmCachedFrom,
                         formatPcmTimestamp(mPcmFirstFrameTimestamp));
@@ -281,6 +286,9 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
 
         // Retry initialization while retaining the first decoded frame's source timestamp.
         startPcmCallIfReady(frameTimestamp);
+
+        // Refresh metadata for late talkgroup/source identifiers before each PCM frame.
+        refreshPcmMetadata();
 
         // PCM stream: broadcast decoded audio to connected TCP clients.
         // Wrapped in try-catch so any PCM failure cannot affect the existing audio pipeline.

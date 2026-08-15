@@ -10,6 +10,8 @@
  */
 package io.github.dsheirer.audio;
 
+import io.github.dsheirer.module.decode.p25.identifier.radio.APCO25RadioIdentifier;
+import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import java.lang.reflect.Field;
 import org.junit.jupiter.api.Test;
 
@@ -20,7 +22,7 @@ class AbstractAudioModuleTest
     @Test
     void preservesPcmCallAcrossInternalAudioSegmentRollover() throws Exception
     {
-        TestAudioModule module = new TestAudioModule();
+        TestAudioModule module = new TestAudioModule(1);
         module.addAudio(new float[8]);
 
         Field callIdField = AbstractAudioModule.class.getDeclaredField("mPcmCallId");
@@ -46,11 +48,34 @@ class AbstractAudioModuleTest
         module.stop();
     }
 
+    @Test
+    void refreshesPcmMetadataWhenIdentifiersArriveLate() throws Exception
+    {
+        TestAudioModule module = new TestAudioModule();
+        module.addAudio(new float[8]);
+        module.getIdentifierCollection().update(APCO25Talkgroup.create(1001));
+        module.getIdentifierCollection().update(APCO25RadioIdentifier.createFrom(1234));
+        module.addAudio(new float[8]);
+
+        Field talkgroupField = AbstractAudioModule.class.getDeclaredField("mPcmCachedTalkgroup");
+        talkgroupField.setAccessible(true);
+        Field fromField = AbstractAudioModule.class.getDeclaredField("mPcmCachedFrom");
+        fromField.setAccessible(true);
+        assertEquals("1001", talkgroupField.get(module));
+        assertEquals("1234", fromField.get(module));
+        module.stop();
+    }
+
     private static class TestAudioModule extends AbstractAudioModule
     {
         private TestAudioModule()
         {
-            super(null, DEFAULT_TIMESLOT, 1);
+            this(1_000);
+        }
+
+        private TestAudioModule(int maximumAudioSegmentLengthMilliseconds)
+        {
+            super(null, DEFAULT_TIMESLOT, maximumAudioSegmentLengthMilliseconds);
         }
 
         private void addTimestampedAudio(float[] audio, long timestamp)

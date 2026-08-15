@@ -10,6 +10,7 @@
  */
 package io.github.dsheirer.source.tuner.hydrasdr;
 
+import java.util.List;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -60,6 +61,17 @@ class HydraSdrTunerEditorTest
         assertEquals(1_000_000_000,
             HydraSdrTunerController.getIntersectedFrequencyRange(
                 1_000_000, 50_000_000, 200_000_000, 1_000_000_000)[1]);
+    }
+
+    @Test
+    void persistsFallbackSampleRateSelection()
+    {
+        HydraSdrTunerConfiguration configuration = new HydraSdrTunerConfiguration();
+        configuration.setSampleRate(9_999_999);
+        HydraSdrSampleRate fallback = new HydraSdrSampleRate(0, 10_000_000, "10 MHz");
+
+        assertEquals(fallback, HydraSdrTunerController.selectSupportedSampleRate(configuration, List.of(fallback)));
+        assertEquals(10_000_000, configuration.getSampleRate());
     }
 
     @Test
