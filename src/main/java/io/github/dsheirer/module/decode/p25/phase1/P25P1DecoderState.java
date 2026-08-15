@@ -286,7 +286,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
      */
     private List<Identifier> applyTalkgroupOverride(List<Identifier> identifiers)
     {
-        if(mTalkgroupOverride > 0 && identifiers != null)
+        if(mTalkgroupOverride > 0 && !mChannel.isTrafficChannel() && identifiers != null)
         {
             for(int i = 0; i < identifiers.size(); i++)
             {
@@ -882,7 +882,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 Identifier talkgroup = headerData.getTalkgroup();
 
                 //Apply talkgroup override for conventional P25 channels
-                if(mTalkgroupOverride > 0 && talkgroup instanceof APCO25Talkgroup)
+                if(mTalkgroupOverride > 0 && !mChannel.isTrafficChannel() && talkgroup instanceof APCO25Talkgroup)
                 {
                     talkgroup = APCO25Talkgroup.create(mTalkgroupOverride);
                 }

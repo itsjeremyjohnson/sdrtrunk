@@ -53,9 +53,12 @@ import java.time.Duration;
 import java.util.List;
 import java.util.Optional;
 import java.util.Queue;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -82,6 +85,11 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
     private long mLastConnectionAttempt;
     private long mConnectionAttemptInterval = 5000; //Every 5 seconds
     private AliasModel mAliasModel;
+    private final AtomicBoolean mRunning = new AtomicBoolean();
+    private final AtomicBoolean mDisposed = new AtomicBoolean();
+    private final AtomicBoolean mUploadInProgress = new AtomicBoolean();
+    private final AtomicReference<AudioRecording> mInFlightRecording = new AtomicReference<>();
+    private volatile CompletableFuture<HttpResponse<String>> mUploadFuture;
 
     /**
      * Constructs an instance of the broadcaster
@@ -101,6 +109,8 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
     @Override
     public void start()
     {
+        mDisposed.set(false);
+        mRunning.set(true);
         setBroadcastState(BroadcastState.CONNECTING);
         String response = testConnection(getBroadcastConfiguration());
         mLastConnectionAttempt = System.currentTimeMillis();
@@ -128,12 +138,21 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
     @Override
     public void stop()
     {
+        mRunning.set(false);
+
         if(mAudioRecordingProcessorFuture != null)
         {
             mAudioRecordingProcessorFuture.cancel(true);
             mAudioRecordingProcessorFuture = null;
-            setBroadcastState(BroadcastState.DISCONNECTED);
         }
+
+        CompletableFuture<HttpResponse<String>> uploadFuture = mUploadFuture;
+        if(uploadFuture != null)
+        {
+            uploadFuture.cancel(true);
+        }
+
+        setBroadcastState(BroadcastState.DISCONNECTED);
     }
 
     /**
@@ -142,6 +161,14 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
     @Override
     public void dispose()
     {
+        mDisposed.set(true);
+        stop();
+        AudioRecording inFlight = mInFlightRecording.getAndSet(null);
+        if(inFlight != null)
+        {
+            inFlight.removePendingReplay();
+        }
+
         AudioRecording audioRecording = mAudioRecordingQueue.poll();
 
         while(audioRecording != null)
@@ -198,7 +225,11 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
 
     void retryOrAgeOff(AudioRecording audioRecording)
     {
-        if(isValid(audioRecording))
+        if(mDisposed.get())
+        {
+            audioRecording.removePendingReplay();
+        }
+        else if(isValid(audioRecording))
         {
             mAudioRecordingQueue.offer(audioRecording);
             broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_QUEUE_CHANGE));
@@ -211,8 +242,18 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
         }
     }
 
-    void processRecordingQueue()
+    CompletableFuture<HttpResponse<String>> send(HttpRequest request)
     {
+        return mHttpClient.sendAsync(request, HttpResponse.BodyHandlers.ofString());
+    }
+
+    synchronized void processRecordingQueue()
+    {
+        if(mUploadInProgress.get())
+        {
+            return;
+        }
+
         while(connected() && !mAudioRecordingQueue.isEmpty())
         {
             final AudioRecording audioRecording = mAudioRecordingQueue.poll();
@@ -283,56 +324,78 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                             .POST(bodyBuilder.build())
                             .build();
 
-                        mHttpClient.sendAsync(fileRequest, HttpResponse.BodyHandlers.ofString())
-                            .whenComplete((fileResponse, throwable1) -> {
-                                if(throwable1 != null || fileResponse.statusCode() != 200)
+                        mUploadInProgress.set(true);
+                        mInFlightRecording.set(audioRecording);
+                        CompletableFuture<HttpResponse<String>> uploadFuture = send(fileRequest);
+                        mUploadFuture = uploadFuture;
+                        uploadFuture.whenComplete((fileResponse, throwable1) ->
+                            {
+                                try
                                 {
-                                    setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-
-                                    if(throwable1 != null)
+                                    if(!mInFlightRecording.compareAndSet(audioRecording, null))
                                     {
-                                        mLog.error("ThinLine Radio API file upload failed", throwable1);
-                                    }
-                                    else
-                                    {
-                                        mLog.error("ThinLine Radio API file upload fail [" +
-                                            fileResponse.statusCode() + "] response [" +
-                                            fileResponse.body() + "]");
+                                        return;
                                     }
 
-                                    incrementErrorAudioCount();
-                                    broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
-                                        BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
-                                    retryOrAgeOff(audioRecording);
-                                }
-                                else
-                                {
-                                    String fileResponseString = fileResponse.body();
-
-                                    if(fileResponseString.contains("Call imported successfully."))
-                                    {
-                                        incrementStreamedAudioCount();
-                                        broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
-                                            BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
-                                        audioRecording.removePendingReplay();
-                                    }
-                                    else if(fileResponseString.contains("duplicate call rejected"))
-                                    {
-                                        audioRecording.removePendingReplay();
-                                    }
-                                    else
+                                    if(throwable1 != null || fileResponse.statusCode() != 200)
                                     {
                                         setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
-                                        mLog.error("ThinLine Radio API file upload fail [" +
-                                            fileResponse.statusCode() + "] response [" +
-                                            fileResponse.body() + "]");
+
+                                        if(throwable1 != null)
+                                        {
+                                            mLog.error("ThinLine Radio API file upload failed", throwable1);
+                                        }
+                                        else
+                                        {
+                                            mLog.error("ThinLine Radio API file upload fail [" +
+                                                fileResponse.statusCode() + "] response [" +
+                                                fileResponse.body() + "]");
+                                        }
+
                                         incrementErrorAudioCount();
                                         broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
                                             BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
                                         retryOrAgeOff(audioRecording);
                                     }
+                                    else
+                                    {
+                                        String fileResponseString = fileResponse.body();
+
+                                        if(fileResponseString.contains("Call imported successfully."))
+                                        {
+                                            incrementStreamedAudioCount();
+                                            broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
+                                                BroadcastEvent.Event.BROADCASTER_STREAMED_COUNT_CHANGE));
+                                            audioRecording.removePendingReplay();
+                                        }
+                                        else if(fileResponseString.contains("duplicate call rejected"))
+                                        {
+                                            audioRecording.removePendingReplay();
+                                        }
+                                        else
+                                        {
+                                            setBroadcastState(BroadcastState.TEMPORARY_BROADCAST_ERROR);
+                                            mLog.error("ThinLine Radio API file upload fail [" +
+                                                fileResponse.statusCode() + "] response [" +
+                                                fileResponse.body() + "]");
+                                            incrementErrorAudioCount();
+                                            broadcast(new BroadcastEvent(ThinLineRadioBroadcaster.this,
+                                                BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                                            retryOrAgeOff(audioRecording);
+                                        }
+                                    }
+                                }
+                                finally
+                                {
+                                    mUploadFuture = null;
+                                    mUploadInProgress.set(false);
+                                    if(mRunning.get() && !mDisposed.get())
+                                    {
+                                        processRecordingQueue();
+                                    }
                                 }
                             });
+                        return;
                     }
                     else
                     {
@@ -346,6 +409,9 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                 }
                 catch(Exception e)
                 {
+                    mInFlightRecording.compareAndSet(audioRecording, null);
+                    mUploadFuture = null;
+                    mUploadInProgress.set(false);
                     mLog.error("Unknown Error", e);
                     setBroadcastState(BroadcastState.ERROR);
                     incrementErrorAudioCount();

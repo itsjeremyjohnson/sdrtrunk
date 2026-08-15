@@ -46,6 +46,7 @@ import java.util.Set;
 import java.util.concurrent.LinkedTransferQueue;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
+import java.util.function.Function;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -338,9 +339,36 @@ public class AudioStreamingManager implements Listener<AudioSegment>
      * @param identifierCollection to use for the streamed audio recording.
      * @param broadcastChannels to receive the audio recording
      */
+    static Set<BroadcastChannel> getCompletedRecordingChannels(Set<BroadcastChannel> broadcastChannels,
+                                                                Function<String,AbstractAudioBroadcaster<?>> resolver)
+    {
+        Set<BroadcastChannel> completedRecordingChannels = new HashSet<>();
+
+        for(BroadcastChannel broadcastChannel : broadcastChannels)
+        {
+            AbstractAudioBroadcaster<?> broadcaster = resolver != null ?
+                resolver.apply(broadcastChannel.getChannelName()) : null;
+
+            if(!(broadcaster instanceof IRealTimeAudioBroadcaster))
+            {
+                completedRecordingChannels.add(broadcastChannel);
+            }
+        }
+
+        return completedRecordingChannels;
+    }
+
     private void processAudioSegment(AudioSegment audioSegment, IdentifierCollection identifierCollection,
                                      Set<BroadcastChannel> broadcastChannels)
     {
+        Set<BroadcastChannel> completedRecordingChannels = getCompletedRecordingChannels(broadcastChannels,
+            mBroadcastModel != null ? mBroadcastModel::getBroadcaster : null);
+
+        if(completedRecordingChannels.isEmpty())
+        {
+            return;
+        }
+
         Path path = getTemporaryRecordingPath();
         long length = 0;
 
@@ -355,7 +383,7 @@ public class AudioStreamingManager implements Listener<AudioSegment>
         {
             AudioSegmentRecorder.record(audioSegment, path, RecordFormat.MP3, mUserPreferences, identifierCollection);
 
-            AudioRecording audioRecording = new AudioRecording(path, broadcastChannels, identifierCollection,
+            AudioRecording audioRecording = new AudioRecording(path, completedRecordingChannels, identifierCollection,
                     audioSegment.getStartTimestamp(), length);
             mAudioRecordingListener.receive(audioRecording);
         }

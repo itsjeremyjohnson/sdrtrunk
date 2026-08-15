@@ -19,10 +19,11 @@
 package io.github.dsheirer.preference;
 
 import io.github.dsheirer.module.decode.event.ClearableHistoryModel;
+import java.nio.charset.StandardCharsets;
+import java.util.UUID;
+import java.util.prefs.Preferences;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-
-import java.util.prefs.Preferences;
 
 /**
  * Persists Now Playing panel settings: history slider values for the Events and
@@ -108,9 +109,18 @@ public class NowPlayingPreference
     /**
      * Builds a safe preference key from the filter name.
      */
-    private static String filterKey(String filterName)
+    static String filterKey(String filterName)
     {
-        // Replace characters not valid in Preferences keys
-        return KEY_FILTER_PREFIX + filterName.replaceAll("[^a-zA-Z0-9._\\-]", "_");
+        String sanitizedName = filterName.replaceAll("[^a-zA-Z0-9._\\-]", "_");
+        String key = KEY_FILTER_PREFIX + sanitizedName;
+
+        if(key.length() <= Preferences.MAX_KEY_LENGTH)
+        {
+            return key;
+        }
+
+        String stableId = UUID.nameUUIDFromBytes(filterName.getBytes(StandardCharsets.UTF_8)).toString();
+        int retainedLength = Preferences.MAX_KEY_LENGTH - KEY_FILTER_PREFIX.length() - stableId.length() - 1;
+        return KEY_FILTER_PREFIX + sanitizedName.substring(0, retainedLength) + "." + stableId;
     }
 }

@@ -159,6 +159,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             DecodeConfigP25Phase2 p2Config = new DecodeConfigP25Phase2();
             p2Config.setGraphicEQEnabled(phase1.isGraphicEQEnabled());
             p2Config.setGraphicEQBandGains(phase1.getGraphicEQBandGains());
+            p2Config.setAudioHangtimeMs(phase1.getAudioHangtimeMs());
             createPhase2TrafficChannels(phase1.getTrafficChannelPoolSize(), p2Config);
         }
         else if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigP25Phase2 phase2)

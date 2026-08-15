@@ -39,6 +39,21 @@ class MessageActivityPanelTest
     }
 
     @Test
+    void persistsDistinctLongFilterNamesWithinPreferenceKeyLimit()
+    {
+        NowPlayingPreference preferences = new NowPlayingPreference();
+        String commonPrefix = "Vendor-Motorola Messages.MOTOROLA GROUP REGROUP CHANNEL GRANT ";
+        String first = commonPrefix + "ONE";
+        String second = commonPrefix + "TWO";
+
+        preferences.setFilterEnabled(first, false);
+        preferences.setFilterEnabled(second, true);
+
+        assertFalse(preferences.isFilterEnabled(first));
+        assertEquals(true, preferences.isFilterEnabled(second));
+    }
+
+    @Test
     void initializesMessagesHistoryFromPreference()
     {
         UserPreferences preferences = new UserPreferences();

@@ -21,9 +21,12 @@ package io.github.dsheirer.audio.broadcast;
 
 import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.alias.AliasList;
+import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.alias.id.broadcast.BroadcastChannel;
 import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.audio.AudioSegment;
+import io.github.dsheirer.audio.broadcast.zello.ZelloBroadcaster;
+import io.github.dsheirer.audio.broadcast.zello.ZelloConfiguration;
 import io.github.dsheirer.dsp.oscillator.ScalarRealOscillator;
 import io.github.dsheirer.identifier.patch.PatchGroup;
 import io.github.dsheirer.identifier.radio.RadioIdentifier;
@@ -38,6 +41,7 @@ import io.github.dsheirer.sample.Listener;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -58,6 +62,23 @@ public class AudioStreamingManagerTest
     private static final int TALKGROUP_2 = 200;
     private static final int TALKGROUP_3 = 300;
     private static final int RADIO_1 = 9999;
+
+    @Test
+    void completedRecordingChannelsExcludeRealtimeOnlyDestinations()
+    {
+        BroadcastChannel realtime = new BroadcastChannel("Zello");
+        BroadcastChannel recorded = new BroadcastChannel("Archive");
+        ZelloBroadcaster zello = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
+
+        Set<BroadcastChannel> realtimeOnly = AudioStreamingManager.getCompletedRecordingChannels(Set.of(realtime),
+            name -> zello);
+        Set<BroadcastChannel> mixed = AudioStreamingManager.getCompletedRecordingChannels(Set.of(realtime, recorded),
+            name -> name.equals("Zello") ? zello : null);
+
+        assertTrue(realtimeOnly.isEmpty());
+        assertEquals(Set.of(recorded), mixed);
+        zello.stop();
+    }
 
     @Test
     void tracksReadinessAndProgressPerRealTimeBroadcaster()
