@@ -86,6 +86,23 @@ public class AudioStreamingManagerTest
     }
 
     @Test
+    void restartsForwardingAfterDestinationAbortsStream()
+    {
+        AudioStreamingManager manager = new AudioStreamingManager(null, BroadcastFormat.MP3, new UserPreferences());
+        AudioSegment segment = new AudioSegment(null, TimeslotMessage.TIMESLOT_0);
+        segment.addAudio(new float[10]);
+        TestRealTimeBroadcaster broadcaster = new TestRealTimeBroadcaster(true);
+
+        manager.forwardRealTimeAudio(segment, broadcaster);
+        broadcaster.active = false;
+        segment.addAudio(new float[10]);
+        manager.forwardRealTimeAudio(segment, broadcaster);
+
+        assertEquals(2, broadcaster.starts.get());
+        assertEquals(2, broadcaster.buffers.get());
+    }
+
+    @Test
     public void testPatchGroupStreamingAsPatchGroup()
     {
         int expectedRecordingsCount = 1;
@@ -157,6 +174,7 @@ public class AudioStreamingManagerTest
     private static class TestRealTimeBroadcaster implements IRealTimeAudioBroadcaster
     {
         private volatile boolean ready;
+        private volatile boolean active;
         private final AtomicInteger starts = new AtomicInteger();
         private final AtomicInteger buffers = new AtomicInteger();
 
@@ -168,6 +186,7 @@ public class AudioStreamingManagerTest
         @Override
         public void startRealTimeStream(io.github.dsheirer.identifier.IdentifierCollection identifiers)
         {
+            active = true;
             starts.incrementAndGet();
         }
 
@@ -184,6 +203,12 @@ public class AudioStreamingManagerTest
         public boolean isRealTimeReady()
         {
             return ready;
+        }
+
+        @Override
+        public boolean isRealTimeStreamActive()
+        {
+            return active;
         }
     }
 

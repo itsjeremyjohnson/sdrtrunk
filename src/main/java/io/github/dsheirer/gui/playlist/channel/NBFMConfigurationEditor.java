@@ -54,6 +54,7 @@ import javafx.scene.control.Label;
 import javafx.scene.control.Separator;
 import javafx.scene.control.Slider;
 import javafx.scene.control.Spinner;
+import javafx.scene.control.SpinnerValueFactory;
 import javafx.scene.control.TextField;
 import javafx.scene.control.TextFormatter;
 import javafx.scene.control.TitledPane;
@@ -1277,6 +1278,11 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         }
         config.setToneFilters(mergeToneFilters(config.getToneFilters(), editedFilter));
 
+        //Commit any text typed directly into the editable spinners before reading their values.
+        commitEditorText(mTailRemovalSpinner);
+        commitEditorText(mHeadRemovalSpinner);
+        commitEditorText(mAudioHangtimeSpinner);
+
         // Save squelch tail settings
         config.setSquelchTailRemovalEnabled(mSquelchTailEnabledSwitch.isSelected());
         config.setSquelchTailRemovalMs(mTailRemovalSpinner.getValue());
@@ -1287,6 +1293,29 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         saveAudioFilterConfiguration(config);
 
         getItem().setDecodeConfiguration(config);
+    }
+
+    static <T> void commitEditorText(Spinner<T> spinner)
+    {
+        if(spinner != null)
+        {
+            commitEditorText(spinner.getValueFactory(), spinner.getEditor().getText());
+        }
+    }
+
+    static <T> void commitEditorText(SpinnerValueFactory<T> valueFactory, String text)
+    {
+        if(valueFactory != null && valueFactory.getConverter() != null)
+        {
+            try
+            {
+                valueFactory.setValue(valueFactory.getConverter().fromString(text));
+            }
+            catch(RuntimeException e)
+            {
+                //Keep the last valid spinner value when the editor text cannot be converted.
+            }
+        }
     }
 
     /**

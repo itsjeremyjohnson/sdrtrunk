@@ -63,4 +63,12 @@ public interface IRealTimeAudioBroadcaster
      * @return true if ready for real-time streaming
      */
     boolean isRealTimeReady();
+
+    /**
+     * Indicates if the stream associated with the current audio segment is still active.  This lets the streaming
+     * manager restart forwarding when a destination aborts a stream while the source segment continues.
+     *
+     * @return true while the current real-time stream remains active
+     */
+    boolean isRealTimeStreamActive();
 }

@@ -274,7 +274,7 @@ public class AudioStreamingManager implements Listener<AudioSegment>
         java.util.Map<IRealTimeAudioBroadcaster, Integer> rtBroadcasters =
                 mRealTimeStreams.computeIfAbsent(audioSegment, ignored -> new java.util.concurrent.ConcurrentHashMap<>());
 
-        if(!rtBroadcasters.containsKey(broadcaster))
+        if(!rtBroadcasters.containsKey(broadcaster) || !broadcaster.isRealTimeStreamActive())
         {
             if(!broadcaster.isRealTimeReady())
             {
@@ -285,7 +285,13 @@ public class AudioStreamingManager implements Listener<AudioSegment>
                     ? new IdentifierCollection(audioSegment.getIdentifierCollection().getIdentifiers())
                     : null;
             broadcaster.startRealTimeStream(identifiers);
-            rtBroadcasters.put(broadcaster, 0);
+
+            if(!broadcaster.isRealTimeStreamActive())
+            {
+                return;
+            }
+
+            rtBroadcasters.putIfAbsent(broadcaster, 0);
         }
 
         int currentSize = audioSegment.getAudioBuffers().size();

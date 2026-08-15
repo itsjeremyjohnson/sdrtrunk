@@ -6,6 +6,7 @@
 package io.github.dsheirer.audio.broadcast.zello;
 
 import io.github.dsheirer.alias.AliasModel;
+import io.github.dsheirer.audio.broadcast.BroadcastState;
 import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.net.http.WebSocket;
@@ -190,6 +191,76 @@ class ZelloBroadcasterLifecycleTest
     }
 
     @Test
+    void workStartAcknowledgementTimeoutRecoversConnection() throws Exception
+    {
+        ZelloBroadcaster broadcaster = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
+        AtomicInteger closes = new AtomicInteger();
+        setConnectionState(broadcaster, webSocket(closes));
+        setStreamActive(broadcaster, true);
+        atomicInteger(broadcaster, "mSessionEpoch").set(3);
+
+        broadcaster.handleStartAcknowledgementTimeout(3);
+
+        assertEquals(BroadcastState.TEMPORARY_BROADCAST_ERROR, broadcaster.getBroadcastState());
+        assertFalse(atomicBoolean(broadcaster, "mStreamActive").get());
+        assertFalse(atomicBoolean(broadcaster, "mConnected").get());
+        assertEquals(1, closes.get());
+        broadcaster.stop();
+    }
+
+    @Test
+    void consumerStartAcknowledgementTimeoutRecoversConnection() throws Exception
+    {
+        ZelloConsumerBroadcaster broadcaster = new ZelloConsumerBroadcaster(new ZelloConsumerConfiguration(), null,
+            null, new AliasModel());
+        AtomicInteger closes = new AtomicInteger();
+        setConnectionState(broadcaster, webSocket(closes));
+        setStreamActive(broadcaster, true);
+        atomicInteger(broadcaster, "mSessionEpoch").set(4);
+
+        broadcaster.handleStartAcknowledgementTimeout(4);
+
+        assertEquals(BroadcastState.TEMPORARY_BROADCAST_ERROR, broadcaster.getBroadcastState());
+        assertFalse(atomicBoolean(broadcaster, "mStreamActive").get());
+        assertFalse(atomicBoolean(broadcaster, "mConnected").get());
+        assertEquals(1, closes.get());
+        broadcaster.stop();
+    }
+
+    @Test
+    void workChannelNotReadyErrorTriggersTransientReconnect() throws Exception
+    {
+        ZelloBroadcaster broadcaster = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
+        AtomicInteger closes = new AtomicInteger();
+        WebSocket webSocket = webSocket(closes);
+        setConnectionState(broadcaster, webSocket);
+
+        listener(broadcaster).onText(webSocket, "{\"error\":\"channel is not ready\"}", true);
+
+        assertEquals(BroadcastState.TEMPORARY_BROADCAST_ERROR, broadcaster.getBroadcastState());
+        assertFalse(atomicBoolean(broadcaster, "mConnected").get());
+        assertEquals(1, closes.get());
+        broadcaster.stop();
+    }
+
+    @Test
+    void consumerNotConnectedErrorTriggersTransientReconnect() throws Exception
+    {
+        ZelloConsumerBroadcaster broadcaster = new ZelloConsumerBroadcaster(new ZelloConsumerConfiguration(), null,
+            null, new AliasModel());
+        AtomicInteger closes = new AtomicInteger();
+        WebSocket webSocket = webSocket(closes);
+        setConnectionState(broadcaster, webSocket);
+
+        listener(broadcaster).onText(webSocket, "{\"error\":\"not connected\"}", true);
+
+        assertEquals(BroadcastState.TEMPORARY_BROADCAST_ERROR, broadcaster.getBroadcastState());
+        assertFalse(atomicBoolean(broadcaster, "mConnected").get());
+        assertEquals(1, closes.get());
+        broadcaster.stop();
+    }
+
+    @Test
     void closesWorkHandshakeCompletedAfterStop()
     {
         ZelloBroadcaster broadcaster = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
@@ -241,6 +312,13 @@ class ZelloBroadcasterLifecycleTest
         Field field = broadcaster.getClass().getDeclaredField(name);
         field.setAccessible(true);
         return (AtomicLong)field.get(broadcaster);
+    }
+
+    private static AtomicInteger atomicInteger(Object broadcaster, String name) throws Exception
+    {
+        Field field = broadcaster.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return (AtomicInteger)field.get(broadcaster);
     }
 
     @SuppressWarnings("unchecked")

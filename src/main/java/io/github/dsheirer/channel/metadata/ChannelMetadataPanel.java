@@ -485,6 +485,14 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         alias.setPlaybackMuted(mute);
     }
 
+    static void synchronizeMute(AbstractAudioModule audioModule, boolean muted)
+    {
+        if(audioModule.isMuted() != muted)
+        {
+            audioModule.setMuted(muted);
+        }
+    }
+
     /**
      * Toggles mute state for a channel.
      *
@@ -826,18 +834,15 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                 }
             }
 
-            if(shouldMute)
-            {
-                ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
+            ProcessingChain processingChain = mChannelProcessingManager.getProcessingChain(channel);
 
-                if(processingChain != null)
+            if(processingChain != null)
+            {
+                for(Module module : processingChain.getModules())
                 {
-                    for(Module module : processingChain.getModules())
+                    if(module instanceof AbstractAudioModule audioModule)
                     {
-                        if(module instanceof AbstractAudioModule)
-                        {
-                            ((AbstractAudioModule)module).setMuted(true);
-                        }
+                        synchronizeMute(audioModule, shouldMute);
                     }
                 }
             }

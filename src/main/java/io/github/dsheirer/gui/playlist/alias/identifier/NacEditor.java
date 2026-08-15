@@ -67,7 +67,22 @@ public class NacEditor extends IdentifierEditor<Nac>
     @Override
     public void save()
     {
-        //no-op
+        commitEditorText(getNacSpinner().getValueFactory(), getNacSpinner().getEditor().getText());
+    }
+
+    static <T> void commitEditorText(SpinnerValueFactory<T> valueFactory, String text)
+    {
+        if(valueFactory != null && valueFactory.getConverter() != null)
+        {
+            try
+            {
+                valueFactory.setValue(valueFactory.getConverter().fromString(text));
+            }
+            catch(RuntimeException e)
+            {
+                //Keep the last valid spinner value when the editor text cannot be converted.
+            }
+        }
     }
 
     @Override
