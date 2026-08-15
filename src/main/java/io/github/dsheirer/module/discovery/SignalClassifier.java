@@ -52,12 +52,10 @@ import org.slf4j.LoggerFactory;
  *       If the provider returns {@code null} (no tuner capacity) → {@link ClassificationOutcome#ERROR}.</li>
  *   <li>Start a {@link ComplexSampleFanout} over the real source and subscribe a
  *       {@link PowerMonitor} to it.  Wait up to the <em>energy gate window</em> (~1 s)
- *       collecting power readings; estimate the noise floor and return
- *       {@link ClassificationOutcome#NO_SIGNAL} only when the peak reading is not at
- *       least {@link DiscoveryPreference#getEnergyThresholdDb()} dB above the floor.
- *       If zero readings arrive (no samples at all), that is also {@code NO_SIGNAL}.
- *       The threshold is treated as a relative SNR value (dB above estimated floor), not
- *       an absolute dBFS offset.</li>
+ *       collecting power readings.  If zero readings arrive (no samples at all), return
+ *       {@link ClassificationOutcome#NO_SIGNAL}; otherwise continue probing and retain the
+ *       peak measured power for result reporting.  Temporal variation of one tuned signal is
+ *       not treated as an SNR estimate.</li>
  *   <li>Subscribe up to N probe chains concurrently (N = {@link DiscoveryPreference#getMaxConcurrentProbes()},
  *       clamped ≥ 1), in {@link CandidateOrdering} priority order.  As soon as any chain
  *       reaches {@link LockState#LOCKED} the remaining lower-priority candidates are skipped.
@@ -101,6 +99,8 @@ public class SignalClassifier implements Classifier
     private final ProbeChainFactory mProbeChainFactory;
     private final DiscoveryPreference mDiscoveryPreference;
     private final ExecutorService mExecutor;
+    private final Object mClassificationGate = new Object();
+    private int mActiveClassifications;
 
     /**
      * Constructs a {@code SignalClassifier}.
@@ -193,15 +193,74 @@ public class SignalClassifier implements Classifier
     private ClassificationResult doClassify(ClassificationRequest request, AtomicBoolean cancelledFlag)
     {
         long freqHz = request.centerFrequencyHz();
+        boolean admitted = false;
 
         try
         {
+            admitted = acquireClassificationSlot(cancelledFlag);
+
+            if(!admitted)
+            {
+                return ClassificationResult.cancelled(freqHz);
+            }
+
             return doClassifyInternal(request, freqHz, cancelledFlag);
         }
         catch(Throwable t)
         {
             mLog.error("Classification failed unexpectedly at {} Hz", freqHz, t);
             return ClassificationResult.error(freqHz, t.getMessage());
+        }
+        finally
+        {
+            if(admitted)
+            {
+                releaseClassificationSlot();
+            }
+        }
+    }
+
+    /**
+     * Waits for admission under the live classification-concurrency preference.
+     */
+    private boolean acquireClassificationSlot(AtomicBoolean cancelledFlag)
+    {
+        synchronized(mClassificationGate)
+        {
+            while(mActiveClassifications >= Math.max(1, mDiscoveryPreference.getMaxConcurrentClassifications()))
+            {
+                if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
+                {
+                    return false;
+                }
+
+                try
+                {
+                    mClassificationGate.wait(POLL_INTERVAL_MS);
+                }
+                catch(InterruptedException e)
+                {
+                    Thread.currentThread().interrupt();
+                    return false;
+                }
+            }
+
+            if(cancelledFlag.get() || Thread.currentThread().isInterrupted())
+            {
+                return false;
+            }
+
+            mActiveClassifications++;
+            return true;
+        }
+    }
+
+    private void releaseClassificationSlot()
+    {
+        synchronized(mClassificationGate)
+        {
+            mActiveClassifications--;
+            mClassificationGate.notifyAll();
         }
     }
 
@@ -558,10 +617,9 @@ public class SignalClassifier implements Classifier
      * Attaches a {@link PowerMonitor} subscriber to the fanout, then starts the real
      * source, and waits up to {@link #ENERGY_GATE_WINDOW} collecting power readings.
      *
-     * <p>Reads are floor-relative: we estimate the noise floor as the minimum reading
-     * observed, and return a non-NaN power only when the peak is at least
-     * {@link DiscoveryPreference#getEnergyThresholdDb()} dB above that floor.
-     * If no readings arrive at all (zero samples), {@code Double.NaN} is returned.</p>
+     * <p>If no readings arrive at all (zero samples), {@code Double.NaN} is returned.
+     * Otherwise the peak measured power is returned.  The minimum and maximum readings from
+     * the same tuned signal are not a noise-floor/SNR measurement.</p>
      *
      * <p>The subscriber is registered <em>before</em> the source is started so that
      * samples delivered synchronously during {@code start()} (as in tests) are captured.</p>
@@ -574,10 +632,9 @@ public class SignalClassifier implements Classifier
     private double runEnergyGateWithStart(ComplexSampleFanout fanout, ComplexSource realSource,
                                            AtomicBoolean cancelledFlag)
     {
-        // Collect all power readings over the gate window for floor estimation
+        // Collect power readings so we can report the peak measured signal power.
         List<Double> powerReadings = new ArrayList<>();
         Object lock = new Object();
-        AtomicBoolean hasNewReading = new AtomicBoolean(false);
 
         PowerMonitor pm = new PowerMonitor();
         pm.setSampleRate((int) realSource.getSampleRate());
@@ -590,7 +647,6 @@ public class SignalClassifier implements Classifier
                 synchronized(lock)
                 {
                     powerReadings.add(powerDb);
-                    hasNewReading.set(true);
                     lock.notifyAll();
                 }
             }
@@ -643,34 +699,8 @@ public class SignalClassifier implements Classifier
             return Double.NaN;
         }
 
-        // With only one reading we have no floor estimate.  The spec says "err toward
-        // proceeding to probe" when genuinely ambiguous — so treat a single reading as
-        // sufficient evidence of energy and return it.
-        if(powerReadings.size() == 1)
-        {
-            return powerReadings.get(0);
-        }
-
-        // With multiple readings: estimate noise floor as minimum, peak as maximum.
-        // Apply the configured threshold as a floor-relative SNR check.
-        double floor = Double.MAX_VALUE;
-        double peak = -Double.MAX_VALUE;
-
-        for(double r : powerReadings)
-        {
-            if(r < floor) floor = r;
-            if(r > peak) peak = r;
-        }
-
-        double threshold = mDiscoveryPreference.getEnergyThresholdDb();
-        double snr = peak - floor;
-
-        if(snr < threshold)
-        {
-            // Peak is not sufficiently above the estimated noise floor
-            return Double.NaN;
-        }
-
-        return peak;
+        // Temporal variation of the same tuned signal is not an SNR estimate.  Any valid
+        // power reading is sufficient to continue probing; retain the peak for reporting.
+        return powerReadings.stream().mapToDouble(Double::doubleValue).max().orElse(Double.NaN);
     }
 }

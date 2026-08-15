@@ -21,6 +21,8 @@ package io.github.dsheirer.gui.playlist.discovery;
 import io.github.dsheirer.module.decode.DecoderType;
 import io.github.dsheirer.module.discovery.BandScanController;
 import io.github.dsheirer.module.discovery.ScanRequest;
+import io.github.dsheirer.module.discovery.SpectralSurvey;
+import io.github.dsheirer.module.discovery.TunerControl;
 import io.github.dsheirer.preference.discovery.DiscoveryPreference;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -55,33 +57,18 @@ import org.slf4j.LoggerFactory;
  * require a stepped (retuning) sweep.</p>
  *
  * <h3>Stepped-sweep warning</h3>
- * <p>A static warning banner is shown whenever the span exceeds a conservative 2 MHz threshold.
- * The {@link BandScanController} automatically falls back to
- * {@link io.github.dsheirer.module.discovery.SpectralSurveyApi#surveyWide} when the in-band
- * survey cannot cover the requested span, stepping the spectral display's current tuner across
- * the range.  The Scan button is never disabled — even for wide spans the sweep runs normally
- * (provided a tuner is connected).</p>
- *
- * <h3>ETA / stepped computation</h3>
- * The static helper {@link #isLikelySteppedSweep(long, long)} is package-private for unit testing.
+ * <p>A warning banner is shown whenever the requested bounds do not fit inside the active tuner's
+ * current usable window, matching the path selected by the spectral survey.  The Scan button is
+ * never disabled — stepped sweeps run normally after warning the operator.</p>
  */
 public class ScanDialog extends Stage
 {
     private static final Logger mLog = LoggerFactory.getLogger(ScanDialog.class);
-
-    /**
-     * Threshold for the stepped-sweep warning banner: if the requested span exceeds this,
-     * the operator is warned that the survey will retune the displayed tuner and may disrupt
-     * active decoding.  10 MHz matches typical wideband SDRs (Airspy R2, SDRplay RSP1A,
-     * RTL-SDR with upsampling); smaller devices will still trigger the banner for narrower spans.
-     *
-     * <p>TODO: thread the active tuner's sample rate in from {@link io.github.dsheirer.module.discovery.TunerControl}
-     * to make this threshold dynamic rather than a fixed constant.</p>
-     */
-    private static final long STEPPED_SWEEP_WARNING_HZ = 10_000_000L;
+    private static final long FALLBACK_STEPPED_SWEEP_WARNING_HZ = 10_000_000L;
 
     private final BandScanController mBandScanController;
     private final DiscoveryPreference mDiscoveryPreference;
+    private final TunerControl mTunerControl;
 
     // Frequency range
     private Spinner<Double> mMinMhzSpinner;
@@ -111,8 +98,18 @@ public class ScanDialog extends Stage
     public ScanDialog(BandScanController bandScanController, DiscoveryPreference discoveryPreference,
                       long preFilledMinHz, long preFilledMaxHz)
     {
+        this(bandScanController, discoveryPreference, preFilledMinHz, preFilledMaxHz, null);
+    }
+
+    /**
+     * Constructs the dialog with access to the active tuner for accurate stepped-sweep warnings.
+     */
+    public ScanDialog(BandScanController bandScanController, DiscoveryPreference discoveryPreference,
+                      long preFilledMinHz, long preFilledMaxHz, TunerControl tunerControl)
+    {
         mBandScanController = bandScanController;
         mDiscoveryPreference = discoveryPreference;
+        mTunerControl = tunerControl;
 
         initModality(Modality.APPLICATION_MODAL);
         setTitle("Band Scan Configuration");
@@ -295,16 +292,27 @@ public class ScanDialog extends Stage
     // -------------------------------------------------------------------------
 
     /**
-     * Returns whether the given frequency span is likely to require a stepped sweep.
-     * This is package-private to allow unit testing.
-     *
-     * @param minHz lower bound in Hz
-     * @param maxHz upper bound in Hz
-     * @return {@code true} if the span exceeds the conservative stepped-sweep threshold
+     * Returns whether the requested bounds require retuning from the current usable tuner window.
      */
-    static boolean isLikelySteppedSweep(long minHz, long maxHz)
+    static boolean isLikelySteppedSweep(long minHz, long maxHz, long centerHz, long usableBandwidthHz)
     {
-        return (maxHz - minHz) > STEPPED_SWEEP_WARNING_HZ;
+        return !SpectralSurvey.isInCurrentUsableWindow(minHz, maxHz, centerHz, usableBandwidthHz);
+    }
+
+    private boolean isLikelySteppedSweep(long minHz, long maxHz)
+    {
+        if(mTunerControl == null || !mTunerControl.isAvailable())
+        {
+            return maxHz - minHz > FALLBACK_STEPPED_SWEEP_WARNING_HZ;
+        }
+
+        long usableBandwidthHz = mTunerControl.getUsableBandwidthHz();
+        if(usableBandwidthHz <= 0)
+        {
+            usableBandwidthHz = (long)mTunerControl.getCurrentSampleRateHz();
+        }
+
+        return isLikelySteppedSweep(minHz, maxHz, mTunerControl.getCurrentCenterFreqHz(), usableBandwidthHz);
     }
 
     private void updateSteppedWarning()

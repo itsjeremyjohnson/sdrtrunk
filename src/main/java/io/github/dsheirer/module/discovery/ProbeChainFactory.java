@@ -26,6 +26,7 @@ import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.traffic.TrafficChannelManager;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.source.config.SourceConfigTuner;
 import java.util.ArrayList;
@@ -117,7 +118,15 @@ public class ProbeChainFactory
         // Remove logging/recording/traffic modules that the chain or factory may have added
         chain.removeEventLoggingModules();
         chain.removeRecordingModules();
+
+        // Traffic managers removed from a probe chain have no external owner.  Capture and dispose them after the
+        // chain performs its full listener/provider deregistration path.  Other ProcessingChain callers may reuse
+        // removed managers, so disposal is intentionally owned here rather than by removeTrafficChannelManager().
+        List<Module> trafficChannelManagers = chain.getModules().stream()
+            .filter(TrafficChannelManager.class::isInstance)
+            .toList();
         chain.removeTrafficChannelManager();
+        trafficChannelManagers.forEach(Module::dispose);
 
         // Create and wire the LockWatcher.
         // Use addDecoderStateEventListener to register without making it a full module.

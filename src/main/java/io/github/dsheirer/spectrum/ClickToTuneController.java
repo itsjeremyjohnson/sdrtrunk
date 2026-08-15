@@ -32,6 +32,7 @@ import io.github.dsheirer.module.discovery.DiscoveryChannelFactory;
 import io.github.dsheirer.module.discovery.SignalClassifier;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.source.config.SourceConfigTuner;
+import io.github.dsheirer.util.FxThreads;
 import java.time.Duration;
 import java.util.Collections;
 import java.util.List;
@@ -228,7 +229,7 @@ public class ClickToTuneController
                 return;
             }
 
-            handleResult(result, ex);
+            handleResult(result, ex, bwHz);
         }));
     }
 
@@ -392,11 +393,7 @@ public class ClickToTuneController
                 mUICallbacks.showMissPopup(
                     result,
                     () -> redetect(channel),
-                    type ->
-                    {
-                        channel.setDecodeConfiguration(DecoderFactory.getDecodeConfiguration(type));
-                        restartExistingChannel(channel);
-                    }
+                    type -> changeDecoder(channel, type)
                 );
             }
         }));
@@ -421,7 +418,7 @@ public class ClickToTuneController
      * Handles a completed classification result for {@link #classifyAndTune}.
      * Always called on the EDT.
      */
-    private void handleResult(ClassificationResult result, Throwable ex)
+    private void handleResult(ClassificationResult result, Throwable ex, int bwHz)
     {
         mUICallbacks.clearPending();
 
@@ -455,7 +452,6 @@ public class ClickToTuneController
             // it does NOT change the bandwidth.
             Duration keepListeningDeadline =
                 mUserPreferences.getDiscoveryPreference().getKeepListeningDuration();
-            int bwHz = mUserPreferences.getDiscoveryPreference().getClickDefaultBandwidthHz();
 
             mUICallbacks.showMissPopup(
                 result,
@@ -500,7 +496,7 @@ public class ClickToTuneController
             {
                 return;
             }
-            handleResult(result, ex);
+            handleResult(result, ex, bwHz);
         }));
     }
 
@@ -728,7 +724,7 @@ public class ClickToTuneController
      */
     private void startNewChannel(Channel channel)
     {
-        mChannelModel.addChannel(channel);
+        FxThreads.runAndWait(() -> mChannelModel.addChannel(channel));
         mClickToTuneChannels.add(channel);
 
         try
@@ -739,7 +735,7 @@ public class ClickToTuneController
         {
             mLog.warn("Failed to start click-to-tune channel '{}': {}", channel.getName(), ce.getMessage());
             mClickToTuneChannels.remove(channel);
-            mChannelModel.removeChannel(channel);
+            FxThreads.runAndWait(() -> mChannelModel.removeChannel(channel));
             mUICallbacks.reportStartFailure(channel,
                 java.util.Objects.requireNonNullElse(ce.getMessage(), ce.toString()));
         }

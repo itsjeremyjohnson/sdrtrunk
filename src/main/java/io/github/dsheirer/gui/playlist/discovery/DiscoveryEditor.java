@@ -36,6 +36,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.Locale;
 import java.util.stream.Collectors;
 import javafx.application.Platform;
+import javafx.beans.InvalidationListener;
 import javafx.beans.binding.Bindings;
 import javafx.beans.property.ReadOnlyObjectWrapper;
 import javafx.beans.property.ReadOnlyStringWrapper;
@@ -195,10 +196,10 @@ public class DiscoveryEditor extends BorderPane
         mStopButton = new Button("Stop");
         mStopButton.setTooltip(new Tooltip("Stop the current scan"));
         mStopButton.setOnAction(e -> mBandScanController.stop());
-        // Enabled only while scanning
+        // Enabled while scanning or waiting between continuous scans
         mStopButton.disableProperty().bind(
             Bindings.createBooleanBinding(
-                () -> !isActiveState(mBandScanController.getScanState()),
+                () -> !isStoppableState(mBandScanController.getScanState()),
                 mBandScanController.scanStateProperty()
             )
         );
@@ -284,6 +285,11 @@ public class DiscoveryEditor extends BorderPane
         return state == ScanState.SURVEYING || state == ScanState.PROBING;
     }
 
+    private static boolean isStoppableState(ScanState state)
+    {
+        return isActiveState(state) || state == ScanState.IDLE_CONTINUOUS;
+    }
+
     private static String formatState(ScanState state, int pct)
     {
         if(state == null)
@@ -326,41 +332,44 @@ public class DiscoveryEditor extends BorderPane
         stateCol.setCellValueFactory(f -> new ReadOnlyObjectWrapper<>(f.getValue()));
         stateCol.setCellFactory(col -> new TableCell<>()
         {
+            private Discovery mDiscovery;
+            private final InvalidationListener mDiscoveryListener = observable -> render();
+
+            private void updateDiscovery(Discovery discovery)
             {
-                // Re-render whenever the row item's state or createdChannel changes
-                itemProperty().addListener((obs, oldD, newD) -> {
-                    if(oldD != null)
-                    {
-                        oldD.stateProperty().removeListener(this::invalidated);
-                        oldD.createdChannelProperty().removeListener(this::invalidated);
-                    }
-                    if(newD != null)
-                    {
-                        newD.stateProperty().addListener(this::invalidated);
-                        newD.createdChannelProperty().addListener(this::invalidated);
-                    }
-                    render(newD);
-                });
+                if(mDiscovery == discovery)
+                {
+                    return;
+                }
+
+                if(mDiscovery != null)
+                {
+                    mDiscovery.stateProperty().removeListener(mDiscoveryListener);
+                    mDiscovery.createdChannelProperty().removeListener(mDiscoveryListener);
+                }
+
+                mDiscovery = discovery;
+
+                if(mDiscovery != null)
+                {
+                    mDiscovery.stateProperty().addListener(mDiscoveryListener);
+                    mDiscovery.createdChannelProperty().addListener(mDiscoveryListener);
+                }
             }
 
-            private void invalidated(javafx.beans.Observable obs)
+            private void render()
             {
-                render(getItem());
-            }
-
-            private void render(Discovery d)
-            {
-                if(isEmpty() || d == null)
+                if(isEmpty() || mDiscovery == null)
                 {
                     setText(null);
                     return;
                 }
-                if(d.getCreatedChannel() != null)
+                if(mDiscovery.getCreatedChannel() != null)
                 {
-                    setText(d.getCreatedChannel().isTemporaryLive() ? "● live" : "● saved");
+                    setText(mDiscovery.getCreatedChannel().isTemporaryLive() ? "● live" : "● saved");
                     return;
                 }
-                DiscoveryState state = d.getState();
+                DiscoveryState state = mDiscovery.getState();
                 setText(state == null ? null : switch(state)
                 {
                     case ENERGY_DETECTED -> "⚡ energy";
@@ -376,7 +385,8 @@ public class DiscoveryEditor extends BorderPane
             protected void updateItem(Discovery d, boolean empty)
             {
                 super.updateItem(d, empty);
-                render(empty ? null : d);
+                updateDiscovery(empty ? null : d);
+                render();
             }
         });
         stateCol.setPrefWidth(90);
@@ -567,6 +577,8 @@ public class DiscoveryEditor extends BorderPane
             private final Button mIgnoreBtn = new Button("✕");
             private final Button mReprobeBtn= new Button("↻");
             private final HBox mBox = new HBox(2, mAddBtn, mSaveBtn, mRemoveBtn, mWatchBtn, mIgnoreBtn, mReprobeBtn);
+            private Discovery mDiscovery;
+            private final InvalidationListener mDiscoveryListener = observable -> render();
 
             {
                 mAddBtn.setTooltip(new Tooltip("Add as channel"));
@@ -604,46 +616,64 @@ public class DiscoveryEditor extends BorderPane
 
             private Discovery getDiscovery()
             {
-                // Prefer the cell's item (set by cellValueFactory) for correctness
-                Discovery d = getItem();
-                if(d != null) return d;
-                int index = getIndex();
-                if(index < 0 || index >= getTableView().getItems().size()) return null;
-                return getTableView().getItems().get(index);
+                return mDiscovery;
             }
 
-            @Override
-            protected void updateItem(Discovery item, boolean empty)
+            private void updateDiscovery(Discovery discovery)
             {
-                super.updateItem(item, empty);
-
-                if(empty)
+                if(mDiscovery == discovery)
                 {
-                    setGraphic(null);
                     return;
                 }
 
-                Discovery d = item != null ? item : getDiscovery();
+                if(mDiscovery != null)
+                {
+                    mDiscovery.stateProperty().removeListener(mDiscoveryListener);
+                    mDiscovery.createdChannelProperty().removeListener(mDiscoveryListener);
+                    mDiscovery.watchedProperty().removeListener(mDiscoveryListener);
+                }
 
-                if(d == null)
+                mDiscovery = discovery;
+
+                if(mDiscovery != null)
+                {
+                    mDiscovery.stateProperty().addListener(mDiscoveryListener);
+                    mDiscovery.createdChannelProperty().addListener(mDiscoveryListener);
+                    mDiscovery.watchedProperty().addListener(mDiscoveryListener);
+                }
+            }
+
+            private void render()
+            {
+                if(isEmpty() || mDiscovery == null)
                 {
                     setGraphic(null);
                     return;
                 }
 
                 // + button: only enabled when IDENTIFIED and not yet added
-                mAddBtn.setDisable(d.getState() != DiscoveryState.IDENTIFIED || d.getCreatedChannel() != null);
-                boolean hasTemporaryChannel = d.getCreatedChannel() != null && d.getCreatedChannel().isTemporaryLive();
+                mAddBtn.setDisable(mDiscovery.getState() != DiscoveryState.IDENTIFIED
+                    || mDiscovery.getCreatedChannel() != null);
+                boolean hasTemporaryChannel = mDiscovery.getCreatedChannel() != null
+                    && mDiscovery.getCreatedChannel().isTemporaryLive();
                 mSaveBtn.setDisable(!hasTemporaryChannel);
                 mRemoveBtn.setDisable(!hasTemporaryChannel);
                 // 👁 button: always available
-                mWatchBtn.setStyle(d.isWatched() ? "-fx-font-weight:bold;" : "");
+                mWatchBtn.setStyle(mDiscovery.isWatched() ? "-fx-font-weight:bold;" : "");
                 // ✕ button: always available
                 mIgnoreBtn.setDisable(false);
                 // ↻ button: enabled unless already probing
-                mReprobeBtn.setDisable(d.getState() == DiscoveryState.PROBING);
+                mReprobeBtn.setDisable(mDiscovery.getState() == DiscoveryState.PROBING);
 
                 setGraphic(mBox);
+            }
+
+            @Override
+            protected void updateItem(Discovery item, boolean empty)
+            {
+                super.updateItem(item, empty);
+                updateDiscovery(empty ? null : item);
+                render();
             }
         });
         actionsCol.setPrefWidth(260);
@@ -727,7 +757,8 @@ public class DiscoveryEditor extends BorderPane
         mPreFillMinHz = 0;
         mPreFillMaxHz = 0;
 
-        ScanDialog dialog = new ScanDialog(mBandScanController, mDiscoveryPreference, minHz, maxHz);
+        ScanDialog dialog = new ScanDialog(mBandScanController, mDiscoveryPreference, minHz, maxHz,
+            mBandScanController.getTunerControl());
         dialog.show();
     }
 

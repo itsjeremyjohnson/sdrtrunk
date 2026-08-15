@@ -26,6 +26,10 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.prefs.Preferences;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
@@ -265,6 +269,81 @@ class DiscoveryPreferenceTest
             "Note with special characters must survive JSON round-trip");
         assertEquals(170_000_000L, loaded.get(0).minHz());
         assertEquals(171_000_000L, loaded.get(0).maxHz());
+    }
+
+    @Test
+    void getIgnoreListReturnsUnmodifiableSnapshot()
+    {
+        IgnoreRange first = IgnoreRange.of(100_000_000L, 101_000_000L);
+        IgnoreRange second = IgnoreRange.of(200_000_000L, 201_000_000L);
+        mPreference.addIgnoreRange(first);
+
+        List<IgnoreRange> snapshot = mPreference.getIgnoreList();
+        mPreference.addIgnoreRange(second);
+
+        assertEquals(List.of(first), snapshot, "A previously returned snapshot must not change");
+        assertThrows(UnsupportedOperationException.class, () -> snapshot.add(second));
+        assertEquals(2, mPreference.getIgnoreList().size());
+    }
+
+    @Test
+    void concurrentIgnoreRangeAddsArePersistedAtomically() throws Exception
+    {
+        int rangeCount = 20;
+        ExecutorService executor = Executors.newFixedThreadPool(rangeCount);
+        CountDownLatch ready = new CountDownLatch(rangeCount);
+        CountDownLatch start = new CountDownLatch(1);
+
+        try
+        {
+            for(int index = 0; index < rangeCount; index++)
+            {
+                long minHz = 100_000_000L + index * 1_000_000L;
+                executor.submit(() -> {
+                    ready.countDown();
+                    start.await();
+                    mPreference.addIgnoreRange(IgnoreRange.of(minHz, minHz + 100_000L));
+                    return null;
+                });
+            }
+
+            assertTrue(ready.await(5, TimeUnit.SECONDS));
+            start.countDown();
+            executor.shutdown();
+            assertTrue(executor.awaitTermination(10, TimeUnit.SECONDS));
+        }
+        finally
+        {
+            executor.shutdownNow();
+        }
+
+        assertEquals(rangeCount, mPreference.getIgnoreList().size());
+        assertEquals(rangeCount, freshPreference().getIgnoreList().size(),
+            "The persisted snapshot must contain every completed atomic edit");
+    }
+
+    @Test
+    void oversizeIgnoreListKeepsLastValidPersistedJson()
+    {
+        IgnoreRange first = IgnoreRange.of(100_000_000L, 100_100_000L, "first persisted entry");
+        mPreference.addIgnoreRange(first);
+
+        String longNote = "x".repeat(250);
+        for(int index = 0; index < 100; index++)
+        {
+            long minHz = 200_000_000L + index * 1_000_000L;
+            mPreference.addIgnoreRange(IgnoreRange.of(minHz, minHz + 100_000L, longNote + index));
+        }
+
+        List<IgnoreRange> reloaded = freshPreference().getIgnoreList();
+        assertFalse(reloaded.isEmpty(), "Oversize persistence must not replace valid JSON with a truncated value");
+        IgnoreRange reloadedFirst = reloaded.get(0);
+        assertEquals(first.minHz(), reloadedFirst.minHz());
+        assertEquals(first.maxHz(), reloadedFirst.maxHz());
+        assertEquals(first.note(), reloadedFirst.note(),
+            "The last valid persisted list must remain readable after restart");
+        assertTrue(reloaded.size() < mPreference.getIgnoreList().size(),
+            "Entries beyond the Preferences limit remain memory-only");
     }
 
     // -------------------------------------------------------------------------

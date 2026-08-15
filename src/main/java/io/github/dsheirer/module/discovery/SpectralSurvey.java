@@ -50,10 +50,9 @@ import org.slf4j.LoggerFactory;
  * display running.</p>
  *
  * <h3>In-band path (non-disruptive)</h3>
- * <p>When the requested span fits within the tuner's sample rate, the survey accumulates
- * FFT frames over the dwell period without retuning.  The tuner center is read once at
- * start; peaks are filtered to the requested {@code [minHz, maxHz]} sub-span in case the
- * operator requested a sub-window of the tuner's view.</p>
+ * <p>When the requested bounds fit within the tuner's current usable window, the survey
+ * accumulates FFT frames over the dwell period without retuning.  The tuner center is read
+ * once at start; peaks are filtered to the requested {@code [minHz, maxHz]} sub-span.</p>
  *
  * <h3>Stepped path (disruptive)</h3>
  * <p>When the span exceeds the sample rate, the survey steps the tuner's center across
@@ -154,7 +153,7 @@ public class SpectralSurvey implements SpectralSurveyApi
      *
      * <p>Internally decides between in-band (non-disruptive, single accumulation at the
      * tuner's current center) and stepped (disruptive, retunes across the span) based on
-     * whether {@code span = maxHz - minHz} fits within the tuner's current sample rate.</p>
+     * whether both requested bounds fit within the tuner's current usable window.</p>
      *
      * <p>Requires a non-null, available {@link TunerControl}; fails immediately with a
      * descriptive message otherwise.</p>
@@ -335,27 +334,39 @@ public class SpectralSurvey implements SpectralSurveyApi
     // -------------------------------------------------------------------------
 
     /**
-     * Decides between in-band and stepped paths based on span vs sample rate, then executes.
+     * Decides between in-band and stepped paths based on the tuner's current usable window.
      */
     private List<EnergyPeak> doSurvey(long minHz, long maxHz, Duration dwell, double thresholdDb,
                                        ProgressListener progress, TunerControl tunerControl,
                                        AtomicBoolean cancelledFlag)
     {
-        long span = maxHz - minHz;
-        double sampleRate = tunerControl.getCurrentSampleRateHz();
-        long usableBandwidth = tunerControl.getUsableBandwidthHz();
-        long instantaneousBandwidth = usableBandwidth > 0 ? usableBandwidth : (long)sampleRate;
+        long centerHz = tunerControl.getCurrentCenterFreqHz();
+        long usableBandwidthHz = getUsableBandwidthHz(tunerControl);
 
-        if(span <= instantaneousBandwidth)
+        if(isInCurrentUsableWindow(minHz, maxHz, centerHz, usableBandwidthHz))
         {
-            // In-band path: the entire requested span fits within the tuner's instantaneous view
             return doInBandSurvey(minHz, maxHz, dwell, thresholdDb, progress, tunerControl, cancelledFlag);
         }
-        else
-        {
-            // Stepped path: the span exceeds the tuner's bandwidth; retune across it
-            return doSteppedSurvey(minHz, maxHz, dwell, thresholdDb, progress, tunerControl, cancelledFlag);
-        }
+
+        return doSteppedSurvey(minHz, maxHz, dwell, thresholdDb, progress, tunerControl, cancelledFlag);
+    }
+
+    /**
+     * Indicates whether both requested bounds fit inside the current alias-free tuner window.
+     */
+    public static boolean isInCurrentUsableWindow(long minHz, long maxHz, long centerHz, long usableBandwidthHz)
+    {
+        long halfBandwidthHz = usableBandwidthHz / 2L;
+        return minHz >= centerHz - halfBandwidthHz && maxHz <= centerHz + halfBandwidthHz;
+    }
+
+    /**
+     * Returns the tuner's usable bandwidth, falling back to sample rate for legacy controls.
+     */
+    private long getUsableBandwidthHz(TunerControl tunerControl)
+    {
+        long usableBandwidthHz = tunerControl.getUsableBandwidthHz();
+        return usableBandwidthHz > 0 ? usableBandwidthHz : (long)tunerControl.getCurrentSampleRateHz();
     }
 
     /**
@@ -431,36 +442,37 @@ public class SpectralSurvey implements SpectralSurveyApi
                                            AtomicBoolean cancelledFlag)
     {
         double sampleRate = tunerControl.getCurrentSampleRateHz();
-        long sampleRateHz = (long) sampleRate;
+        long usableBandwidthHz = getUsableBandwidthHz(tunerControl);
+        long halfUsableBandwidthHz = usableBandwidthHz / 2L;
 
-        // Stride = sampleRate * STEP_OVERLAP_FACTOR; overlap so edge signals are not missed
-        long strideHz = Math.max(1L, (long)(sampleRate * STEP_OVERLAP_FACTOR));
+        // Overlap adjacent usable windows so edge signals are captured by at least one step.
+        long strideHz = Math.max(1L, (long)(usableBandwidthHz * STEP_OVERLAP_FACTOR));
 
         // Build step centers
         long minTunable = tunerControl.getMinFrequencyHz();
         long maxTunable = tunerControl.getMaxFrequencyHz();
 
         List<Long> stepCenters = new ArrayList<>();
-        long center = minHz + sampleRateHz / 2L;
+        long center = minHz + halfUsableBandwidthHz;
 
-        while(center - sampleRateHz / 2L < maxHz)
+        while(center - halfUsableBandwidthHz < maxHz)
         {
             stepCenters.add(center);
             center += strideHz;
         }
 
         // Ensure last center's right edge covers maxHz
-        if(stepCenters.isEmpty() || stepCenters.get(stepCenters.size() - 1) + sampleRateHz / 2L < maxHz)
+        if(stepCenters.isEmpty() || stepCenters.get(stepCenters.size() - 1) + halfUsableBandwidthHz < maxHz)
         {
-            stepCenters.add(maxHz - sampleRateHz / 2L);
+            stepCenters.add(maxHz - halfUsableBandwidthHz);
         }
 
         // Clamp to tuner's tunable range
         stepCenters.replaceAll(c -> Math.max(minTunable, Math.min(maxTunable, c)));
 
         // Warn if clamping truncates the requested span
-        long firstWindowLow = stepCenters.get(0) - sampleRateHz / 2L;
-        long lastWindowHigh = stepCenters.get(stepCenters.size() - 1) + sampleRateHz / 2L;
+        long firstWindowLow = stepCenters.get(0) - halfUsableBandwidthHz;
+        long lastWindowHigh = stepCenters.get(stepCenters.size() - 1) + halfUsableBandwidthHz;
 
         if(firstWindowLow > minHz)
         {
@@ -480,8 +492,9 @@ public class SpectralSurvey implements SpectralSurveyApi
         stepCenters = stepCenters.stream().distinct().toList();
 
         int stepCount = stepCenters.size();
-        mLog.debug("Stepped sweep: {} steps over {} MHz span (stride {} kHz, sampleRate {} MHz)",
-            stepCount, (maxHz - minHz) / 1_000_000.0, strideHz / 1_000.0, sampleRate / 1_000_000.0);
+        mLog.debug("Stepped sweep: {} steps over {} MHz span (stride {} kHz, usable bandwidth {} MHz)",
+            stepCount, (maxHz - minHz) / 1_000_000.0, strideHz / 1_000.0,
+            usableBandwidthHz / 1_000_000.0);
 
         long totalDwellMs = dwell.toMillis();
         long stepDwellMs = Math.max(MIN_STEP_DWELL_MS, stepCount > 0 ? totalDwellMs / stepCount : totalDwellMs);

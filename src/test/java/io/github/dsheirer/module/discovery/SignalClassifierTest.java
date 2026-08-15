@@ -876,7 +876,7 @@ class SignalClassifierTest
     }
 
     // =========================================================================
-    // Fix #3: Energy gate floor-relative behaviour
+    // Energy gate behaviour
     // =========================================================================
 
     /**
@@ -921,6 +921,17 @@ class SignalClassifierTest
         }
     }
 
+    static class StablePowerSource extends FakeComplexSource
+    {
+        @Override
+        public void start()
+        {
+            pushHighPowerSamples();
+            pushHighPowerSamples();
+            pushHighPowerSamples();
+        }
+    }
+
     @Test
     @Timeout(15)
     void classify_highSnrSignal_passesEnergyGate() throws Exception
@@ -950,5 +961,63 @@ class SignalClassifierTest
         // A signal clearly above the noise floor should pass the gate → proceed to probe
         assertNotEquals(ClassificationOutcome.NO_SIGNAL, result.outcome(),
             "High SNR signal should pass the energy gate and proceed to probe");
+    }
+
+    @Test
+    @Timeout(15)
+    void classify_stableContinuousSignal_passesEnergyGate() throws Exception
+    {
+        StablePowerSource stableSource = new StablePowerSource();
+        NeverLockProbeChainFactory factory = new NeverLockProbeChainFactory();
+        SourceProvider provider = (config, spec, name) -> stableSource;
+
+        DiscoveryPreference prefs = new DiscoveryPreference(t -> {})
+        {
+            @Override public Duration probeWindow(DecoderType dt) { return Duration.ofMillis(100); }
+            @Override public double getEnergyThresholdDb() { return 6.0; }
+        };
+
+        SignalClassifier classifier = new SignalClassifier(provider, factory, prefs, mExecutor);
+        ClassificationRequest request = new ClassificationRequest(
+            FREQ, 0, EnumSet.of(DecoderType.NBFM), Duration.ofSeconds(5), false, "stable-signal");
+
+        ClassificationResult result = classifier.classify(request).get();
+
+        assertNotEquals(ClassificationOutcome.NO_SIGNAL, result.outcome(),
+            "A steady continuous carrier must not be rejected because temporal power is stable");
+        assertFalse(factory.mBuilt.isEmpty(), "Stable energy should proceed to decoder probing");
+    }
+
+    @Test
+    @Timeout(10)
+    void classify_enforcesConfiguredClassificationConcurrency() throws Exception
+    {
+        AtomicInteger acquisitions = new AtomicInteger();
+        CountDownLatch firstAcquired = new CountDownLatch(1);
+        SourceProvider provider = (config, spec, name) ->
+        {
+            acquisitions.incrementAndGet();
+            firstAcquired.countDown();
+            return new NoSignalComplexSource();
+        };
+        DiscoveryPreference prefs = new DiscoveryPreference(t -> {})
+        {
+            @Override public int getMaxConcurrentClassifications() { return 1; }
+        };
+        SignalClassifier classifier = new SignalClassifier(provider, new NeverLockProbeChainFactory(), prefs, mExecutor);
+        ClassificationRequest request = new ClassificationRequest(
+            FREQ, 0, EnumSet.of(DecoderType.NBFM), Duration.ofSeconds(5), false, "concurrency-limit");
+
+        CompletableFuture<ClassificationResult> first = classifier.classify(request);
+        CompletableFuture<ClassificationResult> second = classifier.classify(request);
+
+        assertTrue(firstAcquired.await(2, TimeUnit.SECONDS));
+        Thread.sleep(200);
+        assertEquals(1, acquisitions.get(),
+            "Only one classification may acquire a tuner source when the configured maximum is one");
+
+        assertEquals(ClassificationOutcome.NO_SIGNAL, first.get(5, TimeUnit.SECONDS).outcome());
+        assertEquals(ClassificationOutcome.NO_SIGNAL, second.get(5, TimeUnit.SECONDS).outcome());
+        assertEquals(2, acquisitions.get(), "Queued classification should proceed after the first releases its slot");
     }
 }

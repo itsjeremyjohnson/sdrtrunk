@@ -56,10 +56,10 @@ public class TunerControlImpl implements TunerControl
     private final Supplier<TunerController> mControllerSupplier;
 
     /**
-     * Maps each survey-supplied {@link ComplexSamples} listener to the {@link INativeBuffer}
-     * adapter that was registered on the tuner controller for it, so it can be removed later.
+     * Maps each survey listener to the controller and adapter used at registration time so removal
+     * still targets the correct controller if the spectral display switches tuners meanwhile.
      */
-    private final Map<Listener<ComplexSamples>, Listener<INativeBuffer>> mAdapters = new ConcurrentHashMap<>();
+    private final Map<Listener<ComplexSamples>, Registration> mRegistrations = new ConcurrentHashMap<>();
 
     /**
      * Constructs the impl with a supplier of the active tuner controller.
@@ -119,22 +119,19 @@ public class TunerControlImpl implements TunerControl
             }
         };
 
-        mAdapters.put(listener, adapter);
-        requireController().addBufferListener(adapter);
+        TunerController controller = requireController();
+        mRegistrations.put(listener, new Registration(controller, adapter));
+        controller.addBufferListener(adapter);
     }
 
     @Override
     public void removeWidebandSampleListener(Listener<ComplexSamples> listener)
     {
-        Listener<INativeBuffer> adapter = mAdapters.remove(listener);
+        Registration registration = mRegistrations.remove(listener);
 
-        if(adapter != null)
+        if(registration != null)
         {
-            TunerController tc = controller();
-            if(tc != null)
-            {
-                tc.removeBufferListener(adapter);
-            }
+            registration.controller().removeBufferListener(registration.adapter());
         }
     }
 
@@ -179,4 +176,6 @@ public class TunerControlImpl implements TunerControl
     {
         return controller() != null;
     }
+
+    private record Registration(TunerController controller, Listener<INativeBuffer> adapter) {}
 }

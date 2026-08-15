@@ -599,6 +599,36 @@ class ClickToTuneControllerTest
         assertEquals(2, mFakeCpm.mStarted.size(), "Channel should be restarted after re-detect miss");
     }
 
+    @Test
+    void redetect_miss_manualDecoderStopsRestoredChannelBeforeRestart() throws Exception
+    {
+        mFakeClassifier.setNextResult(ClassificationResult.identified(
+            FREQ,
+            List.of(new Candidate(DecoderType.NBFM, LockState.LOCKED, 0.9, null)),
+            DecoderType.NBFM,
+            DecoderFactory.getDecodeConfiguration(DecoderType.NBFM),
+            SignalKind.CONVENTIONAL, "", Map.of(), -80.0
+        ));
+        mController.classifyAndTune(FREQ, 12_500);
+        drainEdt();
+
+        Channel channel = mFakeChannelModel.mAdded.get(0);
+        mFakeClassifier.setNextResult(ClassificationResult.noSignal(FREQ, Double.NaN));
+        mController.redetect(channel);
+        drainEdt();
+
+        assertNotNull(mFakeUI.mTuneAsCallback);
+        mFakeUI.mTuneAsCallback.accept(DecoderType.DMR);
+
+        assertEquals(2, mFakeCpm.mStopped.size(),
+            "Manual decoder must stop the channel after the miss path restored it");
+        assertEquals(3, mFakeCpm.mStarted.size(),
+            "Manual decoder must restart the channel with the new processing chain");
+        assertEquals(DecoderType.DMR, channel.getDecodeConfiguration().getDecoderType());
+        assertEquals(1, mFakeChannelModel.mAdded.size(), "Existing channel must not be re-added");
+        assertTrue(mFakeChannelModel.mRemoved.isEmpty(), "Existing channel must not be removed");
+    }
+
     // -------------------------------------------------------------------------
     // Fix #3: overlapping classifications
     // -------------------------------------------------------------------------
@@ -711,8 +741,9 @@ class ClickToTuneControllerTest
     void keepListeningCallback_usesExtendedDeadline() throws Exception
     {
         // First call: no signal -> miss popup shown
+        int selectedBandwidthHz = 35_000;
         mFakeClassifier.setNextResult(ClassificationResult.noSignal(FREQ, Double.NaN));
-        mController.classifyAndTune(FREQ, 12_500);
+        mController.classifyAndTune(FREQ, selectedBandwidthHz);
         drainEdt();
 
         assertNotNull(mFakeUI.mRedetectCallback, "Miss popup should have been shown");
@@ -748,6 +779,9 @@ class ClickToTuneControllerTest
 
         assertEquals(expectedDeadline, keepListeningRequest.overallDeadline(),
             "Keep-listening request should use the preference keep-listening duration as its deadline");
+        assertTrue(keepListeningRequests.stream().allMatch(
+                request -> request.approximateBandwidthHz() == selectedBandwidthHz),
+            "Keep-listening must preserve the operator-selected bandwidth across all search offsets");
 
         // The bandwidth should NOT be the duration-as-seconds (that was the old bug)
         long badBandwidth = expectedDeadline.getSeconds();

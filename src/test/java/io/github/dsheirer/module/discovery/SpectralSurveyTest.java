@@ -241,8 +241,41 @@ class SpectralSurveyTest
     }
 
     // =========================================================================
-    // In-band survey via FakeTunerControl
+    // Survey path selection and in-band survey via FakeTunerControl
     // =========================================================================
+
+    @Test
+    void isInCurrentUsableWindow_requiresBothBoundsInsideCurrentWindow()
+    {
+        long centerHz = 154_000_000L;
+        long usableBandwidthHz = 1_000_000L;
+
+        assertTrue(SpectralSurvey.isInCurrentUsableWindow(
+            153_500_000L, 154_500_000L, centerHz, usableBandwidthHz));
+        assertFalse(SpectralSurvey.isInCurrentUsableWindow(
+            153_400_000L, 154_400_000L, centerHz, usableBandwidthHz));
+        assertFalse(SpectralSurvey.isInCurrentUsableWindow(
+            153_600_000L, 154_600_000L, centerHz, usableBandwidthHz));
+    }
+
+    @Test
+    @Timeout(10)
+    void survey_spanNarrowerThanBandwidthButOutsideCurrentWindow_usesSteppedPath() throws Exception
+    {
+        long originalCenterHz = 154_000_000L;
+        FakeTunerControl tunerControl = new FakeTunerControl(originalCenterHz, 2_000_000.0);
+        tunerControl.setUsableBandwidthHz(1_000_000L);
+
+        SpectralSurvey survey = new SpectralSurvey(mExecutor);
+        survey.survey(155_000_000L, 155_800_000L, Duration.ofMillis(100), 6.0, null, tunerControl)
+            .get(8, java.util.concurrent.TimeUnit.SECONDS);
+
+        assertTrue(tunerControl.getSetFreqCallCount() >= 2,
+            "Out-of-window request must retune and then restore the original center");
+        assertEquals(155_500_000L, tunerControl.getSetFreqCalls().get(0),
+            "First step center must be based on half the usable bandwidth");
+        assertEquals(originalCenterHz, tunerControl.lastSetFreqHz());
+    }
 
     @Test
     @Timeout(15)
@@ -579,6 +612,7 @@ class SpectralSurveyTest
 
         private volatile long mCenterFreqHz;
         private final double mSampleRate;
+        private volatile long mUsableBandwidthHz;
         private final long mMinFreqHz;
         private final long mMaxFreqHz;
         private volatile boolean mAvailable = true;
@@ -611,6 +645,7 @@ class SpectralSurveyTest
         {
             mCenterFreqHz = centerFreqHz;
             mSampleRate = sampleRate;
+            mUsableBandwidthHz = (long)sampleRate;
             mMinFreqHz = minFreqHz;
             mMaxFreqHz = maxFreqHz;
         }
@@ -620,8 +655,10 @@ class SpectralSurveyTest
         void setDcOffset(float dcOffset) { mDcOffset = dcOffset; }
         void setBlockSamples(boolean block) { mBlockSamples = block; }
         void setAvailable(boolean available) { mAvailable = available; }
+        void setUsableBandwidthHz(long usableBandwidthHz) { mUsableBandwidthHz = usableBandwidthHz; }
 
         int getSetFreqCallCount() { return mSetFreqCalls.size(); }
+        List<Long> getSetFreqCalls() { return List.copyOf(mSetFreqCalls); }
 
         long lastSetFreqHz()
         {
@@ -635,7 +672,7 @@ class SpectralSurveyTest
         public long getCurrentCenterFreqHz() { return mCenterFreqHz; }
 
         @Override
-        public long getUsableBandwidthHz() { return (long) mSampleRate; }
+        public long getUsableBandwidthHz() { return mUsableBandwidthHz; }
 
         @Override
         public long getMinFrequencyHz() { return mMinFreqHz; }

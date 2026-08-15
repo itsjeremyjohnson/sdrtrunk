@@ -236,6 +236,16 @@ public class BandScanController
     }
 
     /**
+     * Returns the tuner access seam used by this controller and the scan dialog.
+     *
+     * @return tuner control, or null when no tuner is available
+     */
+    public TunerControl getTunerControl()
+    {
+        return mTunerControl;
+    }
+
+    /**
      * Observable property tracking the current scan state.
      *
      * @return state property (never null)
@@ -706,105 +716,110 @@ public class BandScanController
 
         List<Discovery> toProbeLater = new ArrayList<>();
 
-        for(EnergyPeak peak : peaks)
+        try
         {
-            if(mCurrentEpoch.get() != myEpoch)
+            for(EnergyPeak peak : peaks)
             {
-                return;
-            }
-
-            if(isIgnored(peak))
-            {
-                continue;
-            }
-
-            // Try to match an existing row by approximate frequency
-            Discovery existing = findExistingDiscovery(peak);
-
-            if(existing != null)
-            {
-                // Update the existing row's last-seen time and state
-                Instant nowForExisting = Instant.now();
-
-                if(existing.getState() == DiscoveryState.UNIDENTIFIED)
+                if(mCurrentEpoch.get() != myEpoch)
                 {
-                    if(existing.isWatched())
+                    return;
+                }
+
+                if(isIgnored(peak))
+                {
+                    continue;
+                }
+
+                // Try to match an existing row by approximate frequency
+                Discovery existing = findExistingDiscovery(peak);
+
+                if(existing != null)
+                {
+                    // Update the existing row's last-seen time and state
+                    Instant nowForExisting = Instant.now();
+
+                    if(existing.getState() == DiscoveryState.UNIDENTIFIED)
                     {
-                        // Re-probe watched unidentified rows; update last-seen on FX thread
-                        FxThreads.run(() -> existing.setLastSeen(nowForExisting));
-                        toProbeLater.add(existing);
+                        if(existing.isWatched())
+                        {
+                            // Re-probe watched unidentified rows; update last-seen on FX thread
+                            FxThreads.run(() -> existing.setLastSeen(nowForExisting));
+                            toProbeLater.add(existing);
+                        }
+                        else
+                        {
+                            // Fresh energy keeps an unwatched, previously-classified row UNIDENTIFIED.  ENERGY_DETECTED
+                            // is only a transient state for newly-created rows awaiting their first probe.
+                            FxThreads.run(() -> existing.setLastSeen(nowForExisting));
+                            mDiscoveryModel.update(existing);
+                        }
                     }
                     else
                     {
-                        // Update state to ENERGY_DETECTED to reflect fresh energy
-                        FxThreads.run(() -> {
-                            existing.setLastSeen(nowForExisting);
-                            existing.setState(DiscoveryState.ENERGY_DETECTED);
-                        });
+                        FxThreads.run(() -> existing.setLastSeen(nowForExisting));
                         mDiscoveryModel.update(existing);
                     }
                 }
                 else
                 {
-                    FxThreads.run(() -> existing.setLastSeen(nowForExisting));
-                    mDiscoveryModel.update(existing);
-                }
-            }
-            else
-            {
-                // Brand new peak
-                if(isKnownChannel(peak))
-                {
-                    Discovery discovery = new Discovery(peak, Instant.now());
-                    FxThreads.run(() -> discovery.setState(DiscoveryState.KNOWN));
-
-                    if(mCurrentEpoch.get() == myEpoch)
+                    // Brand new peak
+                    if(isKnownChannel(peak))
                     {
-                        mDiscoveryModel.add(discovery);
+                        Discovery discovery = new Discovery(peak, Instant.now());
+                        FxThreads.run(() -> discovery.setState(DiscoveryState.KNOWN));
+
+                        if(mCurrentEpoch.get() == myEpoch)
+                        {
+                            mDiscoveryModel.add(discovery);
+                        }
                     }
-                }
-                else
-                {
-                    Discovery discovery = new Discovery(peak, Instant.now());
-
-                    if(mCurrentEpoch.get() == myEpoch)
+                    else
                     {
-                        mDiscoveryModel.add(discovery);
-                        toProbeLater.add(discovery);
+                        Discovery discovery = new Discovery(peak, Instant.now());
+
+                        if(mCurrentEpoch.get() == myEpoch)
+                        {
+                            mDiscoveryModel.add(discovery);
+                            toProbeLater.add(discovery);
+                        }
                     }
                 }
             }
-        }
 
-        // Also re-probe any watched+UNIDENTIFIED rows that did NOT appear in the survey
-        // (the signal may be intermittent — keep trying as long as the operator watches it)
-        for(Discovery d : new ArrayList<>(mDiscoveryModel.getDiscoveries()))
-        {
-            if(d.isWatched() && d.getState() == DiscoveryState.UNIDENTIFIED
-                && !toProbeLater.contains(d))
+            // Also re-probe any watched+UNIDENTIFIED rows that did NOT appear in the survey
+            // (the signal may be intermittent — keep trying as long as the operator watches it)
+            for(Discovery d : new ArrayList<>(mDiscoveryModel.getDiscoveries()))
             {
-                toProbeLater.add(d);
+                if(d.isWatched() && d.getState() == DiscoveryState.UNIDENTIFIED
+                    && !toProbeLater.contains(d))
+                {
+                    toProbeLater.add(d);
+                }
+            }
+
+            // Sequential probing for new/watched discoveries
+            int probeLimit = (request.maxSignalsToProbe() > 0) ? request.maxSignalsToProbe() : Integer.MAX_VALUE;
+            int probeCount = 0;
+
+            for(Discovery discovery : toProbeLater)
+            {
+                if(mCurrentEpoch.get() != myEpoch)
+                {
+                    return;
+                }
+
+                if(probeCount >= probeLimit)
+                {
+                    break;
+                }
+
+                probeOne(discovery, request, myEpoch);
+                probeCount++;
             }
         }
-
-        // Sequential probing for new/watched discoveries
-        int probeLimit = (request.maxSignalsToProbe() > 0) ? request.maxSignalsToProbe() : Integer.MAX_VALUE;
-        int probeCount = 0;
-
-        for(Discovery discovery : toProbeLater)
+        finally
         {
-            if(mCurrentEpoch.get() != myEpoch)
-            {
-                return;
-            }
-
-            if(probeCount >= probeLimit)
-            {
-                break;
-            }
-
-            probeOne(discovery, request, myEpoch);
-            probeCount++;
+            markUnprobedAsUnidentified(toProbeLater);
         }
 
         if(mCurrentEpoch.get() != myEpoch)
@@ -928,60 +943,88 @@ public class BandScanController
 
         List<Discovery> toProbeLater = new ArrayList<>();
 
-        for(EnergyPeak peak : peaks)
+        try
         {
-            if(mCurrentEpoch.get() != myEpoch)
+            for(EnergyPeak peak : peaks)
             {
-                return;
+                if(mCurrentEpoch.get() != myEpoch)
+                {
+                    return;
+                }
+
+                // Skip peaks in the user's ignore list
+                if(isIgnored(peak))
+                {
+                    mLog.debug("Skipping ignored peak at {} Hz", peak.centerFrequencyHz());
+                    continue;
+                }
+
+                Discovery discovery = new Discovery(peak, Instant.now());
+
+                // Check if an existing channel already covers this frequency
+                if(isKnownChannel(peak))
+                {
+                    FxThreads.run(() -> discovery.setState(DiscoveryState.KNOWN));
+                    mDiscoveryModel.add(discovery);
+                }
+                else
+                {
+                    mDiscoveryModel.add(discovery);
+                    toProbeLater.add(discovery);
+                }
             }
 
-            // Skip peaks in the user's ignore list
-            if(isIgnored(peak))
-            {
-                mLog.debug("Skipping ignored peak at {} Hz", peak.centerFrequencyHz());
-                continue;
-            }
+            // Sequential probing (one classification at a time)
+            int probeLimit = (request.maxSignalsToProbe() > 0) ? request.maxSignalsToProbe() : Integer.MAX_VALUE;
+            int probeCount = 0;
+            int totalToProbe = Math.min(toProbeLater.size(), probeLimit);
 
-            Discovery discovery = new Discovery(peak, Instant.now());
+            for(Discovery discovery : toProbeLater)
+            {
+                if(mCurrentEpoch.get() != myEpoch)
+                {
+                    return;
+                }
 
-            // Check if an existing channel already covers this frequency
-            if(isKnownChannel(peak))
-            {
-                FxThreads.run(() -> discovery.setState(DiscoveryState.KNOWN));
-                mDiscoveryModel.add(discovery);
-            }
-            else
-            {
-                mDiscoveryModel.add(discovery);
-                toProbeLater.add(discovery);
+                if(probeCount >= probeLimit)
+                {
+                    break;
+                }
+
+                probeOne(discovery, request, myEpoch);
+                probeCount++;
+
+                // Update probe progress: second half of the 0..1 range
+                if(totalToProbe > 0)
+                {
+                    double probeProgress = (double) probeCount / totalToProbe;
+                    setProgress(0.5 + probeProgress * 0.5);
+                }
             }
         }
-
-        // Sequential probing (one classification at a time)
-        int probeLimit = (request.maxSignalsToProbe() > 0) ? request.maxSignalsToProbe() : Integer.MAX_VALUE;
-        int probeCount = 0;
-        int totalToProbe = Math.min(toProbeLater.size(), probeLimit);
-
-        for(Discovery discovery : toProbeLater)
+        finally
         {
-            if(mCurrentEpoch.get() != myEpoch)
-            {
-                return;
-            }
+            markUnprobedAsUnidentified(toProbeLater);
+        }
+    }
 
-            if(probeCount >= probeLimit)
+    /**
+     * Converts newly-created rows that were not probed because of the per-cycle limit from the transient
+     * ENERGY_DETECTED state to UNIDENTIFIED.  Rows that were probed or otherwise transitioned are left unchanged.
+     */
+    private void markUnprobedAsUnidentified(List<Discovery> discoveries)
+    {
+        for(Discovery discovery : discoveries)
+        {
+            if(discovery.getState() == DiscoveryState.ENERGY_DETECTED)
             {
-                break;
-            }
-
-            probeOne(discovery, request, myEpoch);
-            probeCount++;
-
-            // Update probe progress: second half of the 0..1 range
-            if(totalToProbe > 0)
-            {
-                double probeProgress = (double) probeCount / totalToProbe;
-                setProgress(0.5 + probeProgress * 0.5);
+                FxThreads.runAndWait(() -> {
+                    if(discovery.getState() == DiscoveryState.ENERGY_DETECTED)
+                    {
+                        discovery.setState(DiscoveryState.UNIDENTIFIED);
+                    }
+                });
+                mDiscoveryModel.update(discovery);
             }
         }
     }
@@ -1003,7 +1046,12 @@ public class BandScanController
                         try
                         {
                             Future<?> rescanFuture = mExecutor.submit(() -> runRescan(request, myEpoch));
-                            mActiveScanFuture.compareAndSet(null, rescanFuture);
+                            mActiveScanFuture.set(rescanFuture);
+
+                            if(mCurrentEpoch.get() != myEpoch && mActiveScanFuture.compareAndSet(rescanFuture, null))
+                            {
+                                rescanFuture.cancel(true);
+                            }
                         }
                         catch(RejectedExecutionException e)
                         {

@@ -590,6 +590,9 @@ class BandScanControllerTest
         awaitState(ctrl, ScanState.DONE, 5_000);
 
         assertEquals(1, classifier.getCallCount());
+        assertTrue(mModel.getDiscoveries().stream()
+                .noneMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED),
+            "Rows skipped by the probe limit must not remain in the transient ENERGY_DETECTED state");
     }
 
     // -------------------------------------------------------------------------
@@ -1067,6 +1070,18 @@ class BandScanControllerTest
         // State must be CANCELLED, not ERROR
         assertEquals(ScanState.CANCELLED, ctrl.getScanState(),
             "stop() mid-PROBING should yield CANCELLED, not ERROR");
+
+        long cleanupDeadline = System.currentTimeMillis() + 2_000;
+        while(mModel.getDiscoveries().stream()
+            .anyMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED)
+            && System.currentTimeMillis() < cleanupDeadline)
+        {
+            Thread.sleep(20);
+        }
+
+        assertTrue(mModel.getDiscoveries().stream()
+                .noneMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED),
+            "Stopping during probing must finalize newly-created energy rows");
     }
 
     // -------------------------------------------------------------------------
@@ -1244,6 +1259,78 @@ class BandScanControllerTest
             .filter(d -> d.getCenterFrequencyHz() == FREQ_A)
             .count();
         assertEquals(1, discoveryCount, "Continuous scan should refresh, not duplicate rows");
+    }
+
+    @Test
+    void stopCancelsActiveContinuousRescanFuture() throws InterruptedException
+    {
+        AtomicInteger surveyCalls = new AtomicInteger();
+        BlockingSurvey blockingRescan = new BlockingSurvey();
+        SpectralSurveyApi switchingSurvey = (minHz, maxHz, dwell, threshold, progress, tunerControl) ->
+        {
+            if(surveyCalls.incrementAndGet() == 1)
+            {
+                return CompletableFuture.completedFuture(List.of());
+            }
+
+            return blockingRescan.survey(minHz, maxHz, dwell, threshold, progress, tunerControl);
+        };
+        ScanRequest continuous = new ScanRequest(MIN_HZ, MAX_HZ,
+            EnumSet.of(DecoderType.NBFM), Duration.ofMillis(1), 6.0, 200,
+            true, Duration.ofMillis(50));
+        BandScanController ctrl = makeController(switchingSurvey, new FakeClassifier(Map.of()));
+
+        ctrl.startScan(continuous);
+        awaitState(ctrl, ScanState.IDLE_CONTINUOUS, 5_000);
+        awaitState(ctrl, ScanState.SURVEYING, 5_000);
+        ctrl.stop();
+
+        assertTrue(blockingRescan.wasSourceReleased(),
+            "Stop must cancel the tracked continuous rescan future and release its survey source");
+    }
+
+    @Test
+    void continuousScanDoesNotStrandEnergyDetectedRowsAtProbeLimit() throws InterruptedException
+    {
+        AtomicInteger surveyCallCount = new AtomicInteger();
+        SpectralSurveyApi switchingSurvey = (minHz, maxHz, dwell, threshold, progress, tunerControl) ->
+        {
+            List<EnergyPeak> peaks = surveyCallCount.incrementAndGet() == 1
+                ? List.of(makePeak(FREQ_A))
+                : List.of(makePeak(FREQ_A), makePeak(FREQ_B), makePeak(157_000_000L));
+            return CompletableFuture.completedFuture(peaks);
+        };
+
+        ScanRequest continuous = new ScanRequest(MIN_HZ, MAX_HZ,
+            EnumSet.of(DecoderType.NBFM), Duration.ofMillis(1), 6.0, 1,
+            true, Duration.ofMillis(50));
+
+        BandScanController ctrl = makeController(switchingSurvey, new FakeClassifier(Map.of()));
+        ctrl.startScan(continuous);
+
+        awaitState(ctrl, ScanState.IDLE_CONTINUOUS, 5_000);
+
+        long deadline = System.currentTimeMillis() + 5_000;
+        while(surveyCallCount.get() < 2 && System.currentTimeMillis() < deadline)
+        {
+            Thread.sleep(20);
+        }
+
+        assertTrue(surveyCallCount.get() >= 2, "A continuous rescan should have run");
+
+        deadline = System.currentTimeMillis() + 5_000;
+        while((ctrl.getScanState() != ScanState.IDLE_CONTINUOUS || mModel.getDiscoveries().size() < 3)
+            && System.currentTimeMillis() < deadline)
+        {
+            Thread.sleep(20);
+        }
+
+        ctrl.stop();
+
+        assertEquals(3, mModel.getDiscoveries().size());
+        assertTrue(mModel.getDiscoveries().stream()
+                .noneMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED),
+            "Continuous cycles must finalize rows skipped by the per-cycle probe limit");
     }
 
     @Test

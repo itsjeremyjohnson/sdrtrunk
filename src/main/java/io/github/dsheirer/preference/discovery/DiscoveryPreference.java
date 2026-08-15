@@ -51,9 +51,8 @@ import org.slf4j.LoggerFactory;
  * or newlines are fully supported.
  *
  * <p>Note: {@code Preferences.put} silently truncates values past ~8 192 chars.
- * If the serialised list exceeds that limit a warning is logged; existing entries
- * are preserved in memory but only the truncated bytes are stored on disk.
- * This is an acceptable limitation for Phase 1.</p>
+ * Oversize serialised lists remain in memory, but persistence keeps the last valid JSON
+ * value rather than writing a truncated value that cannot be loaded on restart.</p>
  */
 public class DiscoveryPreference extends Preference
 {
@@ -587,19 +586,16 @@ public class DiscoveryPreference extends Preference
     // -------------------------------------------------------------------------
 
     /**
-     * Returns the persisted list of frequency ranges to ignore during discovery.
+     * Returns a snapshot of the persisted frequency ranges to ignore during discovery.
+     * Changes must be made through {@link #addIgnoreRange(IgnoreRange)} or
+     * {@link #removeIgnoreRange(IgnoreRange)} so mutation and persistence remain atomic.
      *
-     * @return live (mutable) list; modifications are not automatically persisted — call
-     *         {@link #addIgnoreRange(IgnoreRange)} or {@link #removeIgnoreRange(IgnoreRange)}
+     * @return unmodifiable snapshot of the ignore list
      */
-    public List<IgnoreRange> getIgnoreList()
+    public synchronized List<IgnoreRange> getIgnoreList()
     {
-        if(mIgnoreList == null)
-        {
-            mIgnoreList = loadIgnoreList();
-        }
-
-        return mIgnoreList;
+        ensureIgnoreListLoaded();
+        return List.copyOf(mIgnoreList);
     }
 
     /**
@@ -607,14 +603,15 @@ public class DiscoveryPreference extends Preference
      *
      * @param range range to add; must not be null
      */
-    public void addIgnoreRange(IgnoreRange range)
+    public synchronized void addIgnoreRange(IgnoreRange range)
     {
         if(range == null)
         {
             throw new IllegalArgumentException("ignore range must not be null");
         }
 
-        getIgnoreList().add(range);
+        ensureIgnoreListLoaded();
+        mIgnoreList.add(range);
         saveIgnoreList();
         notifyPreferenceUpdated();
     }
@@ -624,9 +621,10 @@ public class DiscoveryPreference extends Preference
      *
      * @param range range to remove
      */
-    public void removeIgnoreRange(IgnoreRange range)
+    public synchronized void removeIgnoreRange(IgnoreRange range)
     {
-        getIgnoreList().remove(range);
+        ensureIgnoreListLoaded();
+        mIgnoreList.remove(range);
         saveIgnoreList();
         notifyPreferenceUpdated();
     }
@@ -678,6 +676,14 @@ public class DiscoveryPreference extends Preference
         IgnoreRange toIgnoreRange()
         {
             return new IgnoreRange(minHz, maxHz, note, Instant.ofEpochMilli(addedAtEpochMs));
+        }
+    }
+
+    private void ensureIgnoreListLoaded()
+    {
+        if(mIgnoreList == null)
+        {
+            mIgnoreList = loadIgnoreList();
         }
     }
 
@@ -737,8 +743,8 @@ public class DiscoveryPreference extends Preference
             if(json.length() > PREFS_MAX_CHARS)
             {
                 mLog.warn("Discovery ignore list exceeds Preferences storage limit ({} chars > {}); "
-                    + "list is stored in memory but may be truncated on disk.",
-                    json.length(), PREFS_MAX_CHARS);
+                    + "keeping the last valid persisted list.", json.length(), PREFS_MAX_CHARS);
+                return;
             }
 
             mPreferences.put(KEY_IGNORE_LIST, json);
