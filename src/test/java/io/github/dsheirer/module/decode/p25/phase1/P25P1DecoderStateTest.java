@@ -10,10 +10,12 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import io.github.dsheirer.bits.CorrectedBinaryMessage;
 import io.github.dsheirer.channel.state.DecoderStateEvent;
 import io.github.dsheirer.channel.state.State;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.message.SyncLossMessage;
+import io.github.dsheirer.module.decode.p25.phase1.message.UnknownP25Message;
 import io.github.dsheirer.protocol.Protocol;
 import java.lang.reflect.Field;
 import java.lang.reflect.Method;
@@ -45,15 +47,61 @@ class P25P1DecoderStateTest
     }
 
     @Test
+    void invalidMetadataFallbackPreservesEncryptionState() throws Exception
+    {
+        List<DecoderStateEvent> events = new ArrayList<>();
+        P25P1DecoderState state = createState(events);
+        confirmEncryptedCall(state);
+        UnknownP25Message invalidMetadataLdu = new UnknownP25Message(new CorrectedBinaryMessage(1), 0,
+                System.currentTimeMillis(), P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1);
+
+        invokeProcessLdu(state, invalidMetadataLdu);
+
+        assertEquals(1, events.size());
+        assertEquals(State.ENCRYPTED, events.getFirst().getState());
+        state.stop();
+    }
+
+    @Test
+    void holdoverContinuationsPreserveEncryptionState() throws Exception
+    {
+        List<DecoderStateEvent> events = new ArrayList<>();
+        P25P1DecoderState state = createState(events);
+        state.setSignalEnergyProvider(new ConstantEnergyProvider());
+        state.setHoldoverMs(1000);
+        confirmEncryptedCall(state);
+        long timestamp = System.currentTimeMillis();
+        setLastValidLduTimestamp(state, timestamp);
+
+        invokeCheckAndApplyHoldover(state, timestamp + 1);
+        state.receive(new SyncLossMessage(timestamp + 1, 9600, Protocol.APCO25));
+        invokePeriodicHoldoverCheck(state);
+
+        assertEquals(3, events.size());
+        assertTrue(events.stream().allMatch(event -> event.getState() == State.ENCRYPTED));
+        state.stop();
+    }
+
+    @Test
+    void clearCallFallbackRemainsClear() throws Exception
+    {
+        List<DecoderStateEvent> events = new ArrayList<>();
+        P25P1DecoderState state = createState(events);
+        UnknownP25Message invalidMetadataLdu = new UnknownP25Message(new CorrectedBinaryMessage(1), 0,
+                System.currentTimeMillis(), P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1);
+
+        invokeProcessLdu(state, invalidMetadataLdu);
+
+        assertEquals(1, events.size());
+        assertEquals(State.CALL, events.getFirst().getState());
+        state.stop();
+    }
+
+    @Test
     void requestResetClearsEncryptionConfirmation()
     {
         P25P1DecoderState state = createState(new ArrayList<>());
-        int threshold = state.getEncryptionConfirmationThreshold();
-
-        for(int x = 0; x < threshold; x++)
-        {
-            state.updateEncryptionState(true);
-        }
+        confirmEncryptedCall(state);
 
         state.receiveDecoderStateEvent(new DecoderStateEvent(this, DecoderStateEvent.Event.REQUEST_RESET, State.IDLE));
 
@@ -148,6 +196,22 @@ class P25P1DecoderStateTest
         return state;
     }
 
+    private void confirmEncryptedCall(P25P1DecoderState state)
+    {
+        for(int x = 0; x < state.getEncryptionConfirmationThreshold(); x++)
+        {
+            state.updateEncryptionState(true);
+        }
+    }
+
+    private void invokeProcessLdu(P25P1DecoderState state, UnknownP25Message message) throws Exception
+    {
+        Method method = P25P1DecoderState.class.getDeclaredMethod("processLDU",
+                io.github.dsheirer.module.decode.p25.phase1.message.P25P1Message.class);
+        method.setAccessible(true);
+        method.invoke(state, message);
+    }
+
     private void setLastValidLduTimestamp(P25P1DecoderState state, long timestamp) throws Exception
     {
         Field field = P25P1DecoderState.class.getDeclaredField("mLastValidLDUTimestamp");
@@ -160,6 +224,13 @@ class P25P1DecoderStateTest
         Field field = P25P1DecoderState.class.getDeclaredField("mLastValidLDUTimestamp");
         field.setAccessible(true);
         return field.getLong(state);
+    }
+
+    private void invokeCheckAndApplyHoldover(P25P1DecoderState state, long timestamp) throws Exception
+    {
+        Method method = P25P1DecoderState.class.getDeclaredMethod("checkAndApplyHoldover", long.class);
+        method.setAccessible(true);
+        method.invoke(state, timestamp);
     }
 
     private void invokePeriodicHoldoverCheck(P25P1DecoderState state) throws Exception

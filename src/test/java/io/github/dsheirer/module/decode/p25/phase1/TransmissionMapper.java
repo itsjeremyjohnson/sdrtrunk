@@ -37,6 +37,9 @@ public class TransmissionMapper
     private static final float ENERGY_EMA_FACTOR = 0.002f;
     private static final float ENERGY_SILENCE_RATIO = 0.15f;
     private static final float PEAK_DECAY = 0.99999f;
+    private static final long NOISE_FLOOR_LEARNING_MS = 100;
+    private static final float SIGNAL_RISE_RATIO = 4.0f;
+    private static final long SUSTAINED_SIGNAL_RISE_MS = 10;
 
     // Transmission detection thresholds
     private static final long MIN_TRANSMISSION_MS = 180;   // Minimum 1 LDU duration
@@ -49,6 +52,10 @@ public class TransmissionMapper
     private float mPeakEnergy = 0f;
     private long mSampleCount = 0;
     private double mSampleRate = 0;
+    private double mNoiseFloorSum;
+    private long mNoiseFloorSampleCount;
+    private float mNoiseFloor;
+    private long mSignalRiseStartSample = -1;
 
     // Signal period tracking
     private Long mSignalStartSample = null;
@@ -58,7 +65,7 @@ public class TransmissionMapper
     // Preamble and variance tracking
     private double mPreambleSumEnergy = 0;
     private int mPreambleSampleCount = 0;
-    private double mVarianceSumSquares = 0;  // For Welford's algorithm
+    private final RunningVariance mPeriodVariance = new RunningVariance();
 
     // Detected transmissions
     private final List<SignalPeriod> mSignalPeriods = new ArrayList<>();
@@ -82,12 +89,7 @@ public class TransmissionMapper
      */
     public List<Transmission> mapTransmissions(File basebandFile) throws IOException
     {
-        // Reset state
-        mEnergyAverage = 0f;
-        mPeakEnergy = 0f;
-        mSampleCount = 0;
-        mSignalStartSample = null;
-        mSignalPeriods.clear();
+        resetState();
 
         try(ComplexWaveSource source = new ComplexWaveSource(basebandFile, false))
         {
@@ -147,49 +149,114 @@ public class TransmissionMapper
                 mPeakEnergy *= PEAK_DECAY;
             }
 
+            if(mNoiseFloorSampleCount < noiseFloorLearningSamples())
+            {
+                mNoiseFloorSum += mEnergyAverage;
+                mNoiseFloorSampleCount++;
+                mNoiseFloor = (float)(mNoiseFloorSum / mNoiseFloorSampleCount);
+                mSampleCount++;
+                continue;
+            }
+
             float silenceThreshold = mPeakEnergy * ENERGY_SILENCE_RATIO;
-            boolean isSignal = mPeakEnergy > 0 && mEnergyAverage >= silenceThreshold;
+            boolean aboveNoiseFloor = mEnergyAverage >= Math.max(mNoiseFloor * SIGNAL_RISE_RATIO, Float.MIN_NORMAL);
+            boolean isSignal = mSignalStartSample != null ?
+                    mEnergyAverage >= silenceThreshold : hasSustainedSignalRise(aboveNoiseFloor);
 
             if(isSignal)
             {
                 if(mSignalStartSample == null)
                 {
-                    // Start of new signal period
-                    mSignalStartSample = mSampleCount;
-                    mPeriodPeakEnergy = 0f;
-                    mPeriodSumEnergy = 0;
-                    mPeriodSampleCount = 0;
-                    mPreambleSumEnergy = 0;
-                    mPreambleSampleCount = 0;
-                    mVarianceSumSquares = 0;
+                    startSignalPeriod(mSignalRiseStartSample);
                 }
-                mPeriodPeakEnergy = Math.max(mPeriodPeakEnergy, mEnergyAverage);
-                mPeriodSumEnergy += mEnergyAverage;
-                mPeriodSampleCount++;
-
-                // Track preamble energy (first 100ms)
-                long elapsedMs = samplesToMs(mSampleCount - mSignalStartSample);
-                if(elapsedMs < PREAMBLE_MS)
-                {
-                    mPreambleSumEnergy += mEnergyAverage;
-                    mPreambleSampleCount++;
-                }
-
-                // Welford's online variance algorithm
-                double delta = mEnergyAverage - (mPeriodSumEnergy / mPeriodSampleCount);
-                mVarianceSumSquares += delta * delta;
+                addSignalEnergy(mEnergyAverage);
             }
-            else
+            else if(mSignalStartSample != null)
             {
-                if(mSignalStartSample != null)
-                {
-                    // End of signal period
-                    closeSignalPeriod(mSampleCount, true);
-                }
+                closeSignalPeriod(mSampleCount, true);
+            }
+            else if(mSignalRiseStartSample < 0)
+            {
+                // Continue adapting to idle receiver noise without allowing it to open a transmission.
+                mNoiseFloor += (mEnergyAverage - mNoiseFloor) * ENERGY_EMA_FACTOR;
             }
 
             mSampleCount++;
         }
+    }
+
+    private void resetState()
+    {
+        mEnergyAverage = 0f;
+        mPeakEnergy = 0f;
+        mSampleCount = 0;
+        mNoiseFloorSum = 0;
+        mNoiseFloorSampleCount = 0;
+        mNoiseFloor = 0;
+        mSignalRiseStartSample = -1;
+        mSignalStartSample = null;
+        mSignalPeriods.clear();
+    }
+
+    private long noiseFloorLearningSamples()
+    {
+        return Math.max(1, (long)(mSampleRate * NOISE_FLOOR_LEARNING_MS / 1000.0));
+    }
+
+    private boolean hasSustainedSignalRise(boolean aboveNoiseFloor)
+    {
+        if(!aboveNoiseFloor)
+        {
+            mSignalRiseStartSample = -1;
+            return false;
+        }
+
+        if(mSignalRiseStartSample < 0)
+        {
+            mSignalRiseStartSample = mSampleCount;
+        }
+
+        long requiredSamples = Math.max(1, (long)(mSampleRate * SUSTAINED_SIGNAL_RISE_MS / 1000.0));
+        return mSampleCount - mSignalRiseStartSample + 1 >= requiredSamples;
+    }
+
+    private void startSignalPeriod(long startSample)
+    {
+        mSignalStartSample = startSample;
+        mSignalRiseStartSample = -1;
+        mPeriodPeakEnergy = 0f;
+        mPeriodSumEnergy = 0;
+        mPeriodSampleCount = 0;
+        mPreambleSumEnergy = 0;
+        mPreambleSampleCount = 0;
+        mPeriodVariance.reset();
+    }
+
+    private void addSignalEnergy(float energy)
+    {
+        mPeriodPeakEnergy = Math.max(mPeriodPeakEnergy, energy);
+        mPeriodSumEnergy += energy;
+        mPeriodSampleCount++;
+        mPeriodVariance.add(energy);
+
+        long elapsedMs = samplesToMs(mSampleCount - mSignalStartSample);
+        if(elapsedMs < PREAMBLE_MS)
+        {
+            mPreambleSumEnergy += energy;
+            mPreambleSampleCount++;
+        }
+    }
+
+    List<Transmission> mapSamplesForTest(ComplexSamples samples, double sampleRate)
+    {
+        resetState();
+        mSampleRate = sampleRate;
+        processSamples(samples);
+        if(mSignalStartSample != null)
+        {
+            closeSignalPeriod(mSampleCount, false);
+        }
+        return convertToTransmissions();
     }
 
     /**
@@ -203,10 +270,11 @@ public class TransmissionMapper
         long endMs = samplesToMs(endSample);
         float avgEnergy = mPeriodSampleCount > 0 ? (float)(mPeriodSumEnergy / mPeriodSampleCount) : 0;
         float preambleEnergy = mPreambleSampleCount > 0 ? (float)(mPreambleSumEnergy / mPreambleSampleCount) : avgEnergy;
-        float variance = mPeriodSampleCount > 1 ? (float)Math.sqrt(mVarianceSumSquares / mPeriodSampleCount) : 0;
+        float variance = (float)mPeriodVariance.populationStandardDeviation();
 
         mSignalPeriods.add(new SignalPeriod(startMs, endMs, mPeriodPeakEnergy, avgEnergy, preambleEnergy, variance, isComplete));
         mSignalStartSample = null;
+        mSignalRiseStartSample = -1;
     }
 
     /**
@@ -302,6 +370,34 @@ public class TransmissionMapper
     public long getTotalDurationMs()
     {
         return samplesToMs(mSampleCount);
+    }
+
+    static class RunningVariance
+    {
+        private long mCount;
+        private double mMean;
+        private double mM2;
+
+        void add(double value)
+        {
+            mCount++;
+            double delta = value - mMean;
+            mMean += delta / mCount;
+            double deltaFromNewMean = value - mMean;
+            mM2 += delta * deltaFromNewMean;
+        }
+
+        double populationStandardDeviation()
+        {
+            return mCount > 1 ? Math.sqrt(mM2 / mCount) : 0;
+        }
+
+        void reset()
+        {
+            mCount = 0;
+            mMean = 0;
+            mM2 = 0;
+        }
     }
 
     /**

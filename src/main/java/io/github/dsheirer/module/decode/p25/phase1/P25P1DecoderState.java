@@ -972,6 +972,11 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         return ENCRYPTION_CONFIRMATION_THRESHOLD;
     }
 
+    State getCallState()
+    {
+        return mEncryptedCall ? State.ENCRYPTED : State.CALL;
+    }
+
     private void resetEncryptionConfirmation()
     {
         mConsecutiveEncryptedLDU2 = 0;
@@ -1039,7 +1044,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             // so audio flows. The IMBE voice data is independent of link control metadata.
             if(!validLDUProcessed && message.isValid())
             {
-                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
+                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, getCallState()));
                 validLDUProcessed = true;
             }
         }
@@ -1085,7 +1090,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             if(mSignalEnergyProvider.isSignalPresent())
             {
                 // Broadcast continuation event to keep the call state alive
-                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
+                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, getCallState()));
                 mHoldoverActive = true;
             }
         }
@@ -1114,7 +1119,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             if(timeSinceLastValidLDU <= mHoldoverMs)
             {
                 // Broadcast continuation event to keep the call state alive during sync loss
-                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
+                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, getCallState()));
                 mHoldoverActive = true;
             }
         }
@@ -2548,7 +2553,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 {
                     if(mHoldoverMs > 0 && mLastValidLDUTimestamp == lastValidLDUTimestamp)
                     {
-                        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
+                        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, getCallState()));
                         mHoldoverActive = true;
                     }
                 }
