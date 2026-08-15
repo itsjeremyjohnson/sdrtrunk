@@ -521,6 +521,13 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				{
 					setBiasT(config.isBiasT());
 				}
+				if(deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_RF_PORT_SELECT) &&
+					deviceInfo.getRfPortCount() > 0)
+				{
+					int rfPort = normalizeRfPort(config.getRfPort(), deviceInfo.getRfPortCount());
+					setRfPort(rfPort);
+					config.setRfPort(rfPort);
+				}
 
 				int gainMode = selectSupportedGainMode(config.getGainMode(),
 					supportsGainMode(GAIN_MODE_LINEARITY), supportsGainMode(GAIN_MODE_SENSITIVITY),
@@ -738,6 +745,11 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_AGC));
 	}
 
+	static int normalizeRfPort(int rfPort, int rfPortCount)
+	{
+		return Math.max(0, Math.min(Math.max(0, rfPortCount - 1), rfPort));
+	}
+
 	static int selectSupportedGainMode(int requestedMode, boolean supportsLinearity, boolean supportsSensitivity,
 		boolean supportsCustom)
 	{
@@ -789,7 +801,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		{
 			defaultValue = gainInfo[HydraSdrNative.GAIN_INFO_DEFAULT];
 		}
-		return normalizeGainValue(value > 0 ? value : defaultValue, gainInfo);
+		return normalizeGainValue(value >= 0 ? value : defaultValue, gainInfo);
 	}
 
 	static int[] getSupportedPresetAgcTypes(HydraSdrDeviceInfo deviceInfo)
@@ -953,6 +965,24 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		if(result != HydraSdrNative.SUCCESS)
 		{
 			throw new SourceException("Failed to set Bias-T: " + HydraSdrNative.errorName(result));
+		}
+	}
+
+	/**
+	 * Selects the active RF input port.
+	 */
+	public synchronized void setRfPort(int rfPort) throws SourceException
+	{
+		if(mDeviceHandle == 0)
+		{
+			throw new SourceException("Device not open");
+		}
+
+		int result = HydraSdrNative.setRfPort(mDeviceHandle, rfPort);
+		if(result != HydraSdrNative.SUCCESS)
+		{
+			throw new SourceException("Failed to select RF port " + rfPort + ": " +
+				HydraSdrNative.errorName(result));
 		}
 	}
 

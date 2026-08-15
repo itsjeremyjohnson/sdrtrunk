@@ -72,6 +72,23 @@ public class HydraSdrTunerConfigurationTest
     }
 
     @Test
+    void persistsZeroPresetGainsAndRfPort() throws Exception
+    {
+        HydraSdrTunerConfiguration configuration = mMapper.readValue(
+            "{\"type\":\"hydraSdrTunerConfiguration\",\"linearityGain\":0," +
+                "\"sensitivityGain\":0,\"rfPort\":2}", HydraSdrTunerConfiguration.class);
+
+        assertEquals(0, configuration.getLinearityGain());
+        assertEquals(0, configuration.getSensitivityGain());
+        assertEquals(2, configuration.getRfPort());
+
+        String serialized = mMapper.writeValueAsString(configuration);
+        assertTrue(serialized.contains("\"linearityGain\":0"));
+        assertTrue(serialized.contains("\"sensitivityGain\":0"));
+        assertTrue(serialized.contains("\"rfPort\":2"));
+    }
+
+    @Test
     void migratesLegacyCustomGainAndDoesNotReserializeLegacyFields() throws Exception
     {
         HydraSdrTunerConfiguration configuration = mMapper.readValue(

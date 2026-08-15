@@ -96,6 +96,15 @@ class HydraSdrTunerControllerTest
     }
 
     @Test
+    void clampsRfPortToAdvertisedCount()
+    {
+        assertEquals(0, HydraSdrTunerController.normalizeRfPort(-1, 3));
+        assertEquals(1, HydraSdrTunerController.normalizeRfPort(1, 3));
+        assertEquals(2, HydraSdrTunerController.normalizeRfPort(4, 3));
+        assertEquals(0, HydraSdrTunerController.normalizeRfPort(1, 0));
+    }
+
+    @Test
     void recognizesRfAndFilterOnlyCustomGainCapabilities()
     {
         HydraSdrDeviceInfo deviceInfo = new HydraSdrDeviceInfo();
@@ -131,10 +140,14 @@ class HydraSdrTunerControllerTest
     void usesAdvertisedPresetDefaultBeforeNormalization()
     {
         int[] gainInfo = {0, 1, 21, 4, 9, 0};
+        int[] zeroBasedGainInfo = {0, 0, 20, 1, 8, 0};
 
-        assertEquals(9, HydraSdrTunerController.normalizePresetGain(0, 14, gainInfo));
+        assertEquals(0, HydraSdrTunerController.normalizePresetGain(0, 14, zeroBasedGainInfo));
+        assertEquals(1, HydraSdrTunerController.normalizePresetGain(0, 14, gainInfo));
+        assertEquals(9, HydraSdrTunerController.normalizePresetGain(-1, 14, gainInfo));
         assertEquals(13, HydraSdrTunerController.normalizePresetGain(12, 14, gainInfo));
-        assertEquals(14, HydraSdrTunerController.normalizePresetGain(0, 14, null));
+        assertEquals(0, HydraSdrTunerController.normalizePresetGain(0, 14, null));
+        assertEquals(14, HydraSdrTunerController.normalizePresetGain(-1, 14, null));
     }
 
     @Test

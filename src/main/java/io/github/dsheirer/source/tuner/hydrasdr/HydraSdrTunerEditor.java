@@ -74,6 +74,7 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 	private JCheckBox mMixerAgcCheckBox;
 	private JCheckBox mFilterAgcCheckBox;
 	private JCheckBox mBiasTCheckBox;
+	private JComboBox<Integer> mRfPortCombo;
 
 	public HydraSdrTunerEditor(UserPreferences userPreferences, TunerManager tunerManager,
 		DiscoveredTuner discoveredTuner)
@@ -138,6 +139,7 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		HydraSdrDeviceInfo deviceInfo = hasTuner() ? getTuner().getController().getDeviceInfo() : null;
 		boolean supportsBiasT = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_BIAS_TEE);
 		getBiasTCheckBox().setEnabled(supportsBiasT);
+		updateRfPortControls(deviceInfo);
 
 		if(hasConfiguration())
 		{
@@ -188,6 +190,9 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 
 		add(new JLabel("Sample Rate:"));
 		add(getSampleRateCombo(), "wrap");
+
+		add(new JLabel("RF Port:"));
+		add(getRfPortCombo(), "wrap");
 
 		add(new JLabel());
 		add(getBiasTCheckBox(), "wrap");
@@ -341,6 +346,51 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			});
 		}
 		return mFilterAgcCheckBox;
+	}
+
+	private JComboBox<Integer> getRfPortCombo()
+	{
+		if(mRfPortCombo == null)
+		{
+			mRfPortCombo = new JComboBox<>();
+			mRfPortCombo.setEnabled(false);
+			mRfPortCombo.addActionListener(e ->
+			{
+				if(hasTuner() && !isLoading() && mRfPortCombo.getSelectedItem() instanceof Integer rfPort)
+				{
+					try
+					{
+						getTuner().getController().setRfPort(rfPort);
+						save();
+					}
+					catch(Exception e1)
+					{
+						mLog.error("Error selecting RF port " + rfPort, e1);
+						JOptionPane.showMessageDialog(mRfPortCombo,
+							"Couldn't select RF port " + rfPort);
+					}
+				}
+			});
+		}
+		return mRfPortCombo;
+	}
+
+	private void updateRfPortControls(HydraSdrDeviceInfo deviceInfo)
+	{
+		boolean supported = deviceInfo != null &&
+			deviceInfo.hasCapability(HydraSdrNative.CAP_RF_PORT_SELECT) && deviceInfo.getRfPortCount() > 0;
+		Integer[] ports = new Integer[supported ? deviceInfo.getRfPortCount() : 0];
+		for(int x = 0; x < ports.length; x++)
+		{
+			ports[x] = x;
+		}
+		getRfPortCombo().setModel(new DefaultComboBoxModel<>(ports));
+		getRfPortCombo().setEnabled(supported);
+		if(supported && hasConfiguration())
+		{
+			getRfPortCombo().setSelectedItem(HydraSdrTunerController.normalizeRfPort(
+				getConfiguration().getRfPort(), deviceInfo.getRfPortCount()));
+		}
 	}
 
 	private JCheckBox getBiasTCheckBox()
@@ -892,12 +942,12 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 				else if(mode == 0)
 				{
 					int lin = getConfiguration().getLinearityGain();
-					getMasterGainSlider().setValue(lin > 0 ? lin : 14);
+					getMasterGainSlider().setValue(lin >= 0 ? lin : 14);
 				}
 				else
 				{
 					int sens = getConfiguration().getSensitivityGain();
-					getMasterGainSlider().setValue(sens > 0 ? sens : 10);
+					getMasterGainSlider().setValue(sens >= 0 ? sens : 10);
 				}
 			}
 		}
@@ -1034,6 +1084,10 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 				}
 			}
 			getConfiguration().setBiasT(getBiasTCheckBox().isSelected());
+			if(getRfPortCombo().getSelectedItem() instanceof Integer rfPort)
+			{
+				getConfiguration().setRfPort(rfPort);
+			}
 			saveConfiguration();
 		}
 	}

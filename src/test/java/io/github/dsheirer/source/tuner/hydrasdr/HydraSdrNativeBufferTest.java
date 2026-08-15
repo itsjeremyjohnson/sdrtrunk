@@ -22,6 +22,7 @@ package io.github.dsheirer.source.tuner.hydrasdr;
 import java.util.List;
 import org.junit.jupiter.api.Test;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -76,6 +77,23 @@ public class HydraSdrNativeBufferTest
         assertEquals(1, buffers.size());
         assertEquals(256, buffers.getFirst().sampleCount());
         assertEquals(1_000, buffers.getFirst().getTimestamp());
+    }
+
+    @Test
+    void splitsLargeCallbackByOffsetAndRetainsFinalRemainder()
+    {
+        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000, 4);
+        float[] samples = {0, 1, 2, 3, 4, 5, 6, 7, 8, 9};
+
+        List<HydraSdrNativeBuffer> buffers = factory.get(samples, samples, samples.length, 1_000);
+
+        assertEquals(2, buffers.size());
+        assertArrayEquals(new float[] {0, 1, 2, 3}, buffers.get(0).iterator().next().i());
+        assertArrayEquals(new float[] {4, 5, 6, 7}, buffers.get(1).iterator().next().i());
+
+        List<HydraSdrNativeBuffer> remainder = factory.get(new float[] {10, 11}, new float[] {10, 11}, 2, 1_010);
+        assertEquals(1, remainder.size());
+        assertArrayEquals(new float[] {8, 9, 10, 11}, remainder.getFirst().iterator().next().i());
     }
 
     @Test

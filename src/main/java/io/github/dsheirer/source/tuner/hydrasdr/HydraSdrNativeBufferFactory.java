@@ -127,13 +127,14 @@ public class HydraSdrNativeBufferFactory
 		}
 
 		List<HydraSdrNativeBuffer> buffers = new ArrayList<>();
+		int offset = 0;
+		int completeBufferCount = iCombined.length / mBufferLength;
 
-		while(iCombined.length >= mBufferLength)
+		for(int x = 0; x < completeBufferCount; x++)
 		{
-			float[] iOpt = Arrays.copyOf(iCombined, mBufferLength);
-			float[] qOpt = Arrays.copyOf(qCombined, mBufferLength);
-			iCombined = Arrays.copyOfRange(iCombined, mBufferLength, iCombined.length);
-			qCombined = Arrays.copyOfRange(qCombined, mBufferLength, qCombined.length);
+			float[] iOpt = Arrays.copyOfRange(iCombined, offset, offset + mBufferLength);
+			float[] qOpt = Arrays.copyOfRange(qCombined, offset, offset + mBufferLength);
+			offset += mBufferLength;
 
 			buffers.add(new HydraSdrNativeBuffer(iOpt, qOpt,
 				mResidualTimestamp, mSamplesPerMillisecond));
@@ -146,8 +147,8 @@ public class HydraSdrNativeBufferFactory
 			mFractionalMsAccumulator -= whole;
 		}
 
-		mIResidual = iCombined;
-		mQResidual = qCombined;
+		mIResidual = Arrays.copyOfRange(iCombined, offset, iCombined.length);
+		mQResidual = Arrays.copyOfRange(qCombined, offset, qCombined.length);
 
 		return buffers;
 	}

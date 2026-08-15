@@ -39,13 +39,14 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 	private int mMixerGain = HydraSdrTunerController.MIXER_GAIN_DEFAULT;
 	private int mFilterGain = 0;
 	private int mVgaGain = HydraSdrTunerController.VGA_GAIN_DEFAULT;
-	private int mLinearityGain = 14;
-	private int mSensitivityGain = 0;
+	private int mLinearityGain = -1;
+	private int mSensitivityGain = -1;
 	private boolean mLnaAgc = false;
 	private boolean mRfAgc = false;
 	private boolean mMixerAgc = false;
 	private boolean mFilterAgc = false;
 	private boolean mBiasT = false;
+	private int mRfPort = 0;
 	private int mGainMode = 0; /* 0=linearity, 1=sensitivity, 2=custom */
 
 	/**
@@ -266,6 +267,17 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 	public void setBiasT(boolean enabled)
 	{
 		mBiasT = enabled;
+	}
+
+	@JacksonXmlProperty(isAttribute = true, localName = "rf_port")
+	public int getRfPort()
+	{
+		return mRfPort;
+	}
+
+	public void setRfPort(int rfPort)
+	{
+		mRfPort = rfPort;
 	}
 
 	@JacksonXmlProperty(isAttribute = true, localName = "gain_mode")
