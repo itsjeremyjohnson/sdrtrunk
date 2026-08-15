@@ -52,6 +52,18 @@ class HydraSdrTunerControllerTest
     }
 
     @Test
+    void unpluggedDeviceCanBeAssignedAtNewUsbLocation()
+    {
+        long[] serials = {SERIAL_1, SERIAL_2};
+        assertEquals(SERIAL_1, HydraSdrTunerController.assignSerialForUsbPort(1, "2", serials));
+        assertEquals(SERIAL_2, HydraSdrTunerController.assignSerialForUsbPort(1, "3", serials));
+
+        HydraSdrTunerController.removeDeviceAssignment(1, "2");
+
+        assertEquals(SERIAL_1, HydraSdrTunerController.assignSerialForUsbPort(2, "5", serials));
+    }
+
+    @Test
     void resetAllowsFreshEnumerationOrder()
     {
         long[] serials = {SERIAL_1, SERIAL_2};

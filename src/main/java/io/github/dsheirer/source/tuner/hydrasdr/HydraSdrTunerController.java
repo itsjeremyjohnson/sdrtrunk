@@ -668,7 +668,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		int result = HydraSdrNative.setGain(mDeviceHandle, gainType, value);
 		if(result != HydraSdrNative.SUCCESS)
 		{
-			mLog.warn("Failed to set gain type " + gainType + " to " + value + ": " +
+			throw new SourceException("Failed to set gain type " + gainType + " to " + value + ": " +
 				HydraSdrNative.errorName(result));
 		}
 	}
@@ -859,6 +859,14 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 
 		mLog.warn("More HydraSDR USB devices discovered than native library reports");
 		return 0;
+	}
+
+	/**
+	 * Removes the serial assignment for a disconnected USB location.
+	 */
+	public static synchronized void removeDeviceAssignment(int bus, String portAddress)
+	{
+		sDeviceAssignments.remove(bus + ":" + portAddress);
 	}
 
 	/**

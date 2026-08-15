@@ -37,6 +37,7 @@ import io.github.dsheirer.source.tuner.channel.TunerChannel;
 import io.github.dsheirer.source.tuner.channel.TunerChannelSource;
 import io.github.dsheirer.source.tuner.configuration.TunerConfiguration;
 import io.github.dsheirer.source.tuner.configuration.TunerConfigurationManager;
+import io.github.dsheirer.source.tuner.hydrasdr.HydraSdrTunerController;
 import io.github.dsheirer.source.tuner.recording.RecordingTunerConfiguration;
 import io.github.dsheirer.source.tuner.sdrplay.DiscoveredRspTuner;
 import io.github.dsheirer.source.tuner.sdrplay.api.SDRPlayException;
@@ -759,6 +760,12 @@ public class TunerManager implements IDiscoveredTunerStatusListener
                         break;
                     case LibUsb.HOTPLUG_EVENT_DEVICE_LEFT:
                         DiscoveredTuner removed = removeUsbTuner(bus, portAddress);
+
+                        if(removed instanceof DiscoveredUSBTuner usbTuner &&
+                            usbTuner.getTunerClass() == TunerClass.HYDRASDR)
+                        {
+                            HydraSdrTunerController.removeDeviceAssignment(bus, portAddress);
+                        }
 
                         if(removed != null)
                         {

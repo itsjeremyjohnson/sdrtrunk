@@ -376,7 +376,7 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs) {
     rt.dependsOn 'buildHydraSdrJni'
 
     //Copy HydraSDR native JNI libraries into runtime image (if available from local build)
-    rt.doLast {
+    rt.doFirst {
         def nativeDir = hydraSdrJniDir
         if(nativeDir.exists()) {
             file("${buildDir}/image").eachDir { imageDir ->
