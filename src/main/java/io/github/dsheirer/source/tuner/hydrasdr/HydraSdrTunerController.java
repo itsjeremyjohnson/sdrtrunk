@@ -491,7 +491,10 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 
 			try
 			{
-				setBiasT(config.isBiasT());
+				if(hasCapability(HydraSdrNative.CAP_BIAS_TEE))
+				{
+					setBiasT(config.isBiasT());
+				}
 
 				int gainMode = config.getGainMode();
 

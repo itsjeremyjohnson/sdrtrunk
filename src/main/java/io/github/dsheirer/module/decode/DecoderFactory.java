@@ -925,6 +925,11 @@ public class DecoderFactory
         }
         int eventPort = userPreferences.getNetworkStreamPreference().getEventPort();
         int rawPort = userPreferences.getNetworkStreamPreference().getRawPort();
+        if(eventPort == rawPort)
+        {
+            mLog.error("Network streaming is disabled because event and raw stream ports are both set to {}", eventPort);
+            return null;
+        }
         return NetworkStreamManager.getInstance(eventPort, rawPort);
     }
 

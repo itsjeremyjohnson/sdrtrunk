@@ -1486,8 +1486,15 @@ public class P25P2DecoderState extends TimeslotDecoderState implements Identifie
                             gps.getLocation().toString())
                     .identifiers(collection)
                     .build();
-            broadcast(decodeEvent);
-            mTrafficChannelManager.broadcast(decodeEvent);
+            if(mChannel.isTrafficChannel())
+            {
+                //Traffic-channel GPS events are rebroadcast on the parent aggregate chain.
+                mTrafficChannelManager.broadcast(decodeEvent);
+            }
+            else
+            {
+                broadcast(decodeEvent);
+            }
             mTrafficChannelManager.processP2TrafficCurrentUser(getCurrentFrequency(), getTimeslot(), gps.getLocation(),
                     message.getTimestamp());
         }

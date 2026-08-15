@@ -52,6 +52,11 @@ public class NetworkStreamManager
      */
     public static synchronized NetworkStreamManager getInstance(int eventPort, int rawPort)
     {
+        if(eventPort == rawPort)
+        {
+            throw new IllegalArgumentException("Event and raw stream ports must be distinct");
+        }
+
         if(sInstance == null)
         {
             NetworkStreamManager mgr = new NetworkStreamManager();

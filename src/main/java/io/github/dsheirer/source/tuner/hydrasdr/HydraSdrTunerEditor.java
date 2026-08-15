@@ -129,7 +129,8 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		getFrequencyPanel().updateControls();
 		getSampleRateCombo().setEnabled(hasTuner() && !getTuner().getTunerController().isLockedSampleRate());
 		getTunerInfoButton().setEnabled(hasTuner());
-		getBiasTCheckBox().setEnabled(hasTuner());
+		getBiasTCheckBox().setEnabled(hasTuner() &&
+			getTuner().getController().hasCapability(HydraSdrNative.CAP_BIAS_TEE));
 
 		if(hasTuner() && hasConfiguration())
 		{

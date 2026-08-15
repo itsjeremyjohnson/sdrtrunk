@@ -80,6 +80,24 @@ public class TalkerAliasLoggerTest
     }
 
     @Test
+    void keepsBootstrappedAliasesAsSharedBaseline(@TempDir Path logDirectory) throws IOException
+    {
+        Path aliasFile = logDirectory.resolve("baseline-system_talker_aliases.csv");
+        Files.writeString(aliasFile, "RADIO_ID,TALKER_ALIAS\n10,Original\n");
+        TalkerAliasLogger firstLogger = new TalkerAliasLogger(logDirectory, "baseline-system");
+        TalkerAliasLogger secondLogger = new TalkerAliasLogger(logDirectory, "baseline-system");
+        firstLogger.bootstrap(new TalkerAliasManager());
+        secondLogger.bootstrap(new TalkerAliasManager());
+
+        firstLogger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Updated")));
+        secondLogger.onAliasUpdate(Map.of(
+            10, P25TalkerAliasIdentifier.create("Original"),
+            20, P25TalkerAliasIdentifier.create("New")));
+
+        assertEquals("RADIO_ID,TALKER_ALIAS\n10,Updated\n20,New\n", Files.readString(aliasFile));
+    }
+
+    @Test
     void separatesAliasFilesByProtocol(@TempDir Path logDirectory) throws IOException
     {
         TalkerAliasLogger p25Logger = new TalkerAliasLogger(logDirectory, "shared-name", Protocol.APCO25);

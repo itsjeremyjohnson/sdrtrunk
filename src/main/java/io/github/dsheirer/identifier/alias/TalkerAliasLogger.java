@@ -32,6 +32,7 @@ import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Function;
 import org.apache.commons.csv.CSVFormat;
@@ -100,7 +101,7 @@ public class TalkerAliasLogger
      */
     public void bootstrap(TalkerAliasManager manager)
     {
-        Map<Integer, String> loaded = mFileState.bootstrap(mAliasFile, mSourceKey);
+        Map<Integer, String> loaded = mFileState.bootstrap(mAliasFile);
         Map<Integer, TalkerAliasIdentifier> identifiers = new HashMap<>();
         loaded.forEach((radioId, alias) -> identifiers.put(radioId, mIdentifierFactory.apply(alias)));
 
@@ -116,16 +117,15 @@ public class TalkerAliasLogger
      */
     private static class AliasFileState
     {
+        private final Map<Integer, String> mBaseline = new HashMap<>();
         private final Map<Object, Map<Integer, String>> mSnapshots = new LinkedHashMap<>();
         private boolean mLoaded;
         private String mLastWrittenContent;
 
-        public synchronized Map<Integer, String> bootstrap(Path aliasFile, Object sourceKey)
+        public synchronized Map<Integer, String> bootstrap(Path aliasFile)
         {
             ensureLoaded(aliasFile);
-            Map<Integer, String> merged = getMergedAliases();
-            mSnapshots.put(sourceKey, new HashMap<>(merged));
-            return merged;
+            return getMergedAliases();
         }
 
         public synchronized void update(Path aliasFile, Object sourceKey,
@@ -133,7 +133,14 @@ public class TalkerAliasLogger
         {
             ensureLoaded(aliasFile);
             Map<Integer, String> snapshot = new HashMap<>();
-            aliases.forEach((radioId, alias) -> snapshot.put(radioId, alias.getValue()));
+            aliases.forEach((radioId, alias) ->
+            {
+                String aliasValue = alias.getValue();
+                if(!Objects.equals(aliasValue, mBaseline.get(radioId)))
+                {
+                    snapshot.put(radioId, aliasValue);
+                }
+            });
 
             // Reinsert so the latest manager update wins if two managers report the same radio.
             mSnapshots.remove(sourceKey);
@@ -148,17 +155,13 @@ public class TalkerAliasLogger
                 return;
             }
 
-            Map<Integer, String> loaded = read(aliasFile);
-            if(!loaded.isEmpty())
-            {
-                mSnapshots.put(new Object(), loaded);
-            }
+            mBaseline.putAll(read(aliasFile));
             mLoaded = true;
         }
 
         private Map<Integer, String> getMergedAliases()
         {
-            Map<Integer, String> merged = new HashMap<>();
+            Map<Integer, String> merged = new HashMap<>(mBaseline);
             mSnapshots.values().forEach(merged::putAll);
             return merged;
         }

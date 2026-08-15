@@ -29,11 +29,15 @@ import io.github.dsheirer.message.IMessage;
 import io.github.dsheirer.message.IMessageListener;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.decode.p25.phase1.ImbeStreamManager;
+import io.github.dsheirer.module.decode.p25.phase1.message.hdu.HDUMessage;
+import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU1Message;
+import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDU2Message;
 import io.github.dsheirer.module.decode.p25.phase1.message.ldu.LDUMessage;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.util.JsonUtils;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.List;
 import java.util.UUID;
@@ -42,8 +46,8 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
 /**
- * Module that intercepts P25 Phase 1 LDU voice messages and streams each raw
- * IMBE frame to connected TCP clients via ImbeStreamManager.
+ * Module that intercepts unencrypted P25 Phase 1 LDU voice messages and streams each raw
+ * IMBE frame to connected TCP clients via ImbeStreamManager. Encrypted voice frames are suppressed.
  *
  * Three NDJSON message types are emitted per call:
  *
@@ -75,6 +79,9 @@ public class ImbeAudioStreamModule extends Module
     private volatile String  mCallId      = null;
     private final AtomicInteger mFrameSeq = new AtomicInteger(0);
     private final AtomicInteger mFrameCount = new AtomicInteger(0);
+    private boolean mEncryptedCall;
+    private boolean mEncryptedCallStateEstablished;
+    private final List<LDUMessage> mCachedLduMessages = new ArrayList<>();
 
     // Squelch listener — inner class so the processing chain can wire it up
     private final SquelchStateListener mSquelchStateListener = new SquelchStateListener();
@@ -192,6 +199,9 @@ public class ImbeAudioStreamModule extends Module
         }
 
         mIdentifiers.clear();
+        mEncryptedCall = false;
+        mEncryptedCallStateEstablished = false;
+        mCachedLduMessages.clear();
     }
 
     /**
@@ -237,9 +247,43 @@ public class ImbeAudioStreamModule extends Module
         @Override
         public void receive(IMessage message)
         {
-            if (message instanceof LDUMessage ldu)
+            if(message instanceof HDUMessage hdu && hdu.isValid())
             {
-                processLdu(ldu);
+                mEncryptedCallStateEstablished = true;
+                mEncryptedCall = hdu.getHeaderData().isEncryptedAudio();
+            }
+            else if(mEncryptedCallStateEstablished && message instanceof LDUMessage ldu)
+            {
+                if(!mEncryptedCall)
+                {
+                    processLdu(ldu);
+                }
+            }
+            else if(message instanceof LDU1Message ldu1)
+            {
+                mCachedLduMessages.add(ldu1);
+            }
+            else if(message instanceof LDU2Message ldu2)
+            {
+                if(ldu2.getEncryptionSyncParameters().isValid())
+                {
+                    mEncryptedCallStateEstablished = true;
+                    mEncryptedCall = ldu2.getEncryptionSyncParameters().isEncryptedAudio();
+                }
+
+                if(mEncryptedCallStateEstablished)
+                {
+                    if(!mEncryptedCall)
+                    {
+                        mCachedLduMessages.forEach(ImbeAudioStreamModule.this::processLdu);
+                        processLdu(ldu2);
+                    }
+                    mCachedLduMessages.clear();
+                }
+                else
+                {
+                    mCachedLduMessages.add(ldu2);
+                }
             }
         }
     }

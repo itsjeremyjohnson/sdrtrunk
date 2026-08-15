@@ -30,7 +30,11 @@ import io.github.dsheirer.util.StringUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
+import java.util.HexFormat;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.ArrayList;
 import java.util.List;
@@ -101,16 +105,32 @@ public class EventLogManager
         {
             systemName = channel.getName();
         }
-        String safeSystemName = StringUtils.replaceIllegalCharacters(systemName.trim());
+        String systemIdentity = systemName.trim();
+        String filePrefix = getSystemLoggerFilePrefix(systemIdentity);
         Path eventLogDirectory = mUserPreferences.getDirectoryPreference().getDirectoryEventLog()
             .toAbsolutePath().normalize();
-        SystemLoggerKey key = new SystemLoggerKey(eventLogDirectory, safeSystemName);
+        SystemLoggerKey key = new SystemLoggerKey(eventLogDirectory, systemIdentity);
         RollingSystemEventLogger logger = mSystemLoggers.computeIfAbsent(key,
-            ignored -> new RollingSystemEventLogger(eventLogDirectory, safeSystemName));
+            ignored -> new RollingSystemEventLogger(eventLogDirectory, filePrefix));
         return new SystemEventLogModule(logger, mAliasModel);
     }
 
-    private record SystemLoggerKey(Path directory, String systemName)
+    static String getSystemLoggerFilePrefix(String systemIdentity)
+    {
+        try
+        {
+            byte[] digest = MessageDigest.getInstance("SHA-256")
+                .digest(systemIdentity.getBytes(StandardCharsets.UTF_8));
+            String identitySuffix = HexFormat.of().formatHex(digest, 0, 16);
+            return StringUtils.replaceIllegalCharacters(systemIdentity) + "_" + identitySuffix;
+        }
+        catch(NoSuchAlgorithmException e)
+        {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
+    }
+
+    private record SystemLoggerKey(Path directory, String systemIdentity)
     {
     }
 
