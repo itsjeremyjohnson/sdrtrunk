@@ -124,17 +124,23 @@ run_decode() {
     echo ""
     echo "━━━ Building $label ━━━"
 
-    # Build test classes
-    (cd "$src_dir" && ./gradlew compileTestJava 2>&1 | tail -5)
-
     echo "━━━ Running $label decode ━━━"
 
-    local gradle_args="-Psamples=$SAMPLES_DIR -Pplaylist=$PLAYLIST -Poutput=$out_dir -Pmode=$MODE"
+    local gradle_args=("-Psamples=$SAMPLES_DIR" "-Pplaylist=$PLAYLIST" "-Poutput=$out_dir" "-Pmode=$MODE")
     if [[ -n "$JMBE_JAR" ]]; then
-        gradle_args="$gradle_args -Pjmbe=$JMBE_JAR"
+        gradle_args+=("-Pjmbe=$JMBE_JAR")
     fi
 
-    (cd "$src_dir" && ./gradlew runDecodeScore $gradle_args 2>&1)
+    if (cd "$src_dir" && ./gradlew tasks --all --quiet | grep -q '^runDecodeScore '); then
+        (cd "$src_dir" && ./gradlew runDecodeScore "${gradle_args[@]}" 2>&1)
+    else
+        # Historical revisions predate the scoring task. Compile their production classes, then run the
+        # current test harness with those classes first on the runtime classpath.
+        (cd "$src_dir" && ./gradlew classes 2>&1)
+        (cd "$TEST_DIR" && ./gradlew runDecodeScore "${gradle_args[@]}" \
+            "-PdecodeMainClasses=$src_dir/build/classes/java/main" \
+            "-PdecodeMainResources=$src_dir/build/resources/main" 2>&1)
+    fi
 }
 
 # Run control decode

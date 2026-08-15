@@ -18,6 +18,7 @@
  */
 package io.github.dsheirer.module.decode.p25.phase1;
 
+import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 
 /**
@@ -28,6 +29,7 @@ public class SyncFailureInvestigatorTest
     private static final String SAMPLES_DIR = "/home/kdolan/GitHub/sdrtrunk/_SAMPLES";
 
     @Test
+    @Disabled("Manual integration investigation requiring external baseband samples")
     public void runInvestigation()
     {
         // Find the samples directory

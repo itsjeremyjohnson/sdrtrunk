@@ -79,6 +79,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
     private AtomicBoolean mPlaylistSavePending = new AtomicBoolean();
     private ScheduledFuture<?> mPlaylistSaveFuture;
     private boolean mPlaylistLoading = false;
+    private boolean mPlaylistSaveBlocked = false;
     private List<IAliasListRefreshListener> mAliasListRefreshListeners = new ArrayList<>();
 
     /**
@@ -440,6 +441,12 @@ public class PlaylistManager implements Listener<ChannelEvent>
      */
     private void save()
     {
+        if(mPlaylistSaveBlocked)
+        {
+            mLog.warn("Automatic playlist save blocked because the current playlist could not be loaded");
+            return;
+        }
+
         PlaylistPreference playlistPreference = mUserPreferences.getPlaylistPreference();
 
         PlaylistV2 playlist = new PlaylistV2();
@@ -511,6 +518,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
     {
         PlaylistPreference files = mUserPreferences.getPlaylistPreference();
 
+        mPlaylistSaveBlocked = false;
         PlaylistV2 playlist = null;
         boolean playlistFileExists = false;
         boolean parseError = false;
@@ -565,6 +573,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
             {
                 mLog.error("IO error while reading playlist file - playlist will NOT be overwritten", ioe);
                 parseError = true;
+                mPlaylistSaveBlocked = true;
             }
         }
         else if(Files.exists(files.getLegacyPlaylist()))
@@ -593,6 +602,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
             {
                 mLog.error("IO error while reading legacy playlist file - playlist will NOT be overwritten", ioe);
                 parseError = true;
+                mPlaylistSaveBlocked = true;
             }
         }
         else
@@ -626,7 +636,7 @@ public class PlaylistManager implements Listener<ChannelEvent>
      */
     public void schedulePlaylistSave()
     {
-        if(!mPlaylistLoading)
+        if(!mPlaylistLoading && !mPlaylistSaveBlocked)
         {
             if(mPlaylistSavePending.compareAndSet(false, true))
             {

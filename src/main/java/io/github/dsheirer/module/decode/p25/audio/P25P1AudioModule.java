@@ -49,9 +49,9 @@ public class P25P1AudioModule extends ImbeAudioModule
             Integer.parseInt(System.getProperty("p25.encrypt.confirm", "2"));
     private int mConsecutiveEncryptedLDU2 = 0;
 
-    // Fix C: LDU caching fallback — assume unencrypted if too many LDUs cached without ESP resolution
-    // System property p25.cache.fallback: 0 = disabled (unlimited caching), default = 4
-    private static final int MAX_CACHED_LDU_BEFORE_ASSUME_UNENCRYPTED =
+    // Bound unresolved audio caching without treating cache age as proof that a call is clear.
+    // System property p25.cache.fallback: 0 = unlimited caching, default = 4
+    private static final int MAX_CACHED_LDU_WHILE_ENCRYPTION_UNKNOWN =
             Integer.parseInt(System.getProperty("p25.cache.fallback", "4"));
 
     // Quality gate state
@@ -151,6 +151,7 @@ public class P25P1AudioModule extends ImbeAudioModule
     public void reset()
     {
         getIdentifierCollection().clear();
+        resetCallState();
     }
 
     @Override
@@ -211,26 +212,9 @@ public class P25P1AudioModule extends ImbeAudioModule
                 }
                 else if(message instanceof LDU1Message ldu1)
                 {
-                    // Fix C: LDU caching fallback — if too many LDUs cached without ESP resolution,
-                    // assume unencrypted and flush cache (disabled when MAX is 0)
-                    if(MAX_CACHED_LDU_BEFORE_ASSUME_UNENCRYPTED > 0 &&
-                       mCachedLDUMessages.size() >= MAX_CACHED_LDU_BEFORE_ASSUME_UNENCRYPTED)
-                    {
-                        mEncryptedCallStateEstablished = true;
-                        mEncryptedCall = false;
-                        for(LDUMessage cachedLdu : mCachedLDUMessages)
-                        {
-                            processAudio(cachedLdu);
-                        }
-                        mCachedLDUMessages.clear();
-                        processAudio(ldu1);
-                    }
-                    else
-                    {
-                        //When we receive an LDU1 message without first receiving the HDU message, cache the LDU1 Message
-                        //until we can determine the encrypted call state from the next LDU2 message
-                        mCachedLDUMessages.add(ldu1);
-                    }
+                    // Cache only while waiting for authoritative HDU/LDU2 encryption state. If the bound is reached,
+                    // discard unresolved audio instead of decoding potentially encrypted frames as clear audio.
+                    cacheWhileEncryptionUnknown(ldu1);
                 }
                 else if(message instanceof LDU2Message ldu2)
                 {
@@ -258,22 +242,21 @@ public class P25P1AudioModule extends ImbeAudioModule
                     }
                     else
                     {
-                        // Fix C: Check cache size before adding (disabled when MAX is 0)
-                        mCachedLDUMessages.add(ldu2);
-                        if(MAX_CACHED_LDU_BEFORE_ASSUME_UNENCRYPTED > 0 &&
-                           mCachedLDUMessages.size() >= MAX_CACHED_LDU_BEFORE_ASSUME_UNENCRYPTED)
-                        {
-                            mEncryptedCallStateEstablished = true;
-                            mEncryptedCall = false;
-                            for(LDUMessage cachedLdu : mCachedLDUMessages)
-                            {
-                                processAudio(cachedLdu);
-                            }
-                            mCachedLDUMessages.clear();
-                        }
+                        cacheWhileEncryptionUnknown(ldu2);
                     }
                 }
             }
+        }
+    }
+
+    private void cacheWhileEncryptionUnknown(LDUMessage ldu)
+    {
+        mCachedLDUMessages.add(ldu);
+
+        if(MAX_CACHED_LDU_WHILE_ENCRYPTION_UNKNOWN > 0 &&
+                mCachedLDUMessages.size() >= MAX_CACHED_LDU_WHILE_ENCRYPTION_UNKNOWN)
+        {
+            mCachedLDUMessages.clear();
         }
     }
 
@@ -441,6 +424,19 @@ public class P25P1AudioModule extends ImbeAudioModule
         }
     }
 
+    private void resetCallState()
+    {
+        if(!mIgnoreEncryptionState)
+        {
+            mEncryptedCallStateEstablished = false;
+            mEncryptedCall = false;
+        }
+
+        mConsecutiveEncryptedLDU2 = 0;
+        mCachedLDUMessages.clear();
+        resetFrameValidation();
+    }
+
     /**
      * Resets frame validation state for a new call.
      */
@@ -475,15 +471,7 @@ public class P25P1AudioModule extends ImbeAudioModule
             if(event.getSquelchState() == SquelchState.SQUELCH)
             {
                 closeAudioSegment();
-                // Only reset encryption state if we're not ignoring it
-                if(!mIgnoreEncryptionState)
-                {
-                    mEncryptedCallStateEstablished = false;
-                    mEncryptedCall = false;
-                }
-                mConsecutiveEncryptedLDU2 = 0;
-                mCachedLDUMessages.clear();
-                resetFrameValidation();
+                resetCallState();
             }
         }
     }

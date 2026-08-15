@@ -779,21 +779,27 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         config.setCmaTrackingMu(getCmaTrackingMuSpinner().getValue() != null ? getCmaTrackingMuSpinner().getValue().floatValue() : 0.0f);
         config.setCmaGearShiftMs(getCmaGearShiftMsSpinner().getValue() != null ? getCmaGearShiftMsSpinner().getValue() : 0);
 
+        Modulation selectedModulation;
         if(getC4FMToggleButton().isSelected())
         {
-            config.setModulation(Modulation.C4FM);
+            selectedModulation = Modulation.C4FM;
         }
         else if(getC4FMv2ToggleButton().isSelected())
         {
-            config.setModulation(Modulation.C4FM_V2);
+            selectedModulation = Modulation.C4FM_V2;
         }
         else if(getLSMv2ToggleButton().isSelected())
         {
-            config.setModulation(Modulation.CQPSK_V2);
+            selectedModulation = Modulation.CQPSK_V2;
         }
         else
         {
-            config.setModulation(Modulation.CQPSK);
+            selectedModulation = Modulation.CQPSK;
+        }
+
+        if(selectedModulation != config.getModulation())
+        {
+            config.setModulation(selectedModulation);
         }
 
         getItem().setDecodeConfiguration(config);

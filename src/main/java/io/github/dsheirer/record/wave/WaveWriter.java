@@ -27,8 +27,6 @@ import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.nio.file.StandardOpenOption;
 import java.util.Arrays;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import org.apache.commons.lang3.Validate;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -49,7 +47,6 @@ public class WaveWriter implements AutoCloseable
 
     public static final String DATA_CHUNK_ID = "data";
 
-    private static final Pattern FILENAME_PATTERN = Pattern.compile("(.*_)(\\d+)(\\.tmp)");
     public static final long MAX_WAVE_SIZE = 2l * (long)Integer.MAX_VALUE;
 
     private AudioFormat mAudioFormat;
@@ -404,27 +401,20 @@ public class WaveWriter implements AutoCloseable
     private void updateFileName()
     {
         String filename = mFile.toString();
+        int extensionIndex = filename.lastIndexOf('.');
+        String extension = extensionIndex >= 0 ? filename.substring(extensionIndex) : "";
+        String base = extensionIndex >= 0 ? filename.substring(0, extensionIndex) : filename;
 
-        if(mFileRolloverCounter == 2)
+        if(mFileRolloverCounter > 2)
         {
-            filename = filename.replace(".tmp", "_2.tmp");
-        }
-        else
-        {
-            Matcher m = FILENAME_PATTERN.matcher(filename);
-
-            if(m.find())
+            String previousSuffix = "_" + (mFileRolloverCounter - 1);
+            if(base.endsWith(previousSuffix))
             {
-                StringBuilder sb = new StringBuilder();
-                sb.append(m.group(1));
-                sb.append(mFileRolloverCounter);
-                sb.append(m.group(3));
-
-                filename = sb.toString();
+                base = base.substring(0, base.length() - previousSuffix.length());
             }
         }
 
-        mFile = Paths.get(filename);
+        mFile = Paths.get(base + "_" + mFileRolloverCounter + extension);
     }
 
     /**

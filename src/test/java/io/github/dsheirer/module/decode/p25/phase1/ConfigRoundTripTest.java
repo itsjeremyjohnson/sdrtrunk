@@ -4,7 +4,13 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.xml.JacksonXmlModule;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
+import io.github.dsheirer.controller.channel.Channel;
+import io.github.dsheirer.module.decode.DecoderFactory;
+import io.github.dsheirer.dsp.squelch.CTCSSFrequency;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
+import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.record.RecorderType;
+import io.github.dsheirer.record.config.RecordConfiguration;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -101,6 +107,83 @@ public class ConfigRoundTripTest
         DecodeConfigP25Phase1 p1r = (DecodeConfigP25Phase1)reloaded;
         assertNotNull(p1r.getUnknownProperties());
         assertEquals("hello", p1r.getUnknownProperties().get("futureField1"));
+    }
+
+    @Test
+    void unknownRecorderTypeIsSafelyOmitted() throws Exception
+    {
+        String xml = """
+            <record_configuration>
+                <recorder>FUTURE_RECORDER</recorder>
+                <recorder>BASEBAND</recorder>
+            </record_configuration>
+            """;
+
+        RecordConfiguration config = createMapper().readValue(xml, RecordConfiguration.class);
+        assertEquals(1, config.getRecorders().size());
+        assertEquals(RecorderType.BASEBAND, config.getRecorders().getFirst());
+    }
+
+    @Test
+    void channelCopyPreservesActivityRecordingSettings()
+    {
+        Channel original = new Channel("test");
+        RecordConfiguration recordConfiguration = new RecordConfiguration();
+        recordConfiguration.setActivityTriggeredRecording(true);
+        recordConfiguration.setActivitySquelchThreshold(-55.0f);
+        original.setRecordConfiguration(recordConfiguration);
+
+        RecordConfiguration copy = original.copyOf().getRecordConfiguration();
+        assertTrue(copy.isActivityTriggeredRecording());
+        assertEquals(-55.0f, copy.getActivitySquelchThreshold());
+    }
+
+    @Test
+    void decoderFactoryCopyPreservesNbfmCtcss()
+    {
+        DecodeConfigNBFM original = new DecodeConfigNBFM();
+        original.setCTCSSFrequency(CTCSSFrequency.TONE_114_8);
+
+        DecodeConfigNBFM copy = (DecodeConfigNBFM)DecoderFactory.copy(original);
+        assertEquals(CTCSSFrequency.TONE_114_8, copy.getCTCSSFrequency());
+    }
+
+    @Test
+    void decoderFactoryCopyPreservesP25Settings()
+    {
+        DecodeConfigP25Phase1 original = new DecodeConfigP25Phase1();
+        original.setModulationString("FUTURE_MOD_V3");
+        original.setConfiguredNAC(659);
+        original.setAudioHoldoverMs(750);
+        original.setIgnoreEncryptionState(true);
+        original.setPipelineDiagnostics(true);
+        original.setMaxImbeErrors(3);
+        original.setMaxBchErrors(7);
+        original.setCmaAcquisitionMu(0.003f);
+        original.setCmaTrackingMu(0.0001f);
+        original.setCmaGearShiftMs(250);
+        original.setGardnerBandwidth(0.02f);
+        original.setAfcAlpha(0.004f);
+        original.setAdaptiveThresholds(true);
+        original.setDfeEnabled(true);
+        original.setDfeMu(0.01f);
+
+        DecodeConfigP25Phase1 copy = (DecodeConfigP25Phase1)DecoderFactory.copy(original);
+        assertEquals("FUTURE_MOD_V3", copy.getModulationString());
+        assertEquals(659, copy.getConfiguredNAC());
+        assertEquals(750, copy.getAudioHoldoverMs());
+        assertTrue(copy.isIgnoreEncryptionState());
+        assertTrue(copy.isPipelineDiagnostics());
+        assertEquals(3, copy.getMaxImbeErrors());
+        assertEquals(7, copy.getMaxBchErrors());
+        assertEquals(0.003f, copy.getCmaAcquisitionMu());
+        assertEquals(0.0001f, copy.getCmaTrackingMu());
+        assertEquals(250, copy.getCmaGearShiftMs());
+        assertEquals(0.02f, copy.getGardnerBandwidth());
+        assertEquals(0.004f, copy.getAfcAlpha());
+        assertTrue(copy.isAdaptiveThresholds());
+        assertTrue(copy.isDfeEnabled());
+        assertEquals(0.01f, copy.getDfeMu());
     }
 
     @Test

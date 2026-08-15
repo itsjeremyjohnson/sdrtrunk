@@ -110,9 +110,8 @@ public class P25P1DemodulatorLSMv2
     /**
      * Performs a cold-start reset when a transmission boundary is detected.
      *
-     * Resets PLL (new transmitter may have different carrier offset) and differential state
-     * (previous symbol is invalid after silence). Preserves AGC gain since signal level is
-     * approximately the same on the channel.
+     * Resets PLL, AGC and differential state because a new transmission can have a different
+     * carrier offset and signal level.
      */
     public void coldStartReset()
     {
@@ -122,6 +121,7 @@ public class P25P1DemodulatorLSMv2
 
         // Reset PLL and enable acquisition boost
         mPLL = 0f;
+        mSampleGain = 1f;
         mSymbolsSinceReset = 0;
         mFirstSymbolAfterReset = true;
 

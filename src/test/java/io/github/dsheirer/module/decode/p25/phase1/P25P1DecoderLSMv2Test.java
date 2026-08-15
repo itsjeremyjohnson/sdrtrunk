@@ -28,6 +28,18 @@ class P25P1DecoderLSMv2Test
         assertEquals(1, decoder.getBoundaryResetCount());
     }
 
+    @Test
+    void c4fmIdleNoiseRemainsSilenceUntilEnergyRisesAboveTheLearnedFloor()
+    {
+        P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
+        decoder.detectTransmissionBoundary(samples(3000, 0.01f), samples(3000, 0.0f));
+
+        assertEquals(0, decoder.getBoundaryResetCount());
+
+        decoder.detectTransmissionBoundary(samples(1000, 0.10f), samples(1000, 0.0f));
+        assertEquals(1, decoder.getBoundaryResetCount());
+    }
+
     private float[] samples(int length, float value)
     {
         float[] samples = new float[length];

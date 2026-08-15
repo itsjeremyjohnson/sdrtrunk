@@ -634,7 +634,17 @@ tasks.register('runDerryAudioRegression', JavaExec) {
  */
 tasks.register('runDecodeScore', JavaExec) {
     dependsOn testClasses
-    classpath = sourceSets.test.runtimeClasspath
+    if(project.hasProperty('decodeMainClasses')) {
+        def candidateMainClasses = sourceSets.main.output.classesDirs.files
+        def candidateMainResources = sourceSets.main.output.resourcesDir
+        def harnessClasspath = sourceSets.test.runtimeClasspath.filter { entry ->
+            !candidateMainClasses.contains(entry) && entry != candidateMainResources
+        }
+        classpath = files(project.property('decodeMainClasses'), project.findProperty('decodeMainResources')) +
+                harnessClasspath
+    } else {
+        classpath = sourceSets.test.runtimeClasspath
+    }
     mainClass = 'io.github.dsheirer.module.decode.p25.phase1.DecodeQualityTest'
     if(os.isWindows()) {
         jvmArgs = jvmArgsWindows

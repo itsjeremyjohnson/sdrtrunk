@@ -7,9 +7,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 **WARNING: The following directories are OFF-LIMITS for any file modifications without explicit user authorization:**
 
 - `/home/kdolan/SDRTrunk/` — User application data (playlists, settings, recordings)
-- Any path outside `/home/kdolan/GitHub/sdrtrunk/`
+- Any path outside the repository/worktree containing this `CLAUDE.md`
 
-Before modifying ANY file outside this repository, Claude MUST:
+Before modifying ANY file outside this repository/worktree, Claude MUST:
 1. Display a clear WARNING message identifying the file path
 2. Explicitly ask for authorization with the exact phrase: "Do you authorize modification of this file outside the project directory?"
 3. Wait for explicit "yes" confirmation before proceeding

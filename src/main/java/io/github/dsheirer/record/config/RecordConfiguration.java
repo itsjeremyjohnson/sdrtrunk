@@ -62,7 +62,9 @@ public class RecordConfiguration extends Configuration
      */
     public void setRecorders(List<RecorderType> recorders)
     {
-        mRecorders = recorders;
+        mRecorders = recorders == null ? new ArrayList<>() : new ArrayList<>(recorders.stream()
+                .filter(recorder -> recorder != null && recorder != RecorderType.UNKNOWN)
+                .toList());
     }
 
     /**

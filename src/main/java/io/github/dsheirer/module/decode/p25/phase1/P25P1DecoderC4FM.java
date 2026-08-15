@@ -80,6 +80,7 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
 
     private static final float ENERGY_EMA_FACTOR = 0.001f;
     private static final float ENERGY_SILENCE_RATIO = 0.10f;
+    private static final float SIGNAL_RISE_RATIO = 4.0f;
 
     private final P25P1DemodulatorC4FM mSymbolProcessor;
     private final P25P1MessageFramer mMessageFramer = new P25P1MessageFramer();
@@ -99,6 +100,10 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     private boolean mInSilence = true;
     private int mSilenceSampleCount = 0;
     private int mSilenceSamplesThreshold = 2500; // ~100ms at 25kHz decimated rate, updated in setSampleRate()
+    private int mNoiseFloorSamplesThreshold = 2500;
+    private float mNoiseFloor;
+    private int mNoiseFloorSampleCount;
+    private int mBoundaryResetCount;
     private String mDiagnosticsChannelName;
 
     @Override
@@ -183,6 +188,7 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
 
         // ~100ms of silence at the decimated sample rate triggers boundary detection
         mSilenceSamplesThreshold = (int)(decimatedSampleRate * 0.1f);
+        mNoiseFloorSamplesThreshold = (int)(decimatedSampleRate * 0.1f);
     }
 
     /**
@@ -218,7 +224,7 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
      * of the demodulator and framer to clear accumulated noise state.
      * Mirrors the proven pattern in P25P1DecoderLSMv2.detectTransmissionBoundary().
      */
-    private void detectTransmissionBoundary(float[] i, float[] q)
+    void detectTransmissionBoundary(float[] i, float[] q)
     {
         for(int idx = 0; idx < i.length; idx++)
         {
@@ -236,12 +242,36 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
 
             float silenceThreshold = mPeakEnergy * ENERGY_SILENCE_RATIO;
 
-            if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
+            if(mInSilence)
+            {
+                mNoiseFloorSampleCount++;
+                mNoiseFloor += (mEnergyAverage - mNoiseFloor) * ENERGY_EMA_FACTOR;
+
+                if(mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
+                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO)
+                {
+                    if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
+                    {
+                        P25PipelineDiagnostics.log(mDiagnosticsChannelName, "BOUNDARY", "SILENCE_TO_SIGNAL",
+                            String.format("energy=%.2e noiseFloor=%.2e", mEnergyAverage, mNoiseFloor));
+                    }
+                    mSymbolProcessor.coldStartReset();
+                    mMessageFramer.coldStartReset();
+                    mMessageFramer.setBoundaryRecoveryActive(true);
+                    mMessageFramer.setInitialAcquisitionActive(true);
+                    mBoundaryResetCount++;
+                    mInSilence = false;
+                    mSilenceSampleCount = 0;
+                }
+            }
+            else if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
             {
                 mSilenceSampleCount++;
-                if(mSilenceSampleCount >= mSilenceSamplesThreshold && !mInSilence)
+                if(mSilenceSampleCount >= mSilenceSamplesThreshold)
                 {
                     mInSilence = true;
+                    mNoiseFloor = mEnergyAverage;
+                    mNoiseFloorSampleCount = 0;
                     if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
                     {
                         P25PipelineDiagnostics.log(mDiagnosticsChannelName, "BOUNDARY", "ENTER_SILENCE",
@@ -251,20 +281,6 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
             }
             else
             {
-                if(mInSilence && mPeakEnergy > 0)
-                {
-                    if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
-                    {
-                        P25PipelineDiagnostics.log(mDiagnosticsChannelName, "BOUNDARY", "SILENCE_TO_SIGNAL",
-                            String.format("energy=%.2e peak=%.2e threshold=%.2e silenceSamples=%d",
-                                mEnergyAverage, mPeakEnergy, mPeakEnergy * ENERGY_SILENCE_RATIO, mSilenceSampleCount));
-                    }
-                    mSymbolProcessor.coldStartReset();
-                    mMessageFramer.coldStartReset();
-                    mMessageFramer.setBoundaryRecoveryActive(true);
-                    mMessageFramer.setInitialAcquisitionActive(true);
-                    mInSilence = false;
-                }
                 mSilenceSampleCount = 0;
             }
         }
@@ -274,6 +290,11 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     public boolean isSignalPresent()
     {
         return !mInSilence && mPeakEnergy > 0;
+    }
+
+    int getBoundaryResetCount()
+    {
+        return mBoundaryResetCount;
     }
 
     @Override

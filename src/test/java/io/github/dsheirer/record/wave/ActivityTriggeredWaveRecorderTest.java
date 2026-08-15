@@ -11,9 +11,11 @@
 package io.github.dsheirer.record.wave;
 
 import io.github.dsheirer.sample.complex.ComplexSamples;
+import io.github.dsheirer.source.SourceEvent;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
+import javax.sound.sampled.AudioFormat;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
@@ -58,6 +60,38 @@ class ActivityTriggeredWaveRecorderTest
         assertEquals(2, findRecordings().size());
     }
 
+    @Test
+    void usesUpdatedFrequencyAndClearsPreTriggerDataAfterRetune() throws Exception
+    {
+        ActivityTriggeredWaveRecorder recorder = createRecorder();
+        recorder.start();
+        recorder.receive(createInactiveSamples(64));
+        recorder.getSourceEventListener().receive(SourceEvent.frequencyChange(null, 155300000L));
+        recorder.receive(createActiveSamples(64));
+        awaitRecordingCount(1);
+        recorder.stop();
+
+        Path recording = findRecordings().getFirst();
+        assertEquals(true, recording.getFileName().toString().contains("155300000"));
+        byte[] wave = Files.readAllBytes(recording);
+        int dataSize = ByteBuffer.wrap(wave, 40, 4).order(ByteOrder.LITTLE_ENDIAN).getInt();
+        assertEquals(64 * 4, dataSize);
+    }
+
+    @Test
+    void waveWriterRollsOverWavFileNames() throws Exception
+    {
+        Path first = mTempDirectory.resolve("rollover.wav");
+        AudioFormat format = new AudioFormat(8000.0f, 16, 1, true, false);
+        try(WaveWriter writer = new WaveWriter(format, first, 128))
+        {
+            writer.writeData(ByteBuffer.allocate(160));
+        }
+
+        assertEquals(true, Files.exists(first));
+        assertEquals(true, Files.exists(mTempDirectory.resolve("rollover_2.wav")));
+    }
+
     private ActivityTriggeredWaveRecorder createRecorder()
     {
         return new ActivityTriggeredWaveRecorder(25000.0f, "Test Channel", 155250000L, -99.0f, mTempDirectory);
@@ -69,6 +103,11 @@ class ActivityTriggeredWaveRecorderTest
         float[] q = new float[length];
         java.util.Arrays.fill(i, 1.0f);
         return new ComplexSamples(i, q, System.currentTimeMillis());
+    }
+
+    private ComplexSamples createInactiveSamples(int length)
+    {
+        return new ComplexSamples(new float[length], new float[length], System.currentTimeMillis());
     }
 
     private void awaitRecordingCount(int count) throws Exception

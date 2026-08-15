@@ -59,7 +59,7 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     private enum RecordingState { IDLE, RECORDING, HOLDING }
 
     private final String mChannelName;
-    private final long mChannelFrequency;
+    private long mChannelFrequency;
     private final float mSquelchThresholdDb;
     private final Path mRecordingBaseDir;
     private final Dispatcher<ComplexSamples> mBufferProcessor =
@@ -367,6 +367,15 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
         return this;
     }
 
+    private void resetForSourceChange()
+    {
+        closeActiveRecording();
+        mRecordingState = RecordingState.IDLE;
+        mSmoothedPowerDb = -100.0f;
+        mHoldSamplesRemaining = 0;
+        mCircularBuffer.clear();
+    }
+
     @Override
     public Listener<SourceEvent> getSourceEventListener()
     {
@@ -382,15 +391,18 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
                     {
                         mSampleRate = newRate;
                         mAudioFormat = new AudioFormat(newRate, 16, 2, true, false);
-
-                        // If recording, close and restart with new format
-                        if(mRecordingState != RecordingState.IDLE)
-                        {
-                            closeActiveRecording();
-                            mRecordingState = RecordingState.IDLE;
-                        }
-
+                        resetForSourceChange();
                         initCircularBuffer();
+                    }
+                }
+                else if(sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_FREQUENCY_CHANGE ||
+                        sourceEvent.getEvent() == SourceEvent.Event.NOTIFICATION_FREQUENCY_ROTATION_SUCCESS)
+                {
+                    long newFrequency = sourceEvent.getValue().longValue();
+                    if(newFrequency != mChannelFrequency)
+                    {
+                        mChannelFrequency = newFrequency;
+                        resetForSourceChange();
                     }
                 }
             }

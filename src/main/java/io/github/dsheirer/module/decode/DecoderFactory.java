@@ -838,13 +838,28 @@ public class DecoderFactory
                     copyNBFM.setSquelchNoiseOpenThreshold(origNBFM.getSquelchNoiseOpenThreshold());
                     copyNBFM.setSquelchNoiseCloseThreshold(origNBFM.getSquelchNoiseCloseThreshold());
                     copyNBFM.setTalkgroup(origNBFM.getTalkgroup());
+                    copyNBFM.setCTCSSFrequency(origNBFM.getCTCSSFrequency());
                     return copyNBFM;
                 case P25_PHASE1:
                     DecodeConfigP25Phase1 originalP25 = (DecodeConfigP25Phase1)config;
                     DecodeConfigP25Phase1 copyP25 = new DecodeConfigP25Phase1();
                     copyP25.setIgnoreDataCalls(originalP25.getIgnoreDataCalls());
-                    copyP25.setModulation(originalP25.getModulation());
+                    copyP25.setModulationString(originalP25.getModulationString());
                     copyP25.setTrafficChannelPoolSize(originalP25.getTrafficChannelPoolSize());
+                    copyP25.setConfiguredNAC(originalP25.getConfiguredNAC());
+                    copyP25.setAudioHoldoverMs(originalP25.getAudioHoldoverMs());
+                    copyP25.setIgnoreEncryptionState(originalP25.isIgnoreEncryptionState());
+                    copyP25.setPipelineDiagnostics(originalP25.isPipelineDiagnostics());
+                    copyP25.setMaxImbeErrors(originalP25.getMaxImbeErrors());
+                    copyP25.setMaxBchErrors(originalP25.getMaxBchErrors());
+                    copyP25.setCmaAcquisitionMu(originalP25.getCmaAcquisitionMu());
+                    copyP25.setCmaTrackingMu(originalP25.getCmaTrackingMu());
+                    copyP25.setCmaGearShiftMs(originalP25.getCmaGearShiftMs());
+                    copyP25.setGardnerBandwidth(originalP25.getGardnerBandwidth());
+                    copyP25.setAfcAlpha(originalP25.getAfcAlpha());
+                    copyP25.setAdaptiveThresholds(originalP25.isAdaptiveThresholds());
+                    copyP25.setDfeEnabled(originalP25.isDfeEnabled());
+                    copyP25.setDfeMu(originalP25.getDfeMu());
                     return copyP25;
                 case P25_PHASE2:
                     DecodeConfigP25Phase2 originalP25P2 = (DecodeConfigP25Phase2)config;

@@ -20,6 +20,7 @@ Usage:
 import argparse
 import json
 import os
+import shutil
 import sys
 import glob as glob_mod
 from pathlib import Path
@@ -30,13 +31,6 @@ try:
     HAS_NUMPY = True
 except ImportError:
     HAS_NUMPY = False
-
-try:
-    from scipy.io import wavfile
-    from scipy import signal as scipy_signal
-    HAS_SCIPY = True
-except ImportError:
-    HAS_SCIPY = False
 
 try:
     from pydub import AudioSegment
@@ -490,6 +484,20 @@ def main():
     parser.add_argument("--stt-model", default="tiny", help="Whisper model size (default: tiny)")
 
     args = parser.parse_args()
+
+    if bool(args.control_audio) != bool(args.test_audio):
+        parser.error("full audio analysis requires both --control-audio and --test-audio")
+
+    if args.control_audio:
+        missing = []
+        if not HAS_NUMPY:
+            missing.append("numpy")
+        if not HAS_PYDUB:
+            missing.append("pydub")
+        if shutil.which("ffmpeg") is None:
+            missing.append("ffmpeg")
+        if missing:
+            parser.error("full audio analysis requires: " + ", ".join(missing))
 
     control_metrics = load_metrics(args.control_metrics)
     test_metrics = load_metrics(args.test_metrics)

@@ -64,6 +64,7 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
     private final CTCSSDetector mCTCSSDetector;
     private IRealFilter mIBasebandFilter;
     private IRealFilter mQBasebandFilter;
+    private IRealFilter mCTCSSOutputFilter;
     private IRealDecimationFilter mIDecimationFilter;
     private IRealDecimationFilter mQDecimationFilter;
     private Listener<float[]> mResampledBufferListener;
@@ -103,7 +104,8 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         mNoiseSquelch.setAudioListener(audio -> {
             if(mCTCSSDetector == null || mCTCSSDetector.isToneDetected())
             {
-                mResampler.resample(audio);
+                float[] output = mCTCSSOutputFilter != null ? mCTCSSOutputFilter.filter(audio) : audio;
+                mResampler.resample(output);
                 notifyCallContinuation();
             }
         });
@@ -399,6 +401,9 @@ public class NBFMDecoder extends SquelchControlDecoder implements ISourceEventLi
         if(mCTCSSDetector != null)
         {
             mCTCSSDetector.setSampleRate(decimatedSampleRate);
+            float[] outputHighPass = FilterFactory.getHighPass((int)decimatedSampleRate, 300, 63,
+                    WindowType.BLACKMAN_HARRIS_7);
+            mCTCSSOutputFilter = FilterFactory.getRealFilter(outputHighPass);
         }
 
         int passBandStop = (int) (mChannelBandwidth * .8);

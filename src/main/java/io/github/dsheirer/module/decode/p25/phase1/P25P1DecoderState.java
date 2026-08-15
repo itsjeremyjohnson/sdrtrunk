@@ -2467,29 +2467,24 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 return;
             }
 
-            // Check if signal energy indicates an active transmission
+            long timeSinceLastValidLDU = System.currentTimeMillis() - mLastValidLDUTimestamp;
+            int extendedHoldoverMs = mHoldoverMs + EXTENDED_HOLDOVER_GRACE_MS;
+
+            if(timeSinceLastValidLDU > extendedHoldoverMs)
+            {
+                if(mHoldoverTask != null)
+                {
+                    mHoldoverTask.cancel(false);
+                    mHoldoverTask = null;
+                }
+                return;
+            }
+
+            // Only keep the call alive while carrier energy is still present.
             if(mSignalEnergyProvider.isSignalPresent())
             {
-                long timeSinceLastValidLDU = System.currentTimeMillis() - mLastValidLDUTimestamp;
-
-                // Use extended holdover period (holdoverMs + grace) for periodic check
-                int extendedHoldoverMs = mHoldoverMs + EXTENDED_HOLDOVER_GRACE_MS;
-
-                if(timeSinceLastValidLDU <= extendedHoldoverMs)
-                {
-                    // Broadcast continuation event to keep the call state alive
-                    broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
-                    mHoldoverActive = true;
-                }
-                else
-                {
-                    // Extended holdover expired - stop the periodic check
-                    if(mHoldoverTask != null)
-                    {
-                        mHoldoverTask.cancel(false);
-                        mHoldoverTask = null;
-                    }
-                }
+                broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
+                mHoldoverActive = true;
             }
         }
         catch(Exception e)
