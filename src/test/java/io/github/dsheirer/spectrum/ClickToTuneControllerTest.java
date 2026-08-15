@@ -526,9 +526,15 @@ class ClickToTuneControllerTest
         drainEdt();
 
         Channel channel = mFakeChannelModel.mAdded.get(0);
+        channel.setTemporaryLive(false);
+        List<ChannelEvent> events = new ArrayList<>();
+        mFakeChannelModel.addListener(events::add);
 
         mController.changeDecoder(channel, DecoderType.DMR);
 
+        assertEquals(1, events.stream()
+            .filter(event -> event.getEvent() == ChannelEvent.Event.NOTIFICATION_CONFIGURATION_CHANGE)
+            .count(), "Saved decoder changes should request playlist persistence");
         assertEquals(1, mFakeCpm.mStopped.size(), "Channel should be stopped before decoder change");
         assertEquals(2, mFakeCpm.mStarted.size(), "Channel should be restarted with new decoder");
         assertEquals(DecoderType.DMR, channel.getDecodeConfiguration().getDecoderType(),
@@ -556,6 +562,9 @@ class ClickToTuneControllerTest
         assertEquals(1, mFakeChannelModel.mAdded.size());
         Channel channel = mFakeChannelModel.mAdded.get(0);
         assertEquals(DecoderType.NBFM, channel.getDecodeConfiguration().getDecoderType());
+        channel.setTemporaryLive(false);
+        List<ChannelEvent> events = new ArrayList<>();
+        mFakeChannelModel.addListener(events::add);
 
         // Re-detect: classifier now returns DMR and honors discovery exclusions
         mUserPreferences.getDiscoveryPreference().setExcludedDecoders(Set.of(DecoderType.P25_PHASE1));
@@ -580,6 +589,9 @@ class ClickToTuneControllerTest
         // Config should be updated to DMR
         assertEquals(DecoderType.DMR, channel.getDecodeConfiguration().getDecoderType(),
             "Channel decoder should be updated to DMR after successful re-detect");
+        assertEquals(1, events.stream()
+            .filter(event -> event.getEvent() == ChannelEvent.Event.NOTIFICATION_CONFIGURATION_CHANGE)
+            .count(), "Saved re-detected decoder changes should request playlist persistence");
 
         // Channel should have been restarted (1 start from classifyAndTune + 1 from redetect)
         assertEquals(2, mFakeCpm.mStarted.size(), "Channel should be restarted after re-detect");

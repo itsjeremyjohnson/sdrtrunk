@@ -19,7 +19,9 @@
 package io.github.dsheirer.module.discovery;
 
 import io.github.dsheirer.controller.channel.Channel;
+import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import java.time.Instant;
 import java.util.HashMap;
 import java.util.Map;
@@ -46,13 +48,14 @@ import javafx.beans.property.SimpleObjectProperty;
  */
 public class Discovery
 {
-    private final long mCenterFrequencyHz;
-    private final int mBandwidthHz;
-    private final double mPowerDb;
-    private final double mSnrDb;
+    private volatile long mCenterFrequencyHz;
+    private volatile int mBandwidthHz;
+    private volatile double mPowerDb;
+    private volatile double mSnrDb;
 
     private final ObjectProperty<DiscoveryState> mState = new SimpleObjectProperty<>(DiscoveryState.ENERGY_DETECTED);
     private final ObjectProperty<DecoderType> mDetectedDecoder = new SimpleObjectProperty<>(null);
+    private DecodeConfiguration mDetectedDecodeConfiguration;
     private final ObjectProperty<SignalKind> mKind = new SimpleObjectProperty<>(SignalKind.UNKNOWN);
     private final IntegerProperty mConfidence = new SimpleIntegerProperty(0);
     private final ObjectProperty<Instant> mFirstSeen = new SimpleObjectProperty<>();
@@ -103,7 +106,7 @@ public class Discovery
     }
 
     // -------------------------------------------------------------------------
-    // Immutable scalar fields
+    // Latest observed signal geometry
     // -------------------------------------------------------------------------
 
     /**
@@ -144,6 +147,22 @@ public class Discovery
     public double getSnrDb()
     {
         return mSnrDb;
+    }
+
+    /**
+     * Refreshes this row with the latest overlapping spectral observation.
+     *
+     * @param peak latest matching energy peak
+     */
+    public void updateObservation(EnergyPeak peak)
+    {
+        if(peak != null)
+        {
+            mCenterFrequencyHz = peak.centerFrequencyHz();
+            mBandwidthHz = peak.occupiedBandwidthHz();
+            mPowerDb = peak.powerDb();
+            mSnrDb = peak.snrDb();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -212,6 +231,26 @@ public class Discovery
     public void setDetectedDecoder(DecoderType decoder)
     {
         mDetectedDecoder.set(decoder);
+    }
+
+    /**
+     * Returns a copy of the decoder configuration detected during classification.
+     *
+     * @return detected configuration, or null
+     */
+    public DecodeConfiguration getDetectedDecodeConfiguration()
+    {
+        return DecoderFactory.copy(mDetectedDecodeConfiguration);
+    }
+
+    /**
+     * Stores a private copy of the decoder configuration detected during classification.
+     *
+     * @param configuration detected configuration, or null
+     */
+    public void setDetectedDecodeConfiguration(DecodeConfiguration configuration)
+    {
+        mDetectedDecodeConfiguration = DecoderFactory.copy(configuration);
     }
 
     // -------------------------------------------------------------------------

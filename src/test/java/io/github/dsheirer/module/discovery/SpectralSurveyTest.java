@@ -424,6 +424,19 @@ class SpectralSurveyTest
             () -> future.get(4, java.util.concurrent.TimeUnit.SECONDS));
     }
 
+    @Test
+    void filterToSpan_discardsPeaksOutsideStepUsableWindow()
+    {
+        List<EnergyPeak> peaks = List.of(
+            new EnergyPeak(153_250_000L, 12_500, -40.0, 20.0),
+            new EnergyPeak(153_750_000L, 12_500, -50.0, 15.0));
+
+        List<EnergyPeak> filtered = SpectralSurvey.filterToSpan(peaks, 153_500_000L, 154_500_000L);
+
+        assertEquals(1, filtered.size());
+        assertEquals(153_750_000L, filtered.get(0).centerFrequencyHz());
+    }
+
     // =========================================================================
     // Stepped survey
     // =========================================================================

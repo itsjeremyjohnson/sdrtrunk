@@ -103,6 +103,22 @@ public class DiscoveryChannelFactory
      */
     public Channel createChannel(long freqHz, DecoderType type, String aliasListName)
     {
+        return createChannel(freqHz, type, null, SignalKind.UNKNOWN, aliasListName);
+    }
+
+    /**
+     * Creates a channel while preserving decoder settings detected during classification.
+     *
+     * @param freqHz        center frequency, in Hz
+     * @param type          detected decoder type
+     * @param configuration detected decoder configuration (may be null)
+     * @param kind          detected signal kind (may be null)
+     * @param aliasListName alias list name (may be null)
+     * @return a configured channel
+     */
+    public Channel createChannel(long freqHz, DecoderType type, DecodeConfiguration configuration,
+                                 SignalKind kind, String aliasListName)
+    {
         if(freqHz <= 0)
         {
             throw new IllegalArgumentException("freqHz must be positive, got: " + freqHz);
@@ -113,19 +129,20 @@ public class DiscoveryChannelFactory
             throw new IllegalArgumentException("DecoderType must not be null");
         }
 
-        String name = buildChannelName(freqHz, SignalKind.UNKNOWN);
+        String name = buildChannelName(freqHz, kind != null ? kind : SignalKind.UNKNOWN);
 
         Channel channel = new Channel(name);
         channel.setTemporaryLive(true);
         channel.setSourceConfiguration(buildSourceConfig(freqHz));
-        channel.setDecodeConfiguration(DecoderFactory.getDecodeConfiguration(type));
+        DecodeConfiguration freshConfig = DecoderFactory.copy(configuration);
+        channel.setDecodeConfiguration(freshConfig != null ? freshConfig : DecoderFactory.getDecodeConfiguration(type));
 
         if(aliasListName != null && !aliasListName.isBlank())
         {
             channel.setAliasListName(aliasListName);
         }
 
-        mLog.debug("Created manual channel '{}' for {} at {} Hz", name, type, freqHz);
+        mLog.debug("Created channel '{}' for {} at {} Hz", name, type, freqHz);
 
         return channel;
     }

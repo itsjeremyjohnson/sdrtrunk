@@ -295,6 +295,7 @@ public class ClickToTuneController
         }
 
         channel.setDecodeConfiguration(DecoderFactory.getDecodeConfiguration(newType));
+        notifySavedChannelChanged(channel);
 
         // Restart the existing channel — do NOT add it to the model again
         restartExistingChannel(channel);
@@ -395,6 +396,7 @@ public class ClickToTuneController
             {
                 // Swap the existing channel's config and restart it — no model change
                 channel.setDecodeConfiguration(DecoderFactory.getDecodeConfiguration(result.bestDecoder()));
+                notifySavedChannelChanged(channel);
                 mClickToTuneChannels.add(channel); // defensive, should already be there
                 restartExistingChannel(channel);
             }
@@ -787,6 +789,14 @@ public class ClickToTuneController
             mLog.warn("Failed to restart click-to-tune channel '{}': {}", channel.getName(), ce.getMessage());
             mUICallbacks.reportStartFailure(channel,
                 java.util.Objects.requireNonNullElse(ce.getMessage(), ce.toString()));
+        }
+    }
+
+    private void notifySavedChannelChanged(Channel channel)
+    {
+        if(!channel.isTemporaryLive())
+        {
+            mChannelModel.receive(new ChannelEvent(channel, ChannelEvent.Event.NOTIFICATION_CONFIGURATION_CHANGE));
         }
     }
 

@@ -423,6 +423,8 @@ public class BandScanController
         Channel channel = mDiscoveryChannelFactory.createChannel(
             discovery.getCenterFrequencyHz(),
             discovery.getDetectedDecoder(),
+            discovery.getDetectedDecodeConfiguration(),
+            discovery.getKind(),
             aliasListName);
 
         mChannelModel.addChannel(channel);
@@ -571,8 +573,7 @@ public class BandScanController
                 ClassificationRequest req = ClassificationRequest.forFrequency(
                     discovery.getCenterFrequencyHz(),
                     discovery.getBandwidthHz(),
-                    // Use all primaries for reprobe (no scan request in scope)
-                    null,
+                    discoveryCandidateDecoders(),
                     "reprobe@" + discovery.getCenterFrequencyHz());
 
                 CompletableFuture<ClassificationResult> future = mClassifier.classify(req);
@@ -599,7 +600,7 @@ public class BandScanController
                 {
                     mLog.warn("reprobe error for {} Hz: {}", discovery.getCenterFrequencyHz(),
                         e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
-                    FxThreads.run(() -> discovery.setState(DiscoveryState.ERROR));
+                    clearClassification(discovery, DiscoveryState.ERROR, Instant.now());
                     mDiscoveryModel.update(discovery);
                 }
             });
@@ -607,7 +608,7 @@ public class BandScanController
         catch(RejectedExecutionException e)
         {
             mLog.warn("BandScanController: executor rejected reprobe — executor may be shut down");
-            FxThreads.run(() -> discovery.setState(DiscoveryState.ERROR));
+            clearClassification(discovery, DiscoveryState.ERROR, Instant.now());
             mDiscoveryModel.update(discovery);
         }
     }
@@ -735,7 +736,8 @@ public class BandScanController
 
                 if(existing != null)
                 {
-                    // Update the existing row's last-seen time and state
+                    // Refresh the matched row before any re-probe uses its geometry.
+                    existing.updateObservation(peak);
                     Instant nowForExisting = Instant.now();
 
                     if(existing.getState() == DiscoveryState.UNIDENTIFIED)
@@ -964,6 +966,7 @@ public class BandScanController
                 if(discovery != null)
                 {
                     Discovery existing = discovery;
+                    existing.updateObservation(peak);
                     FxThreads.runAndWait(() -> existing.setLastSeen(Instant.now()));
                     mDiscoveryModel.update(existing);
 
@@ -1147,7 +1150,7 @@ public class BandScanController
             {
                 mLog.warn("Classification error for {} Hz: {}", discovery.getCenterFrequencyHz(),
                     e.getCause() != null ? e.getCause().getMessage() : e.getMessage());
-                FxThreads.run(() -> discovery.setState(DiscoveryState.ERROR));
+                clearClassification(discovery, DiscoveryState.ERROR, Instant.now());
                 mDiscoveryModel.update(discovery);
             }
         }
@@ -1166,7 +1169,7 @@ public class BandScanController
     {
         if(result == null)
         {
-            FxThreads.run(() -> discovery.setState(DiscoveryState.ERROR));
+            clearClassification(discovery, DiscoveryState.ERROR, Instant.now());
             return;
         }
 
@@ -1183,6 +1186,7 @@ public class BandScanController
                     discovery.setLastSeen(now);
                     discovery.setState(DiscoveryState.IDENTIFIED);
                     discovery.setDetectedDecoder(result.bestDecoder());
+                    discovery.setDetectedDecodeConfiguration(result.bestDecodeConfig());
                     discovery.setKind(kind);
                     discovery.setConfidence(confidence);
                     if(metadata != null)
@@ -1193,21 +1197,28 @@ public class BandScanController
                 });
             }
             case UNIDENTIFIED, NO_SIGNAL ->
-                FxThreads.run(() -> {
-                    discovery.setLastSeen(now);
-                    discovery.setState(DiscoveryState.UNIDENTIFIED);
-                });
+                clearClassification(discovery, DiscoveryState.UNIDENTIFIED, now);
             case ERROR ->
-                FxThreads.run(() -> {
-                    discovery.setLastSeen(now);
-                    discovery.setState(DiscoveryState.ERROR);
-                });
+                clearClassification(discovery, DiscoveryState.ERROR, now);
             case CANCELLED ->
             {
                 // On cancellation, leave state as PROBING (scan was cancelled; row stays)
                 // but don't overwrite a completed state if the future raced
             }
         }
+    }
+
+    private static void clearClassification(Discovery discovery, DiscoveryState state, Instant lastSeen)
+    {
+        FxThreads.run(() -> {
+            discovery.setLastSeen(lastSeen);
+            discovery.setState(state);
+            discovery.setDetectedDecoder(null);
+            discovery.setDetectedDecodeConfiguration(null);
+            discovery.setKind(SignalKind.UNKNOWN);
+            discovery.setConfidence(0);
+            discovery.setMetadata(java.util.Map.of());
+        });
     }
 
     /**
@@ -1292,6 +1303,20 @@ public class BandScanController
         FxThreads.runAndWait(() ->
             known.set(!mChannelModel.getChannelsInFrequencyRange(peakMin, peakMax).isEmpty()));
         return known.get();
+    }
+
+    private EnumSet<DecoderType> discoveryCandidateDecoders()
+    {
+        EnumSet<DecoderType> candidates = EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
+        candidates.removeAll(mUserPreferences.getDiscoveryPreference().getExcludedDecoders());
+
+        if(candidates.isEmpty())
+        {
+            mLog.info("All discovery decoders are excluded; using the primary decoder set");
+            return EnumSet.copyOf(DecoderType.PRIMARY_DECODERS);
+        }
+
+        return candidates;
     }
 
     /**

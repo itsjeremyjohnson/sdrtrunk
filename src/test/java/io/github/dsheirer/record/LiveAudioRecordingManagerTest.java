@@ -28,6 +28,7 @@ import io.github.dsheirer.identifier.configuration.FrequencyConfigurationIdentif
 import io.github.dsheirer.identifier.configuration.SystemConfigurationIdentifier;
 import io.github.dsheirer.message.TimeslotMessage;
 import io.github.dsheirer.module.decode.dmr.identifier.DMRTalkgroup;
+import io.github.dsheirer.module.decode.nbfm.NBFMTalkgroup;
 import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup;
 import io.github.dsheirer.preference.UserPreferences;
 import java.io.IOException;
@@ -163,6 +164,29 @@ class LiveAudioRecordingManagerTest
         assertTrue(recordings.get(0).getFileName().toString().contains("CHANNEL-NFM-Test"));
     }
 
+    @Test
+    void conventionalAnalogTalkgroupsRemainDistinctByChannel() throws IOException
+    {
+        LiveAudioRecordingManager manager = new LiveAudioRecordingManager(mUserPreferences);
+        AudioSegment first = baseSegment("NFM One", 154_920_000L);
+        first.addIdentifier(new NBFMTalkgroup(1));
+        first.completeProperty().set(true);
+        AudioSegment second = baseSegment("NFM Two", 155_640_000L);
+        second.addIdentifier(new NBFMTalkgroup(1));
+        second.completeProperty().set(true);
+
+        manager.startRecording();
+        receive(manager, first);
+        receive(manager, second);
+        manager.processAudioSegments();
+        manager.stopRecording();
+
+        List<Path> recordings = recordings();
+        assertEquals(2, recordings.size());
+        assertTrue(recordings.stream().anyMatch(path -> path.getFileName().toString().contains("CHANNEL-NFM-One")));
+        assertTrue(recordings.stream().anyMatch(path -> path.getFileName().toString().contains("CHANNEL-NFM-Two")));
+    }
+
     private static void receive(LiveAudioRecordingManager manager, AudioSegment audioSegment)
     {
         audioSegment.incrementConsumerCount();
@@ -186,10 +210,15 @@ class LiveAudioRecordingManagerTest
 
     private static AudioSegment baseSegment()
     {
+        return baseSegment("NFM Test", 154_920_000L);
+    }
+
+    private static AudioSegment baseSegment(String channelName, long frequency)
+    {
         AudioSegment audioSegment = new AudioSegment(new AliasList("test"), TimeslotMessage.TIMESLOT_0);
         audioSegment.addIdentifier(SystemConfigurationIdentifier.create("System A"));
-        audioSegment.addIdentifier(ChannelNameConfigurationIdentifier.create("NFM Test"));
-        audioSegment.addIdentifier(FrequencyConfigurationIdentifier.create(154_920_000L));
+        audioSegment.addIdentifier(ChannelNameConfigurationIdentifier.create(channelName));
+        audioSegment.addIdentifier(FrequencyConfigurationIdentifier.create(frequency));
 
         ScalarRealOscillator oscillator = new ScalarRealOscillator(1000, 8000);
 

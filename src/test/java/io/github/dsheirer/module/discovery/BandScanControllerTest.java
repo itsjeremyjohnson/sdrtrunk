@@ -24,7 +24,10 @@ import io.github.dsheirer.controller.channel.ChannelException;
 import io.github.dsheirer.controller.channel.ChannelModel;
 import io.github.dsheirer.controller.channel.ChannelProcessingManager;
 import io.github.dsheirer.controller.channel.map.ChannelMapModel;
+import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.analog.DecodeConfigAnalog;
+import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.preference.discovery.DiscoveryPreference;
 import io.github.dsheirer.source.config.SourceConfigTuner;
@@ -1054,6 +1057,89 @@ class BandScanControllerTest
 
         assertEquals(DiscoveryState.IDENTIFIED, d.getState());
         assertEquals(DecoderType.NBFM, d.getDetectedDecoder());
+    }
+
+    @Test
+    void reprobe_appliesDecoderExclusionsAndClearsStaleClassification() throws InterruptedException
+    {
+        mUserPreferences.getDiscoveryPreference().setExcludedDecoders(java.util.Set.of(DecoderType.DMR));
+        Discovery discovery = new Discovery(FREQ_A, 12_500, -60.0, 20.0, Instant.now());
+        discovery.setState(DiscoveryState.IDENTIFIED);
+        discovery.setDetectedDecoder(DecoderType.DMR);
+        discovery.setDetectedDecodeConfiguration(DecoderFactory.getDecodeConfiguration(DecoderType.DMR));
+        discovery.setKind(SignalKind.CONTROL);
+        discovery.setConfidence(4);
+        discovery.setMetadata(Map.of("site", "old"));
+        mModel.add(discovery);
+
+        AtomicReference<ClassificationRequest> captured = new AtomicReference<>();
+        Classifier classifier = request -> {
+            captured.set(request);
+            return CompletableFuture.completedFuture(ClassificationResult.noSignal(request.centerFrequencyHz(), -120.0));
+        };
+        BandScanController controller = makeController(new FakeSurvey(List.of()), classifier);
+
+        controller.reprobe(discovery);
+        long deadline = System.currentTimeMillis() + 5_000;
+        while(discovery.getState() == DiscoveryState.PROBING && System.currentTimeMillis() < deadline)
+        {
+            Thread.sleep(20);
+        }
+
+        assertNotNull(captured.get());
+        assertFalse(captured.get().candidateDecoders().contains(DecoderType.DMR));
+        assertEquals(DiscoveryState.UNIDENTIFIED, discovery.getState());
+        assertNull(discovery.getDetectedDecoder());
+        assertNull(discovery.getDetectedDecodeConfiguration());
+        assertEquals(SignalKind.UNKNOWN, discovery.getKind());
+        assertEquals(0, discovery.getConfidence());
+        assertTrue(discovery.getMetadata().isEmpty());
+    }
+
+    @Test
+    void matchedPeakRefreshesGeometryBeforeProbe() throws InterruptedException
+    {
+        Discovery discovery = new Discovery(FREQ_A, 12_500, -80.0, 5.0, Instant.now());
+        discovery.setState(DiscoveryState.UNIDENTIFIED);
+        mModel.add(discovery);
+
+        EnergyPeak shifted = new EnergyPeak(FREQ_A + 5_000L, 20_000, -55.0, 18.0);
+        AtomicReference<ClassificationRequest> captured = new AtomicReference<>();
+        Classifier classifier = request -> {
+            captured.set(request);
+            return CompletableFuture.completedFuture(ClassificationResult.noSignal(request.centerFrequencyHz(), -100.0));
+        };
+        BandScanController controller = makeController(new FakeSurvey(List.of(shifted)), classifier);
+
+        controller.startScan(simpleScan());
+        awaitState(controller, ScanState.DONE, 5_000);
+
+        assertNotNull(captured.get());
+        assertEquals(shifted.centerFrequencyHz(), captured.get().centerFrequencyHz());
+        assertEquals(shifted.occupiedBandwidthHz(), captured.get().approximateBandwidthHz());
+        assertEquals(shifted.centerFrequencyHz(), discovery.getCenterFrequencyHz());
+        assertEquals(shifted.occupiedBandwidthHz(), discovery.getBandwidthHz());
+        assertEquals(shifted.powerDb(), discovery.getPowerDb());
+        assertEquals(shifted.snrDb(), discovery.getSnrDb());
+    }
+
+    @Test
+    void addAsChannelPreservesDetectedAnalogBandwidth()
+    {
+        Discovery discovery = new Discovery(FREQ_A, 25_000, -60.0, 20.0, Instant.now());
+        DecodeConfigNBFM detectedConfig = new DecodeConfigNBFM();
+        detectedConfig.setBandwidth(DecodeConfigAnalog.Bandwidth.BW_25_0);
+        discovery.setState(DiscoveryState.IDENTIFIED);
+        discovery.setDetectedDecoder(DecoderType.NBFM);
+        discovery.setDetectedDecodeConfiguration(detectedConfig);
+        discovery.setKind(SignalKind.CONVENTIONAL);
+
+        Channel channel = makeController(new FakeSurvey(List.of()), new FakeClassifier(Map.of()))
+            .addAsChannel(discovery);
+
+        assertNotNull(channel);
+        DecodeConfigNBFM channelConfig = (DecodeConfigNBFM)channel.getDecodeConfiguration();
+        assertEquals(DecodeConfigAnalog.Bandwidth.BW_25_0, channelConfig.getBandwidth());
     }
 
     // -------------------------------------------------------------------------

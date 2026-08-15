@@ -605,8 +605,10 @@ public class SpectralSurvey implements SpectralSurveyApi
                 if(accumulator.hasData())
                 {
                     List<EnergyPeak> stepPeaks = extractPeaks(accumulator, stepCenterFinal, sampleRate, thresholdDb);
-                    // Filter to requested span
-                    List<EnergyPeak> filtered = filterToSpan(stepPeaks, minHz, maxHz);
+                    // Keep only the requested portion of this step's alias-free tuner window.
+                    long usableMinHz = Math.max(minHz, stepCenterFinal - halfUsableBandwidthHz);
+                    long usableMaxHz = Math.min(maxHz, stepCenterFinal + halfUsableBandwidthHz);
+                    List<EnergyPeak> filtered = filterToSpan(stepPeaks, usableMinHz, usableMaxHz);
                     allPeaks.addAll(filtered);
                 }
             }
@@ -714,7 +716,7 @@ public class SpectralSurvey implements SpectralSurveyApi
     /**
      * Filters a peak list to those whose centers fall within [minHz, maxHz].
      */
-    private List<EnergyPeak> filterToSpan(List<EnergyPeak> peaks, long minHz, long maxHz)
+    static List<EnergyPeak> filterToSpan(List<EnergyPeak> peaks, long minHz, long maxHz)
     {
         if(peaks.isEmpty())
         {

@@ -69,4 +69,13 @@ class SpectralDisplayPanelHelpersTest
     {
         assertTrue(SpectralDisplayPanel.isNonTrivialDrag(0, 500));
     }
+
+    @Test
+    void pendingClassificationOverlayDoesNotCaptureMouseHits()
+    {
+        PendingClassificationOverlay overlay = new PendingClassificationOverlay(() -> {});
+        overlay.setSize(800, 400);
+
+        assertFalse(overlay.contains(400, 200));
+    }
 }

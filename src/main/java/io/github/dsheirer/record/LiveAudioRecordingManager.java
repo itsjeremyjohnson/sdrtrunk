@@ -30,6 +30,7 @@ import io.github.dsheirer.identifier.IdentifierClass;
 import io.github.dsheirer.identifier.IdentifierCollection;
 import io.github.dsheirer.identifier.Role;
 import io.github.dsheirer.preference.UserPreferences;
+import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.record.wave.AudioMetadata;
 import io.github.dsheirer.record.wave.AudioMetadataUtils;
 import io.github.dsheirer.sample.Listener;
@@ -441,6 +442,14 @@ public class LiveAudioRecordingManager implements Listener<AudioSegment>
             {
                 addPart(keyParts, "to", to.getProtocol() + "-" + to.getForm() + "-" + to.getValue());
                 addPart(fileParts, "TO", to.toString() + "-" + to.getProtocol() + "-" + to.getForm());
+
+                if(to.getProtocol() == Protocol.AM || to.getProtocol() == Protocol.NBFM)
+                {
+                    addPart(keyParts, "channel", channel);
+                    addPart(fileParts, "CHANNEL", channel);
+                    addPart(keyParts, "frequency", frequency);
+                    addPart(fileParts, "FREQUENCY", frequency);
+                }
             }
             else if(channel != null)
             {
