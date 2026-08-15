@@ -83,11 +83,33 @@ public class ProbeChainFactory
     {
         if(decoderType == DecoderType.P25_PHASE1)
         {
-            DecodeConfigP25Phase1 c4fm = new DecodeConfigP25Phase1();
-            c4fm.setModulation(Modulation.C4FM);
-            DecodeConfigP25Phase1 cqpsk = new DecodeConfigP25Phase1();
-            cqpsk.setModulation(Modulation.CQPSK);
-            return List.of(build(decoderType, c4fm), build(decoderType, cqpsk));
+            List<ProbeChain> variants = new ArrayList<>(2);
+            try
+            {
+                DecodeConfigP25Phase1 c4fm = new DecodeConfigP25Phase1();
+                c4fm.setModulation(Modulation.C4FM);
+                variants.add(build(decoderType, c4fm));
+
+                DecodeConfigP25Phase1 cqpsk = new DecodeConfigP25Phase1();
+                cqpsk.setModulation(Modulation.CQPSK);
+                variants.add(build(decoderType, cqpsk));
+                return List.copyOf(variants);
+            }
+            catch(RuntimeException e)
+            {
+                for(ProbeChain variant : variants)
+                {
+                    try
+                    {
+                        variant.chain().dispose();
+                    }
+                    catch(Exception disposeError)
+                    {
+                        e.addSuppressed(disposeError);
+                    }
+                }
+                throw e;
+            }
         }
 
         return List.of(build(decoderType));
@@ -98,7 +120,7 @@ public class ProbeChainFactory
         return build(decoderType, DecoderFactory.getDecodeConfiguration(decoderType));
     }
 
-    private ProbeChain build(DecoderType decoderType, DecodeConfiguration decodeConfiguration)
+    ProbeChain build(DecoderType decoderType, DecodeConfiguration decodeConfiguration)
     {
         // Build a throwaway channel with the requested decode configuration for this type.
         //

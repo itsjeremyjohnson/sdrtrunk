@@ -263,6 +263,8 @@ public class ClickToTuneController
      */
     public void tuneAs(long freqHz, DecoderType type)
     {
+        // A manual decoder choice supersedes any auto-detection still pending at this location.
+        cancelPending();
         String aliasList = defaultAliasListName();
         Channel channel = mChannelFactory.createChannel(freqHz, type, aliasList);
         startNewChannel(channel);

@@ -874,8 +874,9 @@ public class BandScanController
         // Store before publishing state
         mActiveSurveyFuture.set(surveyFuture);
 
-        // Now publish SURVEYING — at this point mActiveSurveyFuture is visible to stop()
-        setState(ScanState.SURVEYING);
+        // Now publish SURVEYING — at this point mActiveSurveyFuture is visible to stop().
+        // Guard the queued JavaFX update so a stopped/stale scan cannot overwrite CANCELLED.
+        setStateIfEpoch(ScanState.SURVEYING, myEpoch);
 
         try
         {
@@ -1245,21 +1246,31 @@ public class BandScanController
             return 2; // IDENTIFIED but no candidate detail → moderate confidence
         }
 
-        // Find the winning candidate (the one that matches bestDecoder)
-        for(Candidate c : result.candidates())
-        {
-            if(c.decoderType() == result.bestDecoder())
-            {
-                return switch(c.lockState())
+        // Multiple modulation variants can share one decoder type. Prefer the strongest locked
+        // variant, then the strongest partial variant, instead of taking the first attempted one.
+        Candidate winner = result.candidates().stream()
+            .filter(candidate -> candidate.decoderType() == result.bestDecoder())
+            .max(java.util.Comparator
+                .comparingInt((Candidate candidate) -> switch(candidate.lockState())
                 {
-                    case LOCKED  -> c.lockQuality() >= 0.75 ? 4 : 3;
-                    case PARTIAL -> c.lockQuality() >= 0.50 ? 2 : 1;
-                    default      -> 0;
-                };
-            }
+                    case LOCKED -> 2;
+                    case PARTIAL -> 1;
+                    default -> 0;
+                })
+                .thenComparingDouble(Candidate::lockQuality))
+            .orElse(null);
+
+        if(winner == null)
+        {
+            return 2; // fallback
         }
 
-        return 2; // fallback
+        return switch(winner.lockState())
+        {
+            case LOCKED  -> winner.lockQuality() >= 0.75 ? 4 : 3;
+            case PARTIAL -> winner.lockQuality() >= 0.50 ? 2 : 1;
+            default      -> 0;
+        };
     }
 
     // -------------------------------------------------------------------------

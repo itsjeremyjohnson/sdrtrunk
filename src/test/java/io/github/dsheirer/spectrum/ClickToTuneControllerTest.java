@@ -436,6 +436,21 @@ class ClickToTuneControllerTest
     }
 
     @Test
+    void tuneAs_cancelsPendingAutoDetection() throws Exception
+    {
+        CompletableFuture<ClassificationResult> pending = new CompletableFuture<>();
+        mFakeClassifier.setNextResult(pending);
+        mController.classifyAndTune(FREQ, 12_500);
+
+        mController.tuneAs(FREQ, DecoderType.DMR);
+        drainEdt();
+
+        assertTrue(pending.isCancelled());
+        assertTrue(mFakeUI.mPendingCleared);
+        assertEquals(1, mFakeChannelModel.mAdded.size());
+    }
+
+    @Test
     void missPopup_keepListeningCallback_reclassifies() throws Exception
     {
         // First call: no signal -> miss popup shown

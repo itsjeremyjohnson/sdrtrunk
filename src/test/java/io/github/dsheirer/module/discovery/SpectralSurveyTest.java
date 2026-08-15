@@ -36,6 +36,7 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.jtransforms.fft.FloatFFT_1D;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -619,6 +620,49 @@ class SpectralSurveyTest
 
         assertEquals(originalCenter, throwingTuner.lastSetFreqHz(),
             "Tuner center must be restored even when a step's setCenterFreqHz throws");
+    }
+
+    @Test
+    void estimateNoiseFloor_ignoresMaskedBins()
+    {
+        float[] bins = makeFlat(64, -80.0f);
+        Arrays.fill(bins, 28, 35, Float.NaN);
+
+        assertEquals(-80.0, SpectralSurvey.estimateNoiseFloor(bins), 0.01);
+    }
+
+    @Test
+    void sampleAccumulator_processesEveryCompleteFrameInOversizedBuffer()
+    {
+        int fftSize = 8;
+        float[] window = makeFlat(fftSize, 1.0f);
+        SpectralSurvey.SampleAccumulator accumulator =
+            new SpectralSurvey.SampleAccumulator(window, new FloatFFT_1D(fftSize), fftSize);
+        float[] i = makeFlat(fftSize * 3 + 2, 1.0f);
+        float[] q = new float[i.length];
+
+        accumulator.process(new ComplexSamples(i, q, 0L));
+
+        assertEquals(3, accumulator.getFrameCount());
+    }
+
+    @Test
+    @Timeout(5)
+    void inBandSurvey_rejectsAccumulationAfterExternalRetune() throws Exception
+    {
+        FakeTunerControl tuner = new FakeTunerControl(155_000_000L, 2_000_000.0);
+        tuner.setToneOffsets(new double[]{100_000.0});
+        SpectralSurvey survey = new SpectralSurvey(mExecutor);
+        var future = survey.survey(154_500_000L, 155_500_000L, Duration.ofMillis(250),
+            THRESHOLD_DB, null, tuner);
+
+        while(tuner.mListeners.isEmpty())
+        {
+            Thread.yield();
+        }
+        tuner.setCenterFreqHz(155_100_000L);
+
+        assertTrue(future.get().isEmpty(), "Mixed-center FFT accumulation must be rejected");
     }
 
     // =========================================================================

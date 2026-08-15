@@ -699,6 +699,24 @@ class BandScanControllerTest
     }
 
     @Test
+    void confidenceUsesLockedP25VariantInsteadOfEarlierTimedOutVariant() throws InterruptedException
+    {
+        ClassificationResult result = ClassificationResult.identified(
+            FREQ_A,
+            List.of(
+                new Candidate(DecoderType.P25_PHASE1, LockState.NONE, 0.0, null),
+                new Candidate(DecoderType.P25_PHASE1, LockState.LOCKED, 0.8, null)),
+            DecoderType.P25_PHASE1, null, SignalKind.CONTROL, "", Map.of(), -60.0);
+
+        BandScanController ctrl = makeController(new FakeSurvey(List.of(makePeak(FREQ_A))),
+            new FakeClassifier(Map.of(FREQ_A, result)));
+        ctrl.startScan(simpleScan());
+        awaitState(ctrl, ScanState.DONE, 5_000);
+
+        assertEquals(4, mModel.getDiscoveries().get(0).getConfidence());
+    }
+
+    @Test
     void confidenceBucketingLockedLowQuality() throws InterruptedException
     {
         // LOCKED + quality 0.5 → confidence 3
@@ -1292,6 +1310,27 @@ class BandScanControllerTest
     // -------------------------------------------------------------------------
     // stop() sets CANCELLED state
     // -------------------------------------------------------------------------
+
+    @Test
+    void staleSurveyingTransitionCannotOverwriteCancelled() throws InterruptedException
+    {
+        AtomicReference<BandScanController> controllerRef = new AtomicReference<>();
+        SpectralSurveyApi stoppingSurvey = (minHz, maxHz, dwell, thresholdDb, progress, tunerControl) ->
+        {
+            controllerRef.get().stop();
+            CompletableFuture<List<EnergyPeak>> future = new CompletableFuture<>();
+            future.cancel(true);
+            return future;
+        };
+        BandScanController ctrl = makeController(stoppingSurvey, new FakeClassifier(Map.of()));
+        controllerRef.set(ctrl);
+
+        ctrl.startScan(simpleScan());
+        awaitState(ctrl, ScanState.CANCELLED, 2_000);
+        Thread.sleep(50);
+
+        assertEquals(ScanState.CANCELLED, ctrl.getScanState());
+    }
 
     @Test
     void stopSetsCancelledState() throws InterruptedException

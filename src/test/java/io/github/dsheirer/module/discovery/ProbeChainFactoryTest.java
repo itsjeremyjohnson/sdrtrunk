@@ -28,6 +28,7 @@ import io.github.dsheirer.controller.channel.map.ChannelMapModel;
 import io.github.dsheirer.module.Module;
 import io.github.dsheirer.module.ProcessingChain;
 import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.PrimaryDecoder;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
 import io.github.dsheirer.module.decode.p25.phase1.Modulation;
@@ -269,6 +270,38 @@ class ProbeChainFactoryTest
             .map(DecodeConfigP25Phase1::getModulation)
             .toList());
         chains.forEach(chain -> chain.chain().dispose());
+    }
+
+    @Test
+    void p25VariantBuildFailureDisposesEarlierVariant()
+    {
+        AtomicBoolean disposed = new AtomicBoolean();
+        ProbeChainFactory factory = new ProbeChainFactory(new AliasModel(), new ChannelMapModel(),
+            new UserPreferences())
+        {
+            @Override
+            protected ProbeChain build(DecoderType decoderType, DecodeConfiguration configuration)
+            {
+                DecodeConfigP25Phase1 p25 = (DecodeConfigP25Phase1)configuration;
+                if(p25.getModulation() == Modulation.CQPSK)
+                {
+                    throw new RuntimeException("scripted CQPSK failure");
+                }
+
+                ProcessingChain chain = new ProcessingChain(new Channel(), new AliasModel())
+                {
+                    @Override
+                    public void dispose()
+                    {
+                        disposed.set(true);
+                    }
+                };
+                return new ProbeChain(decoderType, configuration, chain, new LockWatcher(), null);
+            }
+        };
+
+        assertThrows(RuntimeException.class, () -> factory.buildAll(DecoderType.P25_PHASE1));
+        assertTrue(disposed.get(), "Earlier P25 variant must be disposed when a later build fails");
     }
 
     @Test

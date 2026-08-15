@@ -309,6 +309,13 @@ public class DiscoveryEditor extends BorderPane
         };
     }
 
+    static javafx.beans.binding.StringBinding powerSnrBinding(Discovery discovery)
+    {
+        return Bindings.createStringBinding(
+            () -> String.format(Locale.ROOT, "%.1f / %.1f dB", discovery.getPowerDb(), discovery.getSnrDb()),
+            discovery.powerDbProperty(), discovery.snrDbProperty());
+    }
+
     static String detectedLabel(Discovery discovery)
     {
         DecoderType decoder = discovery.getDetectedDecoder();
@@ -473,32 +480,8 @@ public class DiscoveryEditor extends BorderPane
         confCol.setPrefWidth(60);
 
         // --- Column: Power / SNR ---
-        TableColumn<Discovery, Double> powerCol = new TableColumn<>("Power/SNR");
-        powerCol.setCellValueFactory(f -> f.getValue().powerDbProperty().asObject());
-        powerCol.setCellFactory(col -> new TableCell<>()
-        {
-            @Override
-            protected void updateItem(Double pwr, boolean empty)
-            {
-                super.updateItem(pwr, empty);
-
-                if(empty || pwr == null)
-                {
-                    setText(null);
-                    return;
-                }
-
-                int idx = getIndex();
-                if(idx < 0 || idx >= getTableView().getItems().size())
-                {
-                    setText(null);
-                    return;
-                }
-
-                Discovery d = getTableView().getItems().get(idx);
-                setText(String.format(Locale.ROOT, "%.1f / %.1f dB", pwr, d.getSnrDb()));
-            }
-        });
+        TableColumn<Discovery, String> powerCol = new TableColumn<>("Power/SNR");
+        powerCol.setCellValueFactory(f -> powerSnrBinding(f.getValue()));
         powerCol.setPrefWidth(120);
 
         // --- Column: First seen ---
@@ -557,7 +540,13 @@ public class DiscoveryEditor extends BorderPane
             private final Button mReprobeBtn= new Button("↻");
             private final HBox mBox = new HBox(2, mAddBtn, mSaveBtn, mRemoveBtn, mWatchBtn, mIgnoreBtn, mReprobeBtn);
             private Discovery mDiscovery;
-            private final InvalidationListener mDiscoveryListener = observable -> render();
+            private Channel mObservedChannel;
+            private final InvalidationListener mDiscoveryListener = observable ->
+            {
+                updateObservedChannel();
+                render();
+            };
+            private final InvalidationListener mChannelListener = observable -> render();
 
             {
                 mAddBtn.setTooltip(new Tooltip("Add as channel"));
@@ -619,6 +608,29 @@ public class DiscoveryEditor extends BorderPane
                     mDiscovery.stateProperty().addListener(mDiscoveryListener);
                     mDiscovery.createdChannelProperty().addListener(mDiscoveryListener);
                     mDiscovery.watchedProperty().addListener(mDiscoveryListener);
+                }
+
+                updateObservedChannel();
+            }
+
+            private void updateObservedChannel()
+            {
+                Channel channel = mDiscovery != null ? mDiscovery.getCreatedChannel() : null;
+                if(mObservedChannel == channel)
+                {
+                    return;
+                }
+
+                if(mObservedChannel != null)
+                {
+                    mObservedChannel.temporaryLiveProperty().removeListener(mChannelListener);
+                }
+
+                mObservedChannel = channel;
+
+                if(mObservedChannel != null)
+                {
+                    mObservedChannel.temporaryLiveProperty().addListener(mChannelListener);
                 }
             }
 

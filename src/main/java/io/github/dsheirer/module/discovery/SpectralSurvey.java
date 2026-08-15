@@ -383,12 +383,21 @@ public class SpectralSurvey implements SpectralSurveyApi
         double sampleRate = tunerControl.getCurrentSampleRateHz();
 
         SampleAccumulator accumulator = buildAccumulator();
+        AtomicBoolean configurationChanged = new AtomicBoolean(false);
 
         Listener<ComplexSamples> listener = samples ->
         {
             synchronized(accumulator)
             {
-                accumulator.process(samples);
+                if(tunerControl.getCurrentCenterFreqHz() != centerHz
+                    || Double.compare(tunerControl.getCurrentSampleRateHz(), sampleRate) != 0)
+                {
+                    configurationChanged.set(true);
+                }
+                else if(!configurationChanged.get())
+                {
+                    accumulator.process(samples);
+                }
             }
         };
 
@@ -405,7 +414,10 @@ public class SpectralSurvey implements SpectralSurveyApi
 
         synchronized(accumulator)
         {
-            if(!accumulator.hasData())
+            if(configurationChanged.get()
+                || tunerControl.getCurrentCenterFreqHz() != centerHz
+                || Double.compare(tunerControl.getCurrentSampleRateHz(), sampleRate) != 0
+                || !accumulator.hasData())
             {
                 return Collections.emptyList();
             }
@@ -681,13 +693,13 @@ public class SpectralSurvey implements SpectralSurveyApi
         // fftshift: move negative-frequency half to the front so bin 0 = lowest frequency
         float[] shiftedDb = fftShift(avgPowerDb);
 
-        // DC mask: clamp bins around the center (DC bin after shift = FFT_SIZE/2)
+        // DC mask: NaN excludes these bins from both detection and noise-floor estimation.
         int dcBin = FFT_SIZE / 2;
         int dcStart = Math.max(0, dcBin - DC_MASK_BINS);
         int dcEnd = Math.min(FFT_SIZE - 1, dcBin + DC_MASK_BINS);
         for(int i = dcStart; i <= dcEnd; i++)
         {
-            shiftedDb[i] = -200.0f;
+            shiftedDb[i] = Float.NaN;
         }
 
         // Bin width and base frequency
@@ -767,7 +779,6 @@ public class SpectralSurvey implements SpectralSurveyApi
         private final float[] mFftBuffer;
         private final double[] mPowerAccumulator;
         private int mRingPos = 0;
-        private boolean mRingFull = false;
         private int mFrameCount = 0;
 
         SampleAccumulator(float[] window, FloatFFT_1D fft, int fftSize)
@@ -796,37 +807,42 @@ public class SpectralSurvey implements SpectralSurveyApi
                 if(mRingPos >= mFftSize)
                 {
                     mRingPos = 0;
-                    mRingFull = true;
+                    accumulateFrame();
                 }
             }
+        }
 
-            if(mRingFull)
+        private void accumulateFrame()
+        {
+            // At a ring wrap, index zero is the oldest sample in this complete frame.
+            for(int n = 0; n < mFftSize; n++)
             {
-                // Read from mRingPos onward (oldest → newest), wrapping around
-                for(int n = 0; n < mFftSize; n++)
-                {
-                    int idx = (mRingPos + n) % mFftSize;
-                    float w = mWindow[n];
-                    mFftBuffer[2 * n]     = mIRing[idx] * w;
-                    mFftBuffer[2 * n + 1] = mQRing[idx] * w;
-                }
-
-                mFft.complexForward(mFftBuffer);
-
-                for(int n = 0; n < mFftSize; n++)
-                {
-                    double re = mFftBuffer[2 * n];
-                    double im = mFftBuffer[2 * n + 1];
-                    mPowerAccumulator[n] += re * re + im * im;
-                }
-
-                mFrameCount++;
+                int idx = (mRingPos + n) % mFftSize;
+                float w = mWindow[n];
+                mFftBuffer[2 * n] = mIRing[idx] * w;
+                mFftBuffer[2 * n + 1] = mQRing[idx] * w;
             }
+
+            mFft.complexForward(mFftBuffer);
+
+            for(int n = 0; n < mFftSize; n++)
+            {
+                double re = mFftBuffer[2 * n];
+                double im = mFftBuffer[2 * n + 1];
+                mPowerAccumulator[n] += re * re + im * im;
+            }
+
+            mFrameCount++;
         }
 
         boolean hasData()
         {
             return mFrameCount > 0;
+        }
+
+        int getFrameCount()
+        {
+            return mFrameCount;
         }
 
         /**
@@ -870,7 +886,22 @@ public class SpectralSurvey implements SpectralSurveyApi
             return 0.0;
         }
 
-        float[] sorted = Arrays.copyOf(magnitudesDb, magnitudesDb.length);
+        float[] sorted = new float[magnitudesDb.length];
+        int finiteCount = 0;
+        for(float magnitudeDb : magnitudesDb)
+        {
+            if(Float.isFinite(magnitudeDb))
+            {
+                sorted[finiteCount++] = magnitudeDb;
+            }
+        }
+
+        if(finiteCount == 0)
+        {
+            return 0.0;
+        }
+
+        sorted = Arrays.copyOf(sorted, finiteCount);
         Arrays.sort(sorted);
 
         int percentileBins = Math.max(1, (int)(sorted.length * NOISE_FLOOR_PERCENTILE));
