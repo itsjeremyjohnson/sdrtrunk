@@ -106,6 +106,20 @@ public class FrequencyErrorCorrectionManager
     }
 
     /**
+     * Rebases sanity checking when the tuner correction is changed outside the current observation cycle.
+     */
+    public void frequencyCorrectionChanged(double correction)
+    {
+        mBaselinePPM = correction;
+        reset();
+    }
+
+    double getBaselinePPM()
+    {
+        return mBaselinePPM;
+    }
+
+    /**
      * Applies a PPM adjustment value to the tuner's current PPM setting, when auto-correction is enabled.
      */
     private void applyCorrection()

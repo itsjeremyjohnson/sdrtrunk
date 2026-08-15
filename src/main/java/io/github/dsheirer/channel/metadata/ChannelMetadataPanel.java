@@ -57,6 +57,7 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.text.DecimalFormat;
 import java.util.EnumMap;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -97,6 +98,7 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     private TunerManager mTunerManager;
     private PlaylistManager mPlaylistManager;
     private Set<Integer> mMutedChannelIds = new HashSet<>();
+    private Map<Alias,Integer> mPreMuteAliasPriorities = new HashMap<>();
 
     /**
      * Table view for currently decoding channel metadata
@@ -480,6 +482,20 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         return null;
     }
 
+    static void applyTemporaryMute(Alias alias, boolean mute, Map<Alias,Integer> preMutePriorities)
+    {
+        if(mute)
+        {
+            preMutePriorities.putIfAbsent(alias, alias.getPlaybackPriority());
+            alias.setCallPriority(Priority.DO_NOT_MONITOR);
+        }
+        else
+        {
+            alias.setCallPriority(preMutePriorities.getOrDefault(alias, Priority.DEFAULT_PRIORITY));
+            preMutePriorities.remove(alias);
+        }
+    }
+
     /**
      * Toggles mute state for a channel.
      *
@@ -505,7 +521,7 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
             //Alias path: toggle DO_NOT_MONITOR on the alias so it persists and applies globally
             for(Alias alias : aliases)
             {
-                alias.setCallPriority(mute ? Priority.DO_NOT_MONITOR : Priority.DEFAULT_PRIORITY);
+                applyTemporaryMute(alias, mute, mPreMuteAliasPriorities);
             }
 
             //Persist alias change to playlist

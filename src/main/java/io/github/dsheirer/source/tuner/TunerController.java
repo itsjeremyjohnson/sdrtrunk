@@ -370,6 +370,7 @@ public abstract class TunerController implements Tunable, ISourceEventProcessor,
         {
             getLock().lock();
             mFrequencyController.setFrequencyCorrection(correction);
+            mFrequencyErrorCorrectionManager.frequencyCorrectionChanged(correction);
         }
         finally
         {

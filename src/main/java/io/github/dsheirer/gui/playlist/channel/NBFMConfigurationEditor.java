@@ -1257,14 +1257,14 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
 
         // Save tone filter settings
         config.setToneFilterEnabled(mToneFilterEnabledSwitch.isSelected());
-        List<ChannelToneFilter> filters = new ArrayList<>();
+        ChannelToneFilter editedFilter = null;
         ChannelToneFilter.ToneType selectedType = mToneTypeCombo.getValue();
         if(selectedType == ChannelToneFilter.ToneType.CTCSS)
         {
             CTCSSCode code = mCtcssCodeCombo.getValue();
             if(code != null && code != CTCSSCode.UNKNOWN)
             {
-                filters.add(new ChannelToneFilter(selectedType, code.name(), ""));
+                editedFilter = new ChannelToneFilter(selectedType, code.name(), "");
             }
         }
         else if(selectedType == ChannelToneFilter.ToneType.DCS)
@@ -1272,10 +1272,10 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
             DCSCode code = mDcsCodeCombo.getValue();
             if(code != null)
             {
-                filters.add(new ChannelToneFilter(selectedType, code.name(), ""));
+                editedFilter = new ChannelToneFilter(selectedType, code.name(), "");
             }
         }
-        config.setToneFilters(filters);
+        config.setToneFilters(mergeToneFilters(config.getToneFilters(), editedFilter));
 
         // Save squelch tail settings
         config.setSquelchTailRemovalEnabled(mSquelchTailEnabledSwitch.isSelected());
@@ -1287,6 +1287,27 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
         saveAudioFilterConfiguration(config);
 
         getItem().setDecodeConfiguration(config);
+    }
+
+    /**
+     * Replaces the first filter represented by this editor while preserving any additional configured filters.
+     */
+    static List<ChannelToneFilter> mergeToneFilters(List<ChannelToneFilter> existing,
+                                                     ChannelToneFilter editedFilter)
+    {
+        List<ChannelToneFilter> merged = existing == null ? new ArrayList<>() : new ArrayList<>(existing);
+
+        if(!merged.isEmpty())
+        {
+            merged.removeFirst();
+        }
+
+        if(editedFilter != null)
+        {
+            merged.addFirst(editedFilter);
+        }
+
+        return merged;
     }
 
     private void loadAudioFilterConfiguration(DecodeConfigNBFM config)

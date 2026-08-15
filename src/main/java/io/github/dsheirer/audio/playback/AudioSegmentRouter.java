@@ -132,6 +132,14 @@ public class AudioSegmentRouter
         }
 
         String deviceName = alias.getAudioOutputDevice();
+
+        //Only suppress normal playback after confirming that the routed output is available.
+        if(getOrCreateOutputLine(deviceName) == null)
+        {
+            mLog.warn("Cannot route - output line not available for: " + deviceName);
+            return;
+        }
+
         SegmentRouter router = new SegmentRouter(audioSegment, deviceName, alias.getName());
         audioSegment.incrementConsumerCount();
 
@@ -348,7 +356,7 @@ public class AudioSegmentRouter
     /**
      * Gets or creates a SourceDataLine for the specified device
      */
-    private synchronized SourceDataLine getOrCreateOutputLine(String deviceName)
+    synchronized SourceDataLine getOrCreateOutputLine(String deviceName)
     {
         // Check cache first
         SourceDataLine cached = mAudioOutputLines.get(deviceName);

@@ -15,7 +15,10 @@ import io.github.dsheirer.module.decode.p25.identifier.talkgroup.APCO25Talkgroup
 import io.github.dsheirer.protocol.Protocol;
 import org.junit.jupiter.api.Test;
 
+import javax.sound.sampled.SourceDataLine;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertSame;
 
 class AudioSegmentRouterTest
@@ -40,7 +43,7 @@ class AudioSegmentRouterTest
     }
 
     @Test
-    void holdsConsumerReferenceUntilRouterDisposal()
+    void unavailableOutputFallsBackToNormalPlaybackAndReleasesSegment()
     {
         AliasList aliasList = new AliasList("test");
         Alias alias = new Alias("routed");
@@ -52,13 +55,21 @@ class AudioSegmentRouterTest
         segment.addIdentifier(APCO25Talkgroup.create(100));
         segment.addAudio(new float[160]);
         segment.incrementConsumerCount();
-        AudioSegmentRouter router = new AudioSegmentRouter();
+        AudioSegmentRouter router = new AudioSegmentRouter()
+        {
+            @Override
+            SourceDataLine getOrCreateOutputLine(String deviceName)
+            {
+                return null;
+            }
+        };
 
         router.route(segment);
         segment.decrementConsumerCount();
 
-        assertEquals(1, segment.getAudioBufferCount());
-        router.dispose();
         assertEquals(0, segment.getAudioBufferCount());
+        assertNotEquals(io.github.dsheirer.alias.id.priority.Priority.DO_NOT_MONITOR,
+            segment.monitorPriorityProperty().get());
+        router.dispose();
     }
 }

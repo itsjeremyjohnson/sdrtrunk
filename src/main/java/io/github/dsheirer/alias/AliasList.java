@@ -221,7 +221,24 @@ public class AliasList
                     case CTCSS:
                         if(id instanceof Ctcss ctcss)
                         {
-                            mCTCSSCodeAliasMap.put(ctcss.getCTCSSCode(), alias);
+                            CTCSSCode code = ctcss.getCTCSSCode();
+                            Alias existing = mCTCSSCodeAliasMap.get(code);
+
+                            if(existing != null && !existing.equals(alias))
+                            {
+                                id.setOverlap(true);
+
+                                for(AliasID aliasID: existing.getAliasIdentifiers())
+                                {
+                                    if(aliasID instanceof Ctcss existingCtcss &&
+                                        existingCtcss.getCTCSSCode() == code)
+                                    {
+                                        aliasID.setOverlap(true);
+                                    }
+                                }
+                            }
+
+                            mCTCSSCodeAliasMap.put(code, alias);
                         }
                         break;
                     case DCS:
@@ -233,7 +250,23 @@ public class AliasList
                     case NAC:
                         if(id instanceof Nac nac)
                         {
-                            mNACValueAliasMap.put(nac.getNacValue(), alias);
+                            int value = nac.getNacValue();
+                            Alias existing = mNACValueAliasMap.get(value);
+
+                            if(existing != null && !existing.equals(alias))
+                            {
+                                id.setOverlap(true);
+
+                                for(AliasID aliasID: existing.getAliasIdentifiers())
+                                {
+                                    if(aliasID instanceof Nac existingNac && existingNac.getNacValue() == value)
+                                    {
+                                        aliasID.setOverlap(true);
+                                    }
+                                }
+                            }
+
+                            mNACValueAliasMap.put(value, alias);
                         }
                         break;
                     case ESN:

@@ -161,7 +161,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
      * @param ic identifier collection to check
      * @return true if the call should be processed, false if it should be ignored
      */
-    private boolean hasAlias(IdentifierCollection ic)
+    boolean hasAlias(IdentifierCollection ic)
     {
         if(!mIgnoreUnaliasedTalkgroups || mAliasList == null)
         {

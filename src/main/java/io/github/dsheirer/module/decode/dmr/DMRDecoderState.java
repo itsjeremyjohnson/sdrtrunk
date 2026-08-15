@@ -1451,6 +1451,19 @@ public class DMRDecoderState extends TimeslotDecoderState
      */
     private void updateCurrentCall(DecodeEventType type, String details, long timestamp)
     {
+        //Traffic decoders are shared by both timeslots. Apply alias filtering here so an unaliased call on one
+        //timeslot does not disable an allowed call on the other timeslot using the same allocated frequency.
+        if(mTrafficChannelManager != null && !mTrafficChannelManager.hasAlias(getIdentifierCollection()))
+        {
+            if(mCurrentCallEvent != null)
+            {
+                closeCurrentCallEvent(timestamp);
+                broadcast(new DecoderStateEvent(this, Event.END, State.CALL, getTimeslot()));
+            }
+
+            return;
+        }
+
         Event event = (mCurrentCallEvent == null ? Event.START : Event.CONTINUATION);
 
         //Create a repeater channel descriptor if we don't have one

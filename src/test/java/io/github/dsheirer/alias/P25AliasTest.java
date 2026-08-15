@@ -343,6 +343,38 @@ public class P25AliasTest
     }
 
     @Test
+    void marksDuplicateCtcssAndNacIdentifiersAsOverlapping()
+    {
+        AliasList aliasList = new AliasList("Test Alias List");
+        Alias first = new Alias("First");
+        Ctcss firstCtcss = new Ctcss();
+        firstCtcss.setCTCSSCode(CTCSSCode.TONE_1Z);
+        Nac firstNac = new Nac();
+        firstNac.setNacValue(0x293);
+        first.addAliasID(firstCtcss);
+        first.addAliasID(firstNac);
+        aliasList.addAlias(first);
+
+        Alias second = new Alias("Second");
+        Ctcss secondCtcss = new Ctcss();
+        secondCtcss.setCTCSSCode(CTCSSCode.TONE_1Z);
+        Nac secondNac = new Nac();
+        secondNac.setNacValue(0x293);
+        second.addAliasID(secondCtcss);
+        second.addAliasID(secondNac);
+        aliasList.addAlias(second);
+
+        assertTrue(firstCtcss.overlapProperty().get());
+        assertTrue(secondCtcss.overlapProperty().get());
+        assertTrue(firstNac.overlapProperty().get());
+        assertTrue(secondNac.overlapProperty().get());
+
+        aliasList.removeAlias(second);
+        assertEquals(first, aliasList.getAliases(new CTCSSIdentifier(CTCSSCode.TONE_1Z)).getFirst());
+        assertEquals(first, aliasList.getAliases(new APCO25Nac(0x293)).getFirst());
+    }
+
+    @Test
     void removesDeletedCtcssAliasFromLookup()
     {
         AliasList aliasList = new AliasList("Test Alias List");
