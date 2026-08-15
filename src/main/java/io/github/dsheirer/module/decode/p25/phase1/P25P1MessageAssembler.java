@@ -47,6 +47,7 @@ public class P25P1MessageAssembler implements Listener<Dibit>
     private P25P1DataUnitID mDataUnitID;
     private int mNac;
     private boolean mDuidCorrected;
+    private boolean mDuidCorrectedDuringActiveSignal;
 
     /**
      * Constructs an instance
@@ -258,6 +259,16 @@ public class P25P1MessageAssembler implements Listener<Dibit>
     public boolean isDuidCorrected()
     {
         return mDuidCorrected;
+    }
+
+    public void setDuidCorrectedDuringActiveSignal(boolean activeSignal)
+    {
+        mDuidCorrectedDuringActiveSignal = activeSignal;
+    }
+
+    public boolean isDuidCorrectedDuringActiveSignal()
+    {
+        return mDuidCorrectedDuringActiveSignal;
     }
 
     /**

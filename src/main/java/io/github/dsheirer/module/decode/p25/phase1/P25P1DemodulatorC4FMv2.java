@@ -218,6 +218,16 @@ public class P25P1DemodulatorC4FMv2
         mDfePastDecision2 = 0.0f;
     }
 
+    public void coldStartReset()
+    {
+        resetPLL();
+        mSamplePointAdjustment = 0;
+        mSymbolsSinceLastSync = 0;
+        mFineSync = false;
+        mPreviousSoftSymbol = 0.0f;
+        mPreviousSymbolBufferOffset = 0.0;
+    }
+
     /**
      * Primary input method for receiving a stream of demodulated samples to process into symbols.
      * @param samples to process

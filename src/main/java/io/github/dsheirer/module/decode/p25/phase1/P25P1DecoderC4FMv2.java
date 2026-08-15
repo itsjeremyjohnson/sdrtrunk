@@ -54,6 +54,7 @@ import java.io.File;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.text.DecimalFormat;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
@@ -71,12 +72,15 @@ import org.slf4j.LoggerFactory;
  * correction.  It also provides a stream of demodulated soft symbols (in radians) for display to the user.
  */
 public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferProvider, IComplexSamplesListener,
-        ISourceEventListener, ISourceEventProvider, Listener<ComplexSamples>
+        ISourceEventListener, ISourceEventProvider, Listener<ComplexSamples>, ISignalEnergyProvider
 {
     private static final Logger LOGGER = LoggerFactory.getLogger(P25P1DecoderC4FMv2.class);
     private static final DecimalFormat DECIMAL_FORMAT = new DecimalFormat("#.##");
     private static final int SYMBOL_RATE = 4800;
     private static final Map<Double,float[]> BASEBAND_FILTERS = new HashMap<>();
+    private static final float ENERGY_EMA_FACTOR = 0.001f;
+    private static final float ENERGY_SILENCE_RATIO = 0.10f;
+    private static final float SIGNAL_RISE_RATIO = 4.0f;
 
     private final P25P1DemodulatorC4FMv2 mSymbolProcessor;
     private final P25P1MessageFramer mMessageFramer = new P25P1MessageFramer();
@@ -89,6 +93,16 @@ public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferPr
     private IRealFilter mBasebandFilterQ;
     private IRealFilter mPulseShapingFilterI;
     private IRealFilter mPulseShapingFilterQ;
+    private float mEnergyAverage;
+    private float mPeakEnergy;
+    private boolean mInSilence = true;
+    private int mSilenceSampleCount;
+    private int mSilenceSamplesThreshold = 2500;
+    private int mNoiseFloorSamplesThreshold = 2500;
+    private float mNoiseFloor;
+    private int mNoiseFloorSampleCount;
+    private int mBoundaryResetCount;
+    private String mDiagnosticsChannelName;
 
     @Override
     public DecoderType getDecoderType()
@@ -109,6 +123,12 @@ public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferPr
         }
         mMessageProcessor.setMessageListener(getMessageListener());
         mSymbolProcessor = new P25P1DemodulatorC4FMv2(mMessageFramer, this);
+        mMessageFramer.setEnergyProvider(this);
+    }
+
+    public void setDiagnosticsChannelName(String channelName)
+    {
+        mDiagnosticsChannelName = channelName;
     }
 
     @Override
@@ -206,6 +226,8 @@ public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferPr
         mSymbolProcessor.setSamplesPerSymbol(mDemodulator.getSamplesPerSymbol());
         mMessageFramer.setListener(mMessageProcessor);
         mMessageProcessor.setMessageListener(getMessageListener());
+        mSilenceSamplesThreshold = (int)(decimatedSampleRate * 0.1f);
+        mNoiseFloorSamplesThreshold = (int)(decimatedSampleRate * 0.1f);
     }
 
     /**
@@ -221,20 +243,121 @@ public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferPr
         float[] i = mDecimationFilterI.decimateReal(samples.i());
         float[] q = mDecimationFilterQ.decimateReal(samples.q());
 
-        //Process buffer for channel power measurements
+        int boundary = detectTransmissionBoundary(i, q);
         mPowerMonitor.process(i, q);
+
+        if(boundary >= 0)
+        {
+            process(Arrays.copyOfRange(i, 0, boundary), Arrays.copyOfRange(q, 0, boundary));
+            resetAtTransmissionBoundary();
+            process(Arrays.copyOfRange(i, boundary, i.length), Arrays.copyOfRange(q, boundary, q.length));
+        }
+        else
+        {
+            process(i, q);
+        }
+    }
+
+    private void process(float[] i, float[] q)
+    {
+        if(i.length == 0)
+        {
+            return;
+        }
 
         i = mBasebandFilterI.filter(i);
         q = mBasebandFilterQ.filter(q);
-
         i = mPulseShapingFilterI.filter(i);
         q = mPulseShapingFilterQ.filter(q);
-
-        // PI/4 DQPSK differential demodulation
         float[] demodulated = mDemodulator.demodulate(i, q);
-
-        //Process demodulated samples into symbols and apply message sync detection and framing.
         mSymbolProcessor.process(demodulated);
+    }
+
+    private void resetAtTransmissionBoundary()
+    {
+        mSymbolProcessor.coldStartReset();
+        mMessageFramer.coldStartReset();
+        mMessageFramer.setBoundaryRecoveryActive(true);
+        mMessageFramer.setInitialAcquisitionActive(true);
+    }
+
+    int detectTransmissionBoundary(float[] i, float[] q)
+    {
+        for(int idx = 0; idx < i.length; idx++)
+        {
+            float energy = (i[idx] * i[idx]) + (q[idx] * q[idx]);
+            mEnergyAverage += (energy - mEnergyAverage) * ENERGY_EMA_FACTOR;
+
+            if(mEnergyAverage > mPeakEnergy)
+            {
+                mPeakEnergy = mEnergyAverage;
+            }
+            else
+            {
+                mPeakEnergy *= 0.99999f;
+            }
+
+            float silenceThreshold = mPeakEnergy * ENERGY_SILENCE_RATIO;
+
+            if(mInSilence)
+            {
+                mNoiseFloorSampleCount++;
+                mNoiseFloor += (mEnergyAverage - mNoiseFloor) * ENERGY_EMA_FACTOR;
+
+                if(mNoiseFloorSampleCount >= mNoiseFloorSamplesThreshold && mNoiseFloor > 0 &&
+                        mEnergyAverage > mNoiseFloor * SIGNAL_RISE_RATIO)
+                {
+                    if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
+                    {
+                        P25PipelineDiagnostics.log(mDiagnosticsChannelName, "BOUNDARY", "SILENCE_TO_SIGNAL",
+                                String.format("energy=%.2e noiseFloor=%.2e", mEnergyAverage, mNoiseFloor));
+                    }
+                    mBoundaryResetCount++;
+                    mInSilence = false;
+                    mSilenceSampleCount = 0;
+                    mPeakEnergy = mEnergyAverage;
+                    return idx;
+                }
+            }
+            else if(mPeakEnergy > 0 && mEnergyAverage < silenceThreshold)
+            {
+                mSilenceSampleCount++;
+                if(mSilenceSampleCount >= mSilenceSamplesThreshold)
+                {
+                    mInSilence = true;
+                    mNoiseFloor = mEnergyAverage;
+                    mNoiseFloorSampleCount = 0;
+                    if(P25PipelineDiagnostics.isEnabled(mDiagnosticsChannelName))
+                    {
+                        P25PipelineDiagnostics.log(mDiagnosticsChannelName, "BOUNDARY", "ENTER_SILENCE",
+                                String.format("energy=%.2e peak=%.2e", mEnergyAverage, mPeakEnergy));
+                    }
+                }
+            }
+            else
+            {
+                mSilenceSampleCount = 0;
+            }
+        }
+
+        return -1;
+    }
+
+    @Override
+    public boolean isSignalPresent()
+    {
+        return !mInSilence && mPeakEnergy > 0;
+    }
+
+    @Override
+    public float getSignalEnergyLevel()
+    {
+        return mPeakEnergy > 0 ? mEnergyAverage / mPeakEnergy : 0f;
+    }
+
+    int getBoundaryResetCount()
+    {
+        return mBoundaryResetCount;
     }
 
     /**

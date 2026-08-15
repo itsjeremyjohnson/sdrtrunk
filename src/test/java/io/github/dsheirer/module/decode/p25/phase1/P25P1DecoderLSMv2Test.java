@@ -44,6 +44,19 @@ class P25P1DecoderLSMv2Test
     }
 
     @Test
+    void c4fmV2IdleNoiseRemainsSilenceUntilEnergyRisesAboveTheLearnedFloor()
+    {
+        P25P1DecoderC4FMv2 decoder = new P25P1DecoderC4FMv2();
+        decoder.detectTransmissionBoundary(samples(3000, 0.01f), samples(3000, 0.0f));
+
+        assertEquals(0, decoder.getBoundaryResetCount());
+
+        int boundary = decoder.detectTransmissionBoundary(samples(1000, 0.10f), samples(1000, 0.0f));
+        assertEquals(1, decoder.getBoundaryResetCount());
+        assertTrue(boundary >= 0);
+    }
+
+    @Test
     void weakerCarrierRemainsPresentAfterLsmBoundaryReset()
     {
         P25P1DecoderLSMv2 decoder = new P25P1DecoderLSMv2();
@@ -54,6 +67,13 @@ class P25P1DecoderLSMv2Test
     void weakerCarrierRemainsPresentAfterC4fmBoundaryReset()
     {
         P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
+        assertWeakerCarrierRemainsPresent(decoder::detectTransmissionBoundary, decoder::isSignalPresent);
+    }
+
+    @Test
+    void weakerCarrierRemainsPresentAfterC4fmV2BoundaryReset()
+    {
+        P25P1DecoderC4FMv2 decoder = new P25P1DecoderC4FMv2();
         assertWeakerCarrierRemainsPresent(decoder::detectTransmissionBoundary, decoder::isSignalPresent);
     }
 

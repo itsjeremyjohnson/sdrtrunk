@@ -33,6 +33,7 @@ public abstract class P25P1Message extends TimeslotMessage implements IMessage
 {
     private Identifier mNAC;
     private boolean mDuidCorrected = false;
+    private boolean mDuidCorrectedDuringActiveSignal;
 
     /**
      * Constructs a P25 message.
@@ -93,6 +94,16 @@ public abstract class P25P1Message extends TimeslotMessage implements IMessage
     public void setDuidCorrected(boolean corrected)
     {
         mDuidCorrected = corrected;
+    }
+
+    public boolean isDuidCorrectedDuringActiveSignal()
+    {
+        return mDuidCorrectedDuringActiveSignal;
+    }
+
+    public void setDuidCorrectedDuringActiveSignal(boolean activeSignal)
+    {
+        mDuidCorrectedDuringActiveSignal = activeSignal;
     }
 
     /**

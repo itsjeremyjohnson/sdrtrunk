@@ -22,10 +22,27 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class P25P1DecoderStateTest
 {
+    @Test
+    void encryptedStateRequiresConsecutiveConfirmation()
+    {
+        P25P1DecoderState state = createState(new ArrayList<>());
+        int threshold = state.getEncryptionConfirmationThreshold();
+
+        for(int x = 1; x < threshold; x++)
+        {
+            assertFalse(state.updateEncryptionState(true));
+        }
+
+        assertTrue(state.updateEncryptionState(true));
+        assertFalse(state.updateEncryptionState(false));
+        state.stop();
+    }
+
     @Test
     void zeroHoldoverDisablesSyncLossAndPeriodicContinuations() throws Exception
     {

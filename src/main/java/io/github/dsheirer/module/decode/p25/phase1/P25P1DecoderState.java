@@ -197,6 +197,10 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     private final Listener<ChannelEvent> mChannelEventListener;
     private final P25TrafficChannelManager mTrafficChannelManager;
     private ServiceOptions mCurrentServiceOptions;
+    private static final int ENCRYPTION_CONFIRMATION_THRESHOLD =
+            Integer.parseInt(System.getProperty("p25.encrypt.confirm", "2"));
+    private int mConsecutiveEncryptedLDU2;
+    private boolean mEncryptedCall;
 
     // Signal energy provider for audio continuity holdover decisions
     private ISignalEnergyProvider mSignalEnergyProvider;
@@ -922,6 +926,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
 
                 if(headerData.isEncryptedAudio())
                 {
+                    mEncryptedCall = true;
+                    mConsecutiveEncryptedLDU2 = ENCRYPTION_CONFIRMATION_THRESHOLD;
                     if(P25PipelineDiagnostics.isEnabled(P25PipelineDiagnostics.keyFor(mChannel)))
                     {
                         P25PipelineDiagnostics.log(P25PipelineDiagnostics.keyFor(mChannel), "DECODER_STATE", "HDU_ENCRYPTED", "START/ENCRYPTED");
@@ -930,6 +936,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                 }
                 else
                 {
+                    resetEncryptionConfirmation();
                     mDiagCallStartCount++;
                     if(P25PipelineDiagnostics.isEnabled(P25PipelineDiagnostics.keyFor(mChannel)))
                     {
@@ -941,6 +948,36 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
         }
     }
 
+
+    boolean updateEncryptionState(boolean encrypted)
+    {
+        if(encrypted)
+        {
+            mConsecutiveEncryptedLDU2++;
+
+            if(mConsecutiveEncryptedLDU2 >= ENCRYPTION_CONFIRMATION_THRESHOLD)
+            {
+                mEncryptedCall = true;
+            }
+        }
+        else
+        {
+            resetEncryptionConfirmation();
+        }
+
+        return mEncryptedCall;
+    }
+
+    int getEncryptionConfirmationThreshold()
+    {
+        return ENCRYPTION_CONFIRMATION_THRESHOLD;
+    }
+
+    private void resetEncryptionConfirmation()
+    {
+        mConsecutiveEncryptedLDU2 = 0;
+        mEncryptedCall = false;
+    }
 
     /**
      * Processes an LDU voice message and forwards Link Control and/or Encryption Sync Parameters for
@@ -985,15 +1022,16 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                     {
                         mTrafficChannelManager.processP1TrafficCurrentUser(getCurrentFrequency(), esp.getEncryptionKey(),
                                 message.getTimestamp(), ldu2.toString());
-                        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.ENCRYPTED));
                     }
                     else
                     {
                         getIdentifierCollection().remove(Form.ENCRYPTION_KEY);
                         mTrafficChannelManager.processP1TrafficCurrentUser(getCurrentFrequency(), null,
                                 message.getTimestamp(), ldu2.toString());
-                        broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.CALL));
                     }
+
+                    State state = updateEncryptionState(esp.isEncryptedAudio()) ? State.ENCRYPTED : State.CALL;
+                    broadcast(new DecoderStateEvent(this, Event.CONTINUATION, state));
                     validLDUProcessed = true;
                 }
             }
@@ -1100,6 +1138,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             mLastValidLDUTimestamp = 0;
             mHoldoverActive = false;
             stopPeriodicHoldoverCheck();
+            resetEncryptionConfirmation();
 
             mTrafficChannelManager.processP1TrafficCallEnd(getCurrentFrequency(), message.getTimestamp(), "TDU:" + message);
 
@@ -1127,6 +1166,7 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
             mLastValidLDUTimestamp = 0;
             mHoldoverActive = false;
             stopPeriodicHoldoverCheck();
+            resetEncryptionConfirmation();
 
             if(lcw != null && lcw.isValid())
             {

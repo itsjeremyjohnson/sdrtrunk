@@ -4,11 +4,15 @@ import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.dataformat.xml.JacksonXmlModule;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
+import io.github.dsheirer.alias.AliasFactory;
+import io.github.dsheirer.alias.action.beep.BeepAction;
+import io.github.dsheirer.alias.id.talkgroup.Talkgroup;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.dsp.squelch.CTCSSFrequency;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
+import io.github.dsheirer.protocol.Protocol;
 import io.github.dsheirer.record.RecorderType;
 import io.github.dsheirer.record.config.RecordConfiguration;
 import org.junit.jupiter.api.Test;
@@ -168,6 +172,22 @@ public class ConfigRoundTripTest
         assertEquals("log-value", copy.getEventLogConfiguration().getUnknownProperties().get("futureLog"));
         assertEquals("record-value", copy.getRecordConfiguration().getUnknownProperties().get("futureRecord"));
         assertEquals("source-value", copy.getSourceConfiguration().getUnknownProperties().get("futureSource"));
+    }
+
+    @Test
+    void aliasFactoryCopiesPreserveUnknownProperties()
+    {
+        Talkgroup originalID = new Talkgroup(Protocol.APCO25, 1234);
+        originalID.setUnknownProperty("futureIdentifier", "identifier-value");
+        Talkgroup copiedID = (Talkgroup)AliasFactory.copyOf(originalID);
+        assertEquals("identifier-value", copiedID.getUnknownProperties().get("futureIdentifier"));
+        assertNotSame(originalID.getUnknownProperties(), copiedID.getUnknownProperties());
+
+        BeepAction originalAction = new BeepAction();
+        originalAction.setUnknownProperty("futureAction", "action-value");
+        BeepAction copiedAction = (BeepAction)AliasFactory.copyOf(originalAction);
+        assertEquals("action-value", copiedAction.getUnknownProperties().get("futureAction"));
+        assertNotSame(originalAction.getUnknownProperties(), copiedAction.getUnknownProperties());
     }
 
     @Test

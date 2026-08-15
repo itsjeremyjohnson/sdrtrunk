@@ -116,4 +116,12 @@ public abstract class AliasAction
     {
         return mUnknownProperties;
     }
+
+    public void copyUnknownPropertiesFrom(AliasAction aliasAction)
+    {
+        if(aliasAction != null && aliasAction.mUnknownProperties != null)
+        {
+            mUnknownProperties = new LinkedHashMap<>(aliasAction.mUnknownProperties);
+        }
+    }
 }

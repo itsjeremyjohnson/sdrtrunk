@@ -362,6 +362,7 @@ public class P25P1MessageFramer
             {
                 mMessageAssembler = new P25P1MessageAssembler(mDetectedNAC, mDetectedDataUnitID);
                 mMessageAssembler.setDuidCorrected(mDetectedDuidCorrected);
+                mMessageAssembler.setDuidCorrectedDuringActiveSignal(mDetectedDuidCorrectedDuringActiveSignal);
                 mMessageAssemblyRequired = false;
                 mFlywheelAssembly = false;
             }
@@ -376,6 +377,7 @@ public class P25P1MessageFramer
                     mDetectedDataUnitID = predicted;
                     mMessageAssembler = new P25P1MessageAssembler(mDetectedNAC, predicted);
                     mMessageAssembler.setDuidCorrected(true);
+                    mMessageAssembler.setDuidCorrectedDuringActiveSignal(true);
                     mFlywheelAssembly = true;
                     mFlywheelAttemptCount++;
                     mFlywheelConsecutiveMisses++;
@@ -529,6 +531,7 @@ public class P25P1MessageFramer
         if(message != null)
         {
             message.setDuidCorrected(mMessageAssembler.isDuidCorrected());
+            message.setDuidCorrectedDuringActiveSignal(mMessageAssembler.isDuidCorrectedDuringActiveSignal());
             broadcast(message);
         }
         else
@@ -903,6 +906,7 @@ public class P25P1MessageFramer
     private int mMaxConsecutiveDuidCorrections = Integer.MAX_VALUE; // Default: unlimited for backward compat
     private int mConsecutiveDuidCorrections = 0;
     private boolean mDetectedDuidCorrected;
+    private boolean mDetectedDuidCorrectedDuringActiveSignal;
 
     public int getDuidCorrectionCount() { return mDuidCorrectionCount; }
 
@@ -937,6 +941,7 @@ public class P25P1MessageFramer
     {
         mDetectedDataUnitID = dataUnitID;
         mDetectedDuidCorrected = false;
+        mDetectedDuidCorrectedDuringActiveSignal = false;
 
         //If the DUID is UNKNOWN, use the PLACEHOLDER and don't overwrite the previously detected NAC
         if(mDetectedDataUnitID == P25P1DataUnitID.UNKNOWN)
@@ -964,6 +969,8 @@ public class P25P1MessageFramer
                 {
                     mDetectedDataUnitID = predicted;
                     mDetectedDuidCorrected = true;
+                    mDetectedDuidCorrectedDuringActiveSignal =
+                            mEnergyProvider == null || mEnergyProvider.isSignalPresent();
                     mDuidCorrectionCount++;
                     mConsecutiveDuidCorrections++;
                 }

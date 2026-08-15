@@ -57,91 +57,91 @@ public class AliasFactory
                 BroadcastChannel originalBroadcast = (BroadcastChannel)id;
                 BroadcastChannel copyBroadcast = new BroadcastChannel();
                 copyBroadcast.setChannelName(originalBroadcast.getChannelName());
-                return copyBroadcast;
+                return preserveUnknownProperties(id, copyBroadcast);
             case DCS:
                 Dcs originalDcs = (Dcs)id;
                 Dcs copyDcs = new Dcs();
                 copyDcs.setDCSCode(originalDcs.getDCSCode());
-                return copyDcs;
+                return preserveUnknownProperties(id, copyDcs);
             case ESN:
                 Esn originalESN = (Esn)id;
                 Esn copyESN = new Esn();
                 copyESN.setEsn(originalESN.getEsn());
-                return copyESN;
+                return preserveUnknownProperties(id, copyESN);
             case LOJACK:
                 LoJackFunctionAndID originalLoJackFunctionAndID = (LoJackFunctionAndID)id;
                 LoJackFunctionAndID copyLoJackFunctionAndID = new LoJackFunctionAndID();
                 copyLoJackFunctionAndID.setFunction(originalLoJackFunctionAndID.getFunction());
                 copyLoJackFunctionAndID.setID(originalLoJackFunctionAndID.getID());
-                return copyLoJackFunctionAndID;
+                return preserveUnknownProperties(id, copyLoJackFunctionAndID);
             case MIN:
                 Min originalMin = (Min)id;
                 Min copyMin = new Min();
                 copyMin.setMin(originalMin.getMin());
-                return copyMin;
+                return preserveUnknownProperties(id, copyMin);
             case P25_FULLY_QUALIFIED_RADIO_ID:
                 P25FullyQualifiedRadio originalP25 = (P25FullyQualifiedRadio) id;
                 P25FullyQualifiedRadio copyP25 = new P25FullyQualifiedRadio(originalP25.getWacn(),
                         originalP25.getSystem(), originalP25.getValue());
                 copyP25.setOverlap(originalP25.overlapProperty().get());
-                return copyP25;
+                return preserveUnknownProperties(id, copyP25);
             case P25_FULLY_QUALIFIED_TALKGROUP:
                 P25FullyQualifiedTalkgroup originalFqt = (P25FullyQualifiedTalkgroup) id;
                 P25FullyQualifiedTalkgroup copyFqt = new P25FullyQualifiedTalkgroup(originalFqt.getWacn(),
                         originalFqt.getSystem(), originalFqt.getValue());
                 copyFqt.setOverlap(originalFqt.overlapProperty().get());
-                return copyFqt;
+                return preserveUnknownProperties(id, copyFqt);
             case PRIORITY:
                 Priority originalPriority = (Priority)id;
                 Priority copyPriority = new Priority();
                 copyPriority.setPriority(originalPriority.getPriority());
-                return copyPriority;
+                return preserveUnknownProperties(id, copyPriority);
             case RADIO_ID:
                 Radio originalRadio = (Radio)id;
                 Radio copyRadio = new Radio(originalRadio.getProtocol(), originalRadio.getValue());
                 copyRadio.setOverlap(originalRadio.overlapProperty().get());
-                return copyRadio;
+                return preserveUnknownProperties(id, copyRadio);
             case RADIO_ID_RANGE:
                 RadioRange originalRadioRange = (RadioRange)id;
                 RadioRange copyRadioRange = new RadioRange(originalRadioRange.getProtocol(), originalRadioRange.getMinRadio(),
                     originalRadioRange.getMaxRadio());
                 copyRadioRange.setOverlap(originalRadioRange.overlapProperty().get());
-                return copyRadioRange;
+                return preserveUnknownProperties(id, copyRadioRange);
             case RECORD:
-                return new Record();
+                return preserveUnknownProperties(id, new Record());
             case SITE:
                 SiteID originalSiteID = (SiteID)id;
                 SiteID copySiteID = new SiteID();
                 copySiteID.setSite(originalSiteID.getSite());
-                return copySiteID;
+                return preserveUnknownProperties(id, copySiteID);
             case STATUS:
                 UserStatusID originalUserStatusID = (UserStatusID)id;
                 UserStatusID copyUserStatusID = new UserStatusID();
                 copyUserStatusID.setStatus(originalUserStatusID.getStatus());
                 copyUserStatusID.setOverlap(originalUserStatusID.overlapProperty().get());
-                return copyUserStatusID;
+                return preserveUnknownProperties(id, copyUserStatusID);
             case TALKGROUP:
                 Talkgroup originalTalkgroup = (Talkgroup)id;
                 Talkgroup copyTalkgroup = new Talkgroup(originalTalkgroup.getProtocol(), originalTalkgroup.getValue());
                 copyTalkgroup.setOverlap(originalTalkgroup.overlapProperty().get());
-                return copyTalkgroup;
+                return preserveUnknownProperties(id, copyTalkgroup);
             case TALKGROUP_RANGE:
                 TalkgroupRange originalRange = (TalkgroupRange)id;
                 TalkgroupRange copyRange = new TalkgroupRange(originalRange.getProtocol(), originalRange.getMinTalkgroup(),
                     originalRange.getMaxTalkgroup());
                 copyRange.setOverlap(originalRange.overlapProperty().get());
-                return copyRange;
+                return preserveUnknownProperties(id, copyRange);
             case TONES:
                 TonesID originalTones = (TonesID)id;
                 TonesID copyTones = new TonesID();
                 copyTones.setToneSequence(originalTones.getToneSequence().copyOf());
-                return copyTones;
+                return preserveUnknownProperties(id, copyTones);
             case UNIT_STATUS:
                 UnitStatusID originalUnitStatus = (UnitStatusID)id;
                 UnitStatusID copyUnitStatusID = new UnitStatusID();
                 copyUnitStatusID.setStatus(originalUnitStatus.getStatus());
                 copyUnitStatusID.setOverlap(originalUnitStatus.overlapProperty().get());
-                return copyUnitStatusID;
+                return preserveUnknownProperties(id, copyUnitStatusID);
 
             //Legacy identifiers ... not supported
             case FLEETSYNC:
@@ -167,7 +167,7 @@ public class AliasFactory
             BeepAction copyBeep = new BeepAction();
             copyBeep.setInterval(original.getInterval());
             copyBeep.setPeriod(original.getPeriod());
-            return copyBeep;
+            return preserveUnknownProperties(action, copyBeep);
         }
         else if(action instanceof ClipAction)
         {
@@ -176,7 +176,7 @@ public class AliasFactory
             copyClip.setInterval(originalClip.getInterval());
             copyClip.setPath(originalClip.getPath());
             copyClip.setPeriod(originalClip.getPeriod());
-            return copyClip;
+            return preserveUnknownProperties(action, copyClip);
         }
         else if(action instanceof ScriptAction)
         {
@@ -185,10 +185,22 @@ public class AliasFactory
             copyScript.setInterval(originalScript.getInterval());
             copyScript.setPeriod(originalScript.getPeriod());
             copyScript.setScript(originalScript.getScript());
-            return copyScript;
+            return preserveUnknownProperties(action, copyScript);
         }
 
         return null;
+    }
+
+    private static <T extends AliasID> T preserveUnknownProperties(AliasID original, T copy)
+    {
+        copy.copyUnknownPropertiesFrom(original);
+        return copy;
+    }
+
+    private static <T extends AliasAction> T preserveUnknownProperties(AliasAction original, T copy)
+    {
+        copy.copyUnknownPropertiesFrom(original);
+        return copy;
     }
 
     public static Alias shallowCopyOf(Alias original)

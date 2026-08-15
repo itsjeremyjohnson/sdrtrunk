@@ -86,6 +86,7 @@ import io.github.dsheirer.module.decode.p25.audio.P25P1AudioModule;
 import io.github.dsheirer.module.decode.p25.audio.P25P2AudioModule;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
 import io.github.dsheirer.module.decode.p25.phase1.P25PipelineDiagnostics;
+import io.github.dsheirer.module.decode.p25.phase1.ISignalEnergyProvider;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderC4FM;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderC4FMv2;
 import io.github.dsheirer.module.decode.p25.phase1.P25P1DecoderLSM;
@@ -274,6 +275,7 @@ public class DecoderFactory
                                          IChannelDescriptor channelDescriptor)
     {
         P25P1DecoderLSMv2 lsmv2Decoder = null;
+        ISignalEnergyProvider signalEnergyProvider = null;
 
         if(channel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 p1)
         {
@@ -288,9 +290,11 @@ public class DecoderFactory
                         c4fmDecoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     }
                     modules.add(c4fmDecoder);
+                    signalEnergyProvider = c4fmDecoder;
                     break;
                 case C4FM_V2:
                     P25P1DecoderC4FMv2 c4fmv2Decoder = new P25P1DecoderC4FMv2();
+                    c4fmv2Decoder.setDiagnosticsChannelName(P25PipelineDiagnostics.keyFor(channel));
                     c4fmv2Decoder.setGardnerBandwidth(p1.getGardnerBandwidth());
                     c4fmv2Decoder.setAfcAlpha(p1.getAfcAlpha());
                     c4fmv2Decoder.setAdaptiveThresholdsEnabled(p1.isAdaptiveThresholds());
@@ -302,6 +306,7 @@ public class DecoderFactory
                         c4fmv2Decoder.getMessageFramer().setMaxBchErrors(p1.getMaxBchErrors());
                     }
                     modules.add(c4fmv2Decoder);
+                    signalEnergyProvider = c4fmv2Decoder;
                     break;
                 case CQPSK:
                     P25P1DecoderLSM lsmDecoder = new P25P1DecoderLSM();
@@ -324,6 +329,7 @@ public class DecoderFactory
                     lsmv2Decoder.setCMAConfig(p1.getCmaAcquisitionMu(),
                             p1.getCmaTrackingMu(), p1.getCmaGearShiftMs());
                     modules.add(lsmv2Decoder);
+                    signalEnergyProvider = lsmv2Decoder;
                     break;
                 default:
                     throw new IllegalArgumentException("Unrecognized P25 Phase 1 Modulation [" + p1.getModulation() + "]");
@@ -353,9 +359,9 @@ public class DecoderFactory
         // Wire signal energy provider, holdover, and voice-only channel configuration
         if(channel.getDecodeConfiguration() instanceof DecodeConfigP25Phase1 p1Config)
         {
-            if(lsmv2Decoder != null && decoderState != null)
+            if(signalEnergyProvider != null && decoderState != null)
             {
-                decoderState.setSignalEnergyProvider(lsmv2Decoder);
+                decoderState.setSignalEnergyProvider(signalEnergyProvider);
                 decoderState.setHoldoverMs(p1Config.getAudioHoldoverMs());
             }
         }

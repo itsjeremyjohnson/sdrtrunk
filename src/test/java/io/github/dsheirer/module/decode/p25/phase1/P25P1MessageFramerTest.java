@@ -68,6 +68,7 @@ class P25P1MessageFramerTest
         framer.nidDetected(0x293, P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1, 0);
         P25P1Message corrected = messages.getLast();
         assertTrue(corrected.isDuidCorrected());
+        assertTrue(corrected.isDuidCorrectedDuringActiveSignal());
     }
 
     @Test
@@ -111,7 +112,8 @@ class P25P1MessageFramerTest
         feedUntilMessage(framer, messages, initialCount + 1);
 
         assertEquals(1, framer.getFlywheelAttemptCount());
-        assertTrue((messages.getLast()).isDuidCorrected());
+        assertTrue(messages.getLast().isDuidCorrected());
+        assertTrue(messages.getLast().isDuidCorrectedDuringActiveSignal());
     }
 
     private P25P1MessageFramer createRunningFramer(List<P25P1Message> messages)

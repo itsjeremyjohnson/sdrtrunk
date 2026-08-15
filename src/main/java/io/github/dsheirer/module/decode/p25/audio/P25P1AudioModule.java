@@ -295,9 +295,9 @@ public class P25P1AudioModule extends ImbeAudioModule
     {
         if(!mEncryptedCall)
         {
-            // Suppress audio for DUID-corrected LDUs — these contain noise, not voice.
-            // Apply a rapid fade-out using the last good frame to avoid abrupt transitions.
-            if(ldu.isDuidCorrected())
+            // Suppress only DUID corrections made after carrier loss. Corrections and flywheel recovery while the
+            // signal is active still contain recoverable voice and continue through the normal IMBE quality gate.
+            if(ldu.isDuidCorrected() && !ldu.isDuidCorrectedDuringActiveSignal())
             {
                 for(byte[] frame : ldu.getIMBEFrames())
                 {

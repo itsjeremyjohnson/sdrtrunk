@@ -189,4 +189,12 @@ public abstract class AliasID
     {
         return mUnknownProperties;
     }
+
+    public void copyUnknownPropertiesFrom(AliasID aliasID)
+    {
+        if(aliasID != null && aliasID.mUnknownProperties != null)
+        {
+            mUnknownProperties = new LinkedHashMap<>(aliasID.mUnknownProperties);
+        }
+    }
 }
