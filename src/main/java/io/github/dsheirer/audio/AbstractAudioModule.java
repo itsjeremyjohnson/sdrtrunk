@@ -32,7 +32,8 @@ import io.github.dsheirer.identifier.Role;
 import io.github.dsheirer.identifier.configuration.SiteConfigurationIdentifier;
 import io.github.dsheirer.identifier.configuration.SystemConfigurationIdentifier;
 import io.github.dsheirer.module.decode.p25.phase1.PcmStreamManager;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -66,6 +67,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     private String mPcmCachedSite = "";
     private String mPcmCachedTalkgroup = "";
     private String mPcmCachedFrom = "";
+    private long mPcmFirstFrameTimestamp = 0;
 
     /**
      * Constructs an abstract audio module
@@ -149,6 +151,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                     mPcmCachedSite = "";
                     mPcmCachedTalkgroup = "";
                     mPcmCachedFrom = "";
+                    mPcmFirstFrameTimestamp = 0;
                 }
             }
         }
@@ -174,9 +177,20 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         return "";
     }
 
-    /** Starts PCM streaming for the current call once the asynchronously-started server is ready. */
-    private synchronized void startPcmCallIfReady()
+    static String formatPcmTimestamp(long timestamp)
     {
+        return Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDateTime()
+            .format(PCM_TIMESTAMP_FMT);
+    }
+
+    /** Starts PCM streaming for the current call once the asynchronously-started server is ready. */
+    private synchronized void startPcmCallIfReady(long frameTimestamp)
+    {
+        if(mPcmFirstFrameTimestamp == 0)
+        {
+            mPcmFirstFrameTimestamp = frameTimestamp;
+        }
+
         try
         {
             PcmStreamManager pcmMgr = PcmStreamManager.getInstance();
@@ -193,7 +207,7 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                         ? mIdentifierCollection.getFromIdentifier().toString() : "";
                 pcmMgr.broadcastCallStart(mPcmCallId, mPcmCachedSystem, mPcmCachedSite,
                         mPcmCachedTalkgroup, mPcmCachedFrom,
-                        LocalDateTime.now().format(PCM_TIMESTAMP_FMT));
+                        formatPcmTimestamp(mPcmFirstFrameTimestamp));
             }
         }
         catch(Exception e)
@@ -240,8 +254,6 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
                 }
 
                 mAudioSampleCount = 0;
-
-                startPcmCallIfReady();
             }
 
             return mAudioSegment;
@@ -249,6 +261,11 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     }
 
     public void addAudio(float[] audioBuffer)
+    {
+        addAudio(audioBuffer, System.currentTimeMillis());
+    }
+
+    protected void addAudio(float[] audioBuffer, long frameTimestamp)
     {
         AudioSegment audioSegment = getAudioSegment();
 
@@ -262,8 +279,8 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
             audioSegment.linkTo(previous);
         }
 
-        // Retry call initialization here in case the asynchronous PCM server was not ready when the segment was created.
-        startPcmCallIfReady();
+        // Retry initialization while retaining the first decoded frame's source timestamp.
+        startPcmCallIfReady(frameTimestamp);
 
         // PCM stream: broadcast decoded audio to connected TCP clients.
         // Wrapped in try-catch so any PCM failure cannot affect the existing audio pipeline.

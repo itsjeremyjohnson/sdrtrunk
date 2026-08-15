@@ -35,12 +35,16 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 {
 	private int mSampleRate = HydraSdrTunerController.DEFAULT_SAMPLE_RATE;
 	private int mLnaGain = HydraSdrTunerController.LNA_GAIN_DEFAULT;
+	private int mRfGain = -1;
 	private int mMixerGain = HydraSdrTunerController.MIXER_GAIN_DEFAULT;
+	private int mFilterGain = -1;
 	private int mVgaGain = HydraSdrTunerController.VGA_GAIN_DEFAULT;
 	private int mLinearityGain = 14;
 	private int mSensitivityGain = 0;
 	private boolean mLnaAgc = false;
+	private boolean mRfAgc = false;
 	private boolean mMixerAgc = false;
+	private boolean mFilterAgc = false;
 	private boolean mBiasT = false;
 	private int mGainMode = 0; /* 0=linearity, 1=sensitivity, 2=custom */
 
@@ -144,6 +148,17 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 		mLnaGain = gain;
 	}
 
+	@JacksonXmlProperty(isAttribute = true, localName = "rf_gain")
+	public int getRfGain()
+	{
+		return mRfGain;
+	}
+
+	public void setRfGain(int gain)
+	{
+		mRfGain = gain;
+	}
+
 	@JacksonXmlProperty(isAttribute = true, localName = "mixer_gain")
 	public int getMixerGain()
 	{
@@ -153,6 +168,17 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 	public void setMixerGain(int gain)
 	{
 		mMixerGain = gain;
+	}
+
+	@JacksonXmlProperty(isAttribute = true, localName = "filter_gain")
+	public int getFilterGain()
+	{
+		return mFilterGain;
+	}
+
+	public void setFilterGain(int gain)
+	{
+		mFilterGain = gain;
 	}
 
 	@JacksonXmlProperty(isAttribute = true, localName = "vga_gain")
@@ -200,6 +226,17 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 		mLnaAgc = enabled;
 	}
 
+	@JacksonXmlProperty(isAttribute = true, localName = "rf_agc")
+	public boolean isRfAgc()
+	{
+		return mRfAgc;
+	}
+
+	public void setRfAgc(boolean enabled)
+	{
+		mRfAgc = enabled;
+	}
+
 	@JacksonXmlProperty(isAttribute = true, localName = "mixer_agc")
 	public boolean isMixerAgc()
 	{
@@ -210,6 +247,17 @@ public class HydraSdrTunerConfiguration extends TunerConfiguration
 	public void setMixerAgc(boolean enabled)
 	{
 		mMixerAgc = enabled;
+	}
+
+	@JacksonXmlProperty(isAttribute = true, localName = "filter_agc")
+	public boolean isFilterAgc()
+	{
+		return mFilterAgc;
+	}
+
+	public void setFilterAgc(boolean enabled)
+	{
+		mFilterAgc = enabled;
 	}
 
 	@JacksonXmlProperty(isAttribute = true, localName = "bias_t")

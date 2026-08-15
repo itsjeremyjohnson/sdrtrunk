@@ -235,12 +235,6 @@ public class TalkerAliasLogger extends Module
                     {
                         int radioId = Integer.parseInt(record.get("RADIO_ID").trim());
                         String aliasText = record.get("TALKER_ALIAS");
-
-                        if(aliasText.startsWith("TA-"))
-                        {
-                            aliasText = aliasText.substring(3);
-                        }
-
                         loaded.put(radioId, aliasText);
                     }
                     catch(NumberFormatException e)

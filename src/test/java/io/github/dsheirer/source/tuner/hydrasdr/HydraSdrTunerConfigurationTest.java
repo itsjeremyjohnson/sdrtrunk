@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 public class HydraSdrTunerConfigurationTest
@@ -43,5 +44,26 @@ public class HydraSdrTunerConfigurationTest
         assertEquals(4, configuration.getMixerGain());
         assertTrue(configuration.isLnaAgc());
         assertTrue(configuration.isMixerAgc());
+    }
+
+    @Test
+    void persistsExtendedCustomGainStages() throws Exception
+    {
+        String json = "{\"type\":\"hydraSdrTunerConfiguration\",\"rfGain\":12,\"filterGain\":7," +
+            "\"rfAgc\":true,\"filterAgc\":false}";
+        ObjectMapper mapper = new ObjectMapper();
+        HydraSdrTunerConfiguration configuration = mapper.readValue(json, HydraSdrTunerConfiguration.class);
+
+        assertEquals(12, configuration.getRfGain());
+        assertEquals(7, configuration.getFilterGain());
+        assertTrue(configuration.isRfAgc());
+        assertFalse(configuration.isFilterAgc());
+
+        String persisted = mapper.writeValueAsString(configuration);
+        HydraSdrTunerConfiguration restored = mapper.readValue(persisted, HydraSdrTunerConfiguration.class);
+        assertEquals(12, restored.getRfGain());
+        assertEquals(7, restored.getFilterGain());
+        assertTrue(restored.isRfAgc());
+        assertFalse(restored.isFilterAgc());
     }
 }

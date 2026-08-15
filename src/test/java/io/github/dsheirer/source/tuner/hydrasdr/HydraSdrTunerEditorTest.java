@@ -37,6 +37,15 @@ class HydraSdrTunerEditorTest
     }
 
     @Test
+    void clampsConfigurationFallbackToReportedRange()
+    {
+        assertEquals(200_000_000,
+            HydraSdrTunerController.getConfigurationFallbackFrequency(200_000_000, 2_000_000_000));
+        assertEquals(50_000_000,
+            HydraSdrTunerController.getConfigurationFallbackFrequency(1_000_000, 50_000_000));
+    }
+
+    @Test
     void preservesSupportedModes()
     {
         assertEquals(HydraSdrTunerController.GAIN_MODE_LINEARITY,

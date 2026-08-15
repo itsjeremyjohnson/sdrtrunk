@@ -119,6 +119,11 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		return Math.max(minimum, Math.min(preferred, maximum));
 	}
 
+	static long getConfigurationFallbackFrequency(long minimum, long maximum)
+	{
+		return getInitialFrequency(TunerConfiguration.DEFAULT_FREQUENCY, minimum, maximum);
+	}
+
 	@Override
 	public void start() throws SourceException
 	{
@@ -463,7 +468,32 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	@Override
 	public void apply(TunerConfiguration tunerConfiguration) throws SourceException
 	{
-		super.apply(tunerConfiguration);
+		try
+		{
+			setFrequency(tunerConfiguration.getFrequency());
+		}
+		catch(Exception e)
+		{
+			long fallback = getConfigurationFallbackFrequency(getMinimumFrequency(), getMaximumFrequency());
+			mLog.warn("Unable to restore previous frequency [" + tunerConfiguration.getFrequency() +
+				"] trying device-range fallback [" + fallback + "]");
+			if(tunerConfiguration.getFrequency() != fallback)
+			{
+				setFrequency(fallback);
+				tunerConfiguration.setFrequency(fallback);
+			}
+		}
+
+		if(tunerConfiguration.getMinimumFrequency() > 0)
+		{
+			setMinimumFrequency(tunerConfiguration.getMinimumFrequency());
+		}
+		if(tunerConfiguration.getMaximumFrequency() > 0)
+		{
+			setMaximumFrequency(tunerConfiguration.getMaximumFrequency());
+		}
+		setFrequencyCorrection(tunerConfiguration.getFrequencyCorrection());
+		getFrequencyErrorCorrectionManager().setEnabled(tunerConfiguration.getAutoPPMCorrectionEnabled());
 
 		if(tunerConfiguration instanceof HydraSdrTunerConfiguration config)
 		{
@@ -515,18 +545,34 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 					{
 						setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, config.isLnaAgc() ? 1 : 0);
 					}
+					if(hasCapability(HydraSdrNative.CAP_RF_AGC))
+					{
+						setGain(HydraSdrNative.GAIN_TYPE_RF_AGC, config.isRfAgc() ? 1 : 0);
+					}
 					if(hasCapability(HydraSdrNative.CAP_MIXER_AGC))
 					{
 						setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, config.isMixerAgc() ? 1 : 0);
+					}
+					if(hasCapability(HydraSdrNative.CAP_FILTER_AGC))
+					{
+						setGain(HydraSdrNative.GAIN_TYPE_FILTER_AGC, config.isFilterAgc() ? 1 : 0);
 					}
 
 					if(hasCapability(HydraSdrNative.CAP_LNA_GAIN) && config.getLnaGain() >= 0)
 					{
 						setGain(HydraSdrNative.GAIN_TYPE_LNA, config.getLnaGain());
 					}
+					if(hasCapability(HydraSdrNative.CAP_RF_GAIN) && config.getRfGain() >= 0)
+					{
+						setGain(HydraSdrNative.GAIN_TYPE_RF, config.getRfGain());
+					}
 					if(hasCapability(HydraSdrNative.CAP_MIXER_GAIN) && config.getMixerGain() >= 0)
 					{
 						setGain(HydraSdrNative.GAIN_TYPE_MIXER, config.getMixerGain());
+					}
+					if(hasCapability(HydraSdrNative.CAP_FILTER_GAIN) && config.getFilterGain() >= 0)
+					{
+						setGain(HydraSdrNative.GAIN_TYPE_FILTER, config.getFilterGain());
 					}
 					if(hasCapability(HydraSdrNative.CAP_VGA_GAIN) && config.getVgaGain() >= 0)
 					{

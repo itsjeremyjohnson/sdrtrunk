@@ -188,7 +188,7 @@ public class P25P2AudioModule extends AmbeAudioModule implements IdentifierUpdat
                 try
                 {
                     IAudioWithMetadata audioWithMetadata = getAudioCodec().getAudioWithMetadata(voiceFrameBytes);
-                    addAudio(audioWithMetadata.getAudio());
+                    addAudio(audioWithMetadata.getAudio(), timestamp);
                     processMetadata(audioWithMetadata, timestamp);
                 }
                 catch(Exception e)

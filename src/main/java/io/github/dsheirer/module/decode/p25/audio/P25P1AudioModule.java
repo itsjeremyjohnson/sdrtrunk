@@ -139,7 +139,7 @@ public class P25P1AudioModule extends ImbeAudioModule
             {
                 float[] audio = getAudioCodec().getAudio(frame);
                 audio = mGain.apply(audio);
-                addAudio(audio);
+                addAudio(audio, ldu.getTimestamp());
             }
         }
         else

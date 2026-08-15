@@ -33,11 +33,29 @@ class AbstractAudioModuleTest
         module.stop();
     }
 
+    @Test
+    void retainsFirstDecodedFrameTimestampWhilePcmServerStarts() throws Exception
+    {
+        TestAudioModule module = new TestAudioModule();
+        module.addTimestampedAudio(new float[8], 1_700_000_000_123L);
+        module.addTimestampedAudio(new float[8], 1_700_000_001_456L);
+
+        Field timestampField = AbstractAudioModule.class.getDeclaredField("mPcmFirstFrameTimestamp");
+        timestampField.setAccessible(true);
+        assertEquals(1_700_000_000_123L, timestampField.getLong(module));
+        module.stop();
+    }
+
     private static class TestAudioModule extends AbstractAudioModule
     {
         private TestAudioModule()
         {
             super(null, DEFAULT_TIMESLOT, 1);
+        }
+
+        private void addTimestampedAudio(float[] audio, long timestamp)
+        {
+            addAudio(audio, timestamp);
         }
 
         @Override

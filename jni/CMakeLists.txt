@@ -80,8 +80,8 @@ if(NOT HydraSDR_FOUND AND NOT HYDRASDR_USE_LOCAL)
 	set(HYDRASDR_USE_FETCH ON)
 	message(STATUS "libhydrasdr not found locally - cloning from GitHub...")
 
-	# Git tag/branch to checkout (override with -DHYDRASDR_GIT_TAG=xxx)
-	set(HYDRASDR_GIT_TAG "main" CACHE STRING
+	# Tested immutable release tag (override explicitly with -DHYDRASDR_GIT_TAG=xxx)
+	set(HYDRASDR_GIT_TAG "v1.1.1" CACHE STRING
 		"Git tag/branch/commit of hydrasdr-host to checkout")
 
 	FetchContent_Declare(

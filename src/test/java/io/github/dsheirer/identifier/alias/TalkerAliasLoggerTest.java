@@ -162,6 +162,24 @@ public class TalkerAliasLoggerTest
     }
 
     @Test
+    void preservesLiteralTalkerAliasPrefixAcrossRestart(@TempDir Path logDirectory) throws IOException
+    {
+        String systemName = "prefixed-alias-system";
+        TalkerAliasLogger logger = new TalkerAliasLogger(logDirectory, systemName);
+        logger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("TA-Dispatch")));
+
+        TalkerAliasManager manager = new TalkerAliasManager();
+        new TalkerAliasLogger(logDirectory, systemName).bootstrap(manager);
+        MutableIdentifierCollection identifiers = new MutableIdentifierCollection();
+        identifiers.update(APCO25RadioIdentifier.createFrom(10));
+        manager.enrichMutable(identifiers);
+        TalkerAliasIdentifier alias = (TalkerAliasIdentifier)identifiers.getIdentifier(
+            IdentifierClass.USER, Form.TALKER_ALIAS, Role.FROM);
+
+        assertEquals("TA-Dispatch", alias.getValue());
+    }
+
+    @Test
     void bootstrapsDmrAliasesAsDmrIdentifiers(@TempDir Path logDirectory) throws IOException
     {
         Files.writeString(logDirectory.resolve(TalkerAliasLogger.getAliasFileName("dmr-system", Protocol.DMR)),
