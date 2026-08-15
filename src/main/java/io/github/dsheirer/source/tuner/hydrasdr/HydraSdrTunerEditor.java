@@ -511,6 +511,8 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 							throw new SourceException("Gain mode is not supported by this device");
 						}
 
+						int presetValue = mode == HydraSdrTunerController.GAIN_MODE_CUSTOM ? -1 :
+							preparePresetGain(controller, mode);
 						if(mode == 0)
 						{
 							/* Linearity: disable AGCs, apply preset */
@@ -523,10 +525,8 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 							{
 								controller.setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, 0);
 							}
-							int value = getMasterGainSlider().getValue();
-							if(value < 1) value = 14;
 							getTuner().getController().setGain(
-								HydraSdrNative.GAIN_TYPE_LINEARITY, value);
+								HydraSdrNative.GAIN_TYPE_LINEARITY, presetValue);
 						}
 						else if(mode == 1)
 						{
@@ -540,10 +540,8 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 							{
 								controller.setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, 0);
 							}
-							int value = getMasterGainSlider().getValue();
-							if(value < 1) value = 10;
 							getTuner().getController().setGain(
-								HydraSdrNative.GAIN_TYPE_SENSITIVITY, value);
+								HydraSdrNative.GAIN_TYPE_SENSITIVITY, presetValue);
 						}
 						else
 						{
@@ -617,6 +615,31 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 				JOptionPane.INFORMATION_MESSAGE));
 		}
 		return mTunerInfoButton;
+	}
+
+	private int preparePresetGain(HydraSdrTunerController controller, int mode)
+	{
+		int gainType = mode == HydraSdrTunerController.GAIN_MODE_LINEARITY ?
+			HydraSdrNative.GAIN_TYPE_LINEARITY : HydraSdrNative.GAIN_TYPE_SENSITIVITY;
+		int savedValue = mode == HydraSdrTunerController.GAIN_MODE_LINEARITY ?
+			getConfiguration().getLinearityGain() : getConfiguration().getSensitivityGain();
+		int fallback = mode == HydraSdrTunerController.GAIN_MODE_LINEARITY ?
+			HydraSdrTunerController.LINEARITY_GAIN_DEFAULT : HydraSdrTunerController.SENSITIVITY_GAIN_DEFAULT;
+		int[] gainInfo = controller.getGainInfo(gainType);
+		int value = HydraSdrTunerController.normalizePresetGain(savedValue, fallback, gainInfo);
+
+		setLoading(true);
+		try
+		{
+			updateSliderRange(getMasterGainSlider(), gainInfo);
+			getMasterGainSlider().setValue(value);
+			getMasterGainValueLabel().setText(String.valueOf(value));
+		}
+		finally
+		{
+			setLoading(false);
+		}
+		return value;
 	}
 
 	/**

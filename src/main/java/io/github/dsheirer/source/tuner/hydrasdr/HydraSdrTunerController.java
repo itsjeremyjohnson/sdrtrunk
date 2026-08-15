@@ -64,6 +64,8 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	public static final int GAIN_MODE_CUSTOM = 2;
 
 	/* Gain defaults (used when device doesn't report ranges) */
+	public static final int LINEARITY_GAIN_DEFAULT = 14;
+	public static final int SENSITIVITY_GAIN_DEFAULT = 10;
 	public static final int LNA_GAIN_DEFAULT = 7;
 	public static final int MIXER_GAIN_DEFAULT = 9;
 	public static final int VGA_GAIN_DEFAULT = 9;
@@ -511,29 +513,33 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 					setBiasT(config.isBiasT());
 				}
 
-				int gainMode = config.getGainMode();
+				int gainMode = selectSupportedGainMode(config.getGainMode(),
+					supportsGainMode(GAIN_MODE_LINEARITY), supportsGainMode(GAIN_MODE_SENSITIVITY),
+					supportsGainMode(GAIN_MODE_CUSTOM));
 
+				if(gainMode < 0)
+				{
+					throw new SourceException("Device does not advertise a supported gain mode");
+				}
+
+				config.setGainMode(gainMode);
 				if(gainMode == GAIN_MODE_CUSTOM)
 				{
 					applyCustomGains(config);
 				}
-				else if(gainMode == GAIN_MODE_SENSITIVITY && supportsGainMode(GAIN_MODE_SENSITIVITY))
+				else if(gainMode == GAIN_MODE_SENSITIVITY)
 				{
-					/* Sensitivity mode: single preset value sets all gains */
-					int sensitivity = config.getSensitivityGain();
-					setGain(HydraSdrNative.GAIN_TYPE_SENSITIVITY, sensitivity > 0 ? sensitivity : 10);
-				}
-				else if(gainMode == GAIN_MODE_LINEARITY && supportsGainMode(GAIN_MODE_LINEARITY))
-				{
-					/* Linearity mode: single preset value sets all gains */
-					int linearity = config.getLinearityGain();
-					setGain(HydraSdrNative.GAIN_TYPE_LINEARITY, linearity > 0 ? linearity : 14);
+					int sensitivity = normalizePresetGain(config.getSensitivityGain(), SENSITIVITY_GAIN_DEFAULT,
+						getGainInfo(HydraSdrNative.GAIN_TYPE_SENSITIVITY));
+					setGain(HydraSdrNative.GAIN_TYPE_SENSITIVITY, sensitivity);
+					config.setSensitivityGain(sensitivity);
 				}
 				else
 				{
-					/* Fall back to capability-gated individual gains. */
-					config.setGainMode(GAIN_MODE_CUSTOM);
-					applyCustomGains(config);
+					int linearity = normalizePresetGain(config.getLinearityGain(), LINEARITY_GAIN_DEFAULT,
+						getGainInfo(HydraSdrNative.GAIN_TYPE_LINEARITY));
+					setGain(HydraSdrNative.GAIN_TYPE_LINEARITY, linearity);
+					config.setLinearityGain(linearity);
 				}
 			}
 			catch(Exception e)
@@ -676,6 +682,60 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		};
 	}
 
+	static int selectSupportedGainMode(int requestedMode, boolean supportsLinearity, boolean supportsSensitivity,
+		boolean supportsCustom)
+	{
+		if((requestedMode == GAIN_MODE_LINEARITY && supportsLinearity) ||
+			(requestedMode == GAIN_MODE_SENSITIVITY && supportsSensitivity) ||
+			(requestedMode == GAIN_MODE_CUSTOM && supportsCustom))
+		{
+			return requestedMode;
+		}
+		if(supportsLinearity)
+		{
+			return GAIN_MODE_LINEARITY;
+		}
+		if(supportsSensitivity)
+		{
+			return GAIN_MODE_SENSITIVITY;
+		}
+		if(supportsCustom)
+		{
+			return GAIN_MODE_CUSTOM;
+		}
+		return -1;
+	}
+
+	static int normalizeGainValue(int value, int[] gainInfo)
+	{
+		if(gainInfo == null || gainInfo.length <= HydraSdrNative.GAIN_INFO_STEP)
+		{
+			return value;
+		}
+
+		int minimum = gainInfo[HydraSdrNative.GAIN_INFO_MIN];
+		int maximum = gainInfo[HydraSdrNative.GAIN_INFO_MAX];
+		if(maximum < minimum)
+		{
+			return value;
+		}
+
+		int step = Math.max(1, gainInfo[HydraSdrNative.GAIN_INFO_STEP]);
+		long clamped = Math.max(minimum, Math.min((long)maximum, value));
+		long aligned = minimum + ((clamped - minimum + (step / 2L)) / step) * step;
+		return (int)Math.max(minimum, Math.min((long)maximum, aligned));
+	}
+
+	static int normalizePresetGain(int value, int fallback, int[] gainInfo)
+	{
+		int defaultValue = fallback;
+		if(gainInfo != null && gainInfo.length > HydraSdrNative.GAIN_INFO_DEFAULT)
+		{
+			defaultValue = gainInfo[HydraSdrNative.GAIN_INFO_DEFAULT];
+		}
+		return normalizeGainValue(value > 0 ? value : defaultValue, gainInfo);
+	}
+
 	/**
 	 * Applies each saved custom gain that the device advertises.
 	 */
@@ -697,15 +757,21 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		}
 		if(deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_GAIN) && config.getLnaGain() >= 0)
 		{
-			setGain(HydraSdrNative.GAIN_TYPE_LNA, config.getLnaGain());
+			int gain = normalizeGainValue(config.getLnaGain(), getGainInfo(HydraSdrNative.GAIN_TYPE_LNA));
+			setGain(HydraSdrNative.GAIN_TYPE_LNA, gain);
+			config.setLnaGain(gain);
 		}
 		if(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_GAIN) && config.getMixerGain() >= 0)
 		{
-			setGain(HydraSdrNative.GAIN_TYPE_MIXER, config.getMixerGain());
+			int gain = normalizeGainValue(config.getMixerGain(), getGainInfo(HydraSdrNative.GAIN_TYPE_MIXER));
+			setGain(HydraSdrNative.GAIN_TYPE_MIXER, gain);
+			config.setMixerGain(gain);
 		}
 		if(deviceInfo.hasCapability(HydraSdrNative.CAP_VGA_GAIN) && config.getVgaGain() >= 0)
 		{
-			setGain(HydraSdrNative.GAIN_TYPE_VGA, config.getVgaGain());
+			int gain = normalizeGainValue(config.getVgaGain(), getGainInfo(HydraSdrNative.GAIN_TYPE_VGA));
+			setGain(HydraSdrNative.GAIN_TYPE_VGA, gain);
+			config.setVgaGain(gain);
 		}
 	}
 

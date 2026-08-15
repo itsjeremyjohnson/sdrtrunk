@@ -73,4 +73,37 @@ class HydraSdrTunerControllerTest
 
         assertEquals(SERIAL_1, HydraSdrTunerController.assignSerialForUsbPort(2, "5", serials));
     }
+
+    @Test
+    void selectsAdvertisedPresetWhenRequestedModeIsUnavailable()
+    {
+        assertEquals(HydraSdrTunerController.GAIN_MODE_SENSITIVITY,
+            HydraSdrTunerController.selectSupportedGainMode(HydraSdrTunerController.GAIN_MODE_LINEARITY,
+                false, true, false));
+        assertEquals(HydraSdrTunerController.GAIN_MODE_CUSTOM,
+            HydraSdrTunerController.selectSupportedGainMode(HydraSdrTunerController.GAIN_MODE_LINEARITY,
+                false, false, true));
+        assertEquals(-1, HydraSdrTunerController.selectSupportedGainMode(
+            HydraSdrTunerController.GAIN_MODE_CUSTOM, false, false, false));
+    }
+
+    @Test
+    void normalizesRestoredGainToAdvertisedRangeAndStep()
+    {
+        int[] gainInfo = {0, 0, 20, 4, 8, 0};
+
+        assertEquals(0, HydraSdrTunerController.normalizeGainValue(-5, gainInfo));
+        assertEquals(8, HydraSdrTunerController.normalizeGainValue(7, gainInfo));
+        assertEquals(20, HydraSdrTunerController.normalizeGainValue(25, gainInfo));
+    }
+
+    @Test
+    void usesAdvertisedPresetDefaultBeforeNormalization()
+    {
+        int[] gainInfo = {0, 1, 21, 4, 9, 0};
+
+        assertEquals(9, HydraSdrTunerController.normalizePresetGain(0, 14, gainInfo));
+        assertEquals(13, HydraSdrTunerController.normalizePresetGain(12, 14, gainInfo));
+        assertEquals(14, HydraSdrTunerController.normalizePresetGain(0, 14, null));
+    }
 }

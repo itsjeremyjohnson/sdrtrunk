@@ -286,8 +286,18 @@ tasks.register('buildHydraSdrJni', Exec) {
     }
 }
 
-// Wire native build before any packaging task that copies libs
-tasks.named('installDist') { dependsOn 'buildHydraSdrJni' }
+// Wire native build before packaging tasks that copy host libraries. Cross-target runtime zips use
+// installDist internally but inject their target libraries separately, so they must not trigger a host JNI build.
+def requestedTaskNames = gradle.startParameter.taskNames.collect { it.tokenize(':').last() }
+def crossTargetRuntimeRequested = requestedTaskNames.any { it in ['runtimeZipWindows', 'runtimeZipOthers'] }
+def hostNativePackagingRequested = requestedTaskNames.any {
+    it in ['installDist', 'distZip', 'distTar', 'runtimeZipCurrent']
+}
+tasks.named('installDist') {
+    if(!crossTargetRuntimeRequested || hostNativePackagingRequested) {
+        dependsOn 'buildHydraSdrJni'
+    }
+}
 tasks.named('distZip') { dependsOn 'buildHydraSdrJni' }
 tasks.named('distTar') { dependsOn 'buildHydraSdrJni' }
 
@@ -373,11 +383,9 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs, boolean
     //Runtime images have auto appended version in image zip name.  Override to include version in single target image.
     rt.extension.imageZip.set(file("$buildDir/image/sdr-trunk.zip"))
 
-    //Ensure native JNI libs are built before packaging
-    rt.dependsOn 'buildHydraSdrJni'
-
     //Only a current-platform image can safely use the locally built host JNI library.
     if(includeHostNativeLibraries) {
+        rt.dependsOn 'buildHydraSdrJni'
         rt.doFirst {
             def nativeDir = hydraSdrJniDir
             if(nativeDir.exists()) {
