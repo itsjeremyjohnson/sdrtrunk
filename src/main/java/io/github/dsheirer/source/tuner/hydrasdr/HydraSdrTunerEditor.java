@@ -539,7 +539,7 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 					setLoading(true);
 					try
 					{
-						updateGainControls();
+						updateGainControls(false);
 					}
 					finally
 					{
@@ -603,6 +603,11 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 	 */
 	private void updateGainControls()
 	{
+		updateGainControls(isLoading());
+	}
+
+	private void updateGainControls(boolean loadConfiguredMode)
+	{
 		if(hasTuner())
 		{
 			int mode = getGainModeCombo().getSelectedIndex();
@@ -614,8 +619,8 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 
 			getGainModeCombo().setEnabled(true);
 
-			/* Only set combo index from config during loading (not user interaction) */
-			if(isLoading() && hasConfiguration())
+			/* Only set combo index from config during tuner status loading (not user interaction). */
+			if(loadConfiguredMode && hasConfiguration())
 			{
 				getGainModeCombo().setSelectedIndex(getConfiguration().getGainMode());
 				mode = getConfiguration().getGainMode();
