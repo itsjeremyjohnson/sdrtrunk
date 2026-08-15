@@ -8,8 +8,6 @@ package io.github.dsheirer.channel.metadata;
 import io.github.dsheirer.alias.Alias;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.alias.id.priority.Priority;
-import java.util.HashMap;
-import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
@@ -26,16 +24,21 @@ class ChannelMetadataPanelTest
     }
 
     @Test
-    void temporaryMuteRestoresPriorPlaybackPriority()
+    void temporaryMuteDoesNotChangePersistedPriority()
     {
         Alias alias = new Alias("priority");
         alias.setCallPriority(25);
-        Map<Alias,Integer> priorities = new HashMap<>();
 
-        ChannelMetadataPanel.applyTemporaryMute(alias, true, priorities);
+        ChannelMetadataPanel.applyTemporaryMute(alias, true);
         assertEquals(Priority.DO_NOT_MONITOR, alias.getPlaybackPriority());
+        assertEquals(25, alias.getAliasIdentifiers().stream()
+            .filter(Priority.class::isInstance)
+            .map(Priority.class::cast)
+            .findFirst()
+            .orElseThrow()
+            .getPriority());
 
-        ChannelMetadataPanel.applyTemporaryMute(alias, false, priorities);
+        ChannelMetadataPanel.applyTemporaryMute(alias, false);
         assertEquals(25, alias.getPlaybackPriority());
     }
 }

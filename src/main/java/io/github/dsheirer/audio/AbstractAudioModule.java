@@ -53,7 +53,8 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     private volatile boolean mMuted;
     private int mTimeslot;
     private int mAudioHangtimeMs = DEFAULT_AUDIO_HANGTIME_MS;
-    private volatile ScheduledFuture<?> mPendingClose;
+    private ScheduledFuture<?> mPendingClose;
+    private long mAudioGeneration;
 
     /**
      * Constructs an abstract audio module
@@ -99,9 +100,9 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
             {
                 if(mAudioSegment != null && mPendingClose == null)
                 {
-                    mPendingClose = ThreadPool.SCHEDULED.schedule(() -> {
-                        closeAudioSegmentNow();
-                    }, mAudioHangtimeMs, TimeUnit.MILLISECONDS);
+                    long audioGeneration = mAudioGeneration;
+                    mPendingClose = ThreadPool.SCHEDULED.schedule(() -> closeAudioSegment(audioGeneration),
+                        mAudioHangtimeMs, TimeUnit.MILLISECONDS);
                 }
             }
         }
@@ -112,21 +113,29 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
     }
 
     /**
+     * Closes the current audio segment if no audio has arrived since the delayed close was scheduled.
+     */
+    private synchronized void closeAudioSegment(long audioGeneration)
+    {
+        if(audioGeneration == mAudioGeneration)
+        {
+            closeAudioSegmentNow();
+        }
+    }
+
+    /**
      * Immediately closes the current audio segment without delay.
      */
-    private void closeAudioSegmentNow()
+    private synchronized void closeAudioSegmentNow()
     {
-        synchronized(this)
-        {
-            cancelPendingClose();
+        cancelPendingClose();
 
-            if(mAudioSegment != null)
-            {
-                mAudioSegment.completeProperty().set(true);
-                mIdentifierUpdateNotificationBroadcaster.removeListener(mAudioSegment);
-                mAudioSegment.decrementConsumerCount();
-                mAudioSegment = null;
-            }
+        if(mAudioSegment != null)
+        {
+            mAudioSegment.completeProperty().set(true);
+            mIdentifierUpdateNotificationBroadcaster.removeListener(mAudioSegment);
+            mAudioSegment.decrementConsumerCount();
+            mAudioSegment = null;
         }
     }
 
@@ -206,14 +215,11 @@ public abstract class AbstractAudioModule extends Module implements IAudioSegmen
         }
     }
 
-    public void addAudio(float[] audioBuffer)
+    public synchronized void addAudio(float[] audioBuffer)
     {
-        // Cancel any pending hangtime close — new audio means the call continues
-        synchronized(this)
-        {
-            cancelPendingClose();
-        }
-
+        //Invalidate and cancel any pending hangtime close before obtaining or appending to the current segment.
+        mAudioGeneration++;
+        cancelPendingClose();
         AudioSegment audioSegment = getAudioSegment();
 
         //If the current segment exceeds the max samples length, close it so that a new segment gets generated

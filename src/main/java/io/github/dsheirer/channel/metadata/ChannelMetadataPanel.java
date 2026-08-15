@@ -57,7 +57,6 @@ import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
 import java.text.DecimalFormat;
 import java.util.EnumMap;
-import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -98,7 +97,6 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
     private TunerManager mTunerManager;
     private PlaylistManager mPlaylistManager;
     private Set<Integer> mMutedChannelIds = new HashSet<>();
-    private Map<Alias,Integer> mPreMuteAliasPriorities = new HashMap<>();
 
     /**
      * Table view for currently decoding channel metadata
@@ -482,26 +480,16 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
         return null;
     }
 
-    static void applyTemporaryMute(Alias alias, boolean mute, Map<Alias,Integer> preMutePriorities)
+    static void applyTemporaryMute(Alias alias, boolean mute)
     {
-        if(mute)
-        {
-            preMutePriorities.putIfAbsent(alias, alias.getPlaybackPriority());
-            alias.setCallPriority(Priority.DO_NOT_MONITOR);
-        }
-        else
-        {
-            alias.setCallPriority(preMutePriorities.getOrDefault(alias, Priority.DEFAULT_PRIORITY));
-            preMutePriorities.remove(alias);
-        }
+        alias.setPlaybackMuted(mute);
     }
 
     /**
      * Toggles mute state for a channel.
      *
-     * If the channel is tied to an alias, the alias listen/DO_NOT_MONITOR toggle is used so that
-     * the mute state is reflected in the alias configuration and applies across all traffic channels
-     * for the same talkgroup.
+     * If the channel is tied to an alias, a runtime playback mute is applied across all traffic channels
+     * for the same talkgroup without changing the persisted alias priority.
      *
      * If the channel has no alias, mute is applied independently via the audio module and tracked
      * by channel ID so it can be re-applied when new processing chains are created.
@@ -518,14 +506,11 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
 
         if(aliases != null)
         {
-            //Alias path: toggle DO_NOT_MONITOR on the alias so it persists and applies globally
+            //Alias path: apply a runtime-only mute so the persisted alias priority remains unchanged.
             for(Alias alias : aliases)
             {
-                applyTemporaryMute(alias, mute, mPreMuteAliasPriorities);
+                applyTemporaryMute(alias, mute);
             }
-
-            //Persist alias change to playlist
-            mPlaylistManager.schedulePlaylistSave();
 
             //Notify alias editor to refresh its Listen toggle in real time
             for(Alias alias : aliases)

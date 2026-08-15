@@ -25,6 +25,7 @@ import io.github.dsheirer.gui.playlist.channel.ViewChannelRequest;
 import io.github.dsheirer.module.decode.DecoderFactory;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.decode.config.ChannelToneFilter;
+import io.github.dsheirer.module.decode.ctcss.CTCSSCode;
 import io.github.dsheirer.module.decode.nbfm.DecodeConfigNBFM;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25;
 import io.github.dsheirer.module.decode.p25.phase1.DecodeConfigP25Phase1;
@@ -531,7 +532,7 @@ public class FrequencyEditor extends VBox
         return normalized;
     }
 
-    private void configureToneFilter(DecodeConfigNBFM config, String tone)
+    static void configureToneFilter(DecodeConfigNBFM config, String tone)
     {
         // Skip carrier squelch
         if(tone.equalsIgnoreCase("CSQ") || tone.isEmpty())
@@ -606,12 +607,14 @@ public class FrequencyEditor extends VBox
         try
         {
             float freq = Float.parseFloat(freqStr);
-            if(freq >= 67.0f && freq <= 254.1f)
+            CTCSSCode ctcssCode = CTCSSCode.fromFrequency(freq);
+
+            if(ctcssCode != CTCSSCode.UNKNOWN)
             {
                 config.setToneFilterEnabled(true);
-                config.addToneFilter(new ChannelToneFilter(
-                        ChannelToneFilter.ToneType.CTCSS, String.valueOf(freq), freq + " Hz"));
-                mLog.info("Auto-configured CTCSS filter from Radio Reference: {} Hz", freq);
+                config.addToneFilter(new ChannelToneFilter(ChannelToneFilter.ToneType.CTCSS,
+                    String.valueOf(ctcssCode.getFrequency()), ctcssCode.toString()));
+                mLog.info("Auto-configured CTCSS filter from Radio Reference: {}", ctcssCode);
             }
         }
         catch(NumberFormatException e)

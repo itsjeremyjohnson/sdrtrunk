@@ -229,6 +229,11 @@ public class P25P2DecoderState extends TimeslotDecoderState implements Identifie
             }
             else if(message instanceof AbstractVoiceTimeslot)
             {
+                if(!isCurrentCallAllowed())
+                {
+                    return;
+                }
+
                 if(isEncrypted())
                 {
                     broadcast(new DecoderStateEvent(this, Event.CONTINUATION, State.ENCRYPTED, getTimeslot()));
@@ -1104,6 +1109,12 @@ public class P25P2DecoderState extends TimeslotDecoderState implements Identifie
 
         mTrafficChannelManager.getTalkerAliasManager().enrichMutable(getIdentifierCollection());
 
+        if(!isCurrentCallAllowed())
+        {
+            endUnaliasedCall(message.getTimestamp());
+            return;
+        }
+
         if(message.getMacPduType() == MacPduType.MAC_3_IDLE || message.getMacPduType() == MacPduType.MAC_6_HANGTIME)
         {
             continueState(State.ACTIVE);
@@ -1153,6 +1164,12 @@ public class P25P2DecoderState extends TimeslotDecoderState implements Identifie
         }
 
         mTrafficChannelManager.getTalkerAliasManager().enrichMutable(getIdentifierCollection());
+
+        if(!isCurrentCallAllowed())
+        {
+            endUnaliasedCall(message.getTimestamp());
+            return;
+        }
 
         if(mac instanceof PushToTalk ptt)
         {
@@ -1800,6 +1817,22 @@ public class P25P2DecoderState extends TimeslotDecoderState implements Identifie
         mic.update(mac.getIdentifiers());
         mTrafficChannelManager.getTalkerAliasManager().enrichMutable(mic);
         return mic;
+    }
+
+    /**
+     * Applies talkgroup alias filtering to this timeslot's identifier collection.  Phase 2 traffic decoders are shared
+     * by both timeslots, so each state must make this decision independently.
+     */
+    boolean isCurrentCallAllowed()
+    {
+        return mTrafficChannelManager == null || mTrafficChannelManager.hasAlias(getIdentifierCollection());
+    }
+
+    private void endUnaliasedCall(long timestamp)
+    {
+        mTrafficChannelManager.processP2TrafficCallEnd(getCurrentFrequency(), getTimeslot(), timestamp,
+            "UNALIASED PHASE 2 CALL IGNORED");
+        broadcast(new DecoderStateEvent(this, Event.END, State.CALL, getTimeslot()));
     }
 
     /**

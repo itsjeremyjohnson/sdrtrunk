@@ -10,8 +10,10 @@ import java.lang.reflect.Field;
 import java.lang.reflect.Proxy;
 import java.net.http.WebSocket;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
 
@@ -153,6 +155,41 @@ class ZelloBroadcasterLifecycleTest
     }
 
     @Test
+    void lateWorkStopErrorDoesNotClearSupersedingStream() throws Exception
+    {
+        ZelloBroadcaster broadcaster = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
+        WebSocket webSocket = webSocket(new AtomicInteger());
+        setConnectionState(broadcaster, webSocket);
+        setStreamActive(broadcaster, true);
+        atomicLong(broadcaster, "mCurrentStreamId").set(22);
+        pendingCommands(broadcaster).put(7, "stop_stream(id=11)");
+
+        listener(broadcaster).onText(webSocket, "{\"error\":\"invalid stream id\",\"seq\":7}", true);
+
+        assertTrue(atomicBoolean(broadcaster, "mStreamActive").get());
+        assertEquals(22, atomicLong(broadcaster, "mCurrentStreamId").get());
+        broadcaster.stop();
+    }
+
+    @Test
+    void lateConsumerStopErrorDoesNotClearSupersedingStream() throws Exception
+    {
+        ZelloConsumerBroadcaster broadcaster = new ZelloConsumerBroadcaster(new ZelloConsumerConfiguration(), null,
+            null, new AliasModel());
+        WebSocket webSocket = webSocket(new AtomicInteger());
+        setConnectionState(broadcaster, webSocket);
+        setStreamActive(broadcaster, true);
+        atomicLong(broadcaster, "mCurrentStreamId").set(44);
+        pendingCommands(broadcaster).put(8, "stop_stream(id=33)");
+
+        listener(broadcaster).onText(webSocket, "{\"error\":\"failed to stop stream\",\"seq\":8}", true);
+
+        assertTrue(atomicBoolean(broadcaster, "mStreamActive").get());
+        assertEquals(44, atomicLong(broadcaster, "mCurrentStreamId").get());
+        broadcaster.stop();
+    }
+
+    @Test
     void closesWorkHandshakeCompletedAfterStop()
     {
         ZelloBroadcaster broadcaster = new ZelloBroadcaster(new ZelloConfiguration(), null, null, new AliasModel());
@@ -197,6 +234,21 @@ class ZelloBroadcasterLifecycleTest
         Field field = broadcaster.getClass().getDeclaredField(name);
         field.setAccessible(true);
         return (AtomicBoolean)field.get(broadcaster);
+    }
+
+    private static AtomicLong atomicLong(Object broadcaster, String name) throws Exception
+    {
+        Field field = broadcaster.getClass().getDeclaredField(name);
+        field.setAccessible(true);
+        return (AtomicLong)field.get(broadcaster);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static ConcurrentHashMap<Integer,String> pendingCommands(Object broadcaster) throws Exception
+    {
+        Field field = broadcaster.getClass().getDeclaredField("mPendingCommands");
+        field.setAccessible(true);
+        return (ConcurrentHashMap<Integer,String>)field.get(broadcaster);
     }
 
     private static WebSocket.Listener listener(Object broadcaster) throws Exception

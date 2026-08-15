@@ -66,6 +66,7 @@ public class Alias
     private BooleanProperty mOverlap = new SimpleBooleanProperty();
     private IntegerProperty mColor = new SimpleIntegerProperty();
     private IntegerProperty mPriority = new SimpleIntegerProperty(Priority.DEFAULT_PRIORITY);
+    private boolean mPlaybackMuted;
     private IntegerProperty mNonAudioIdentifierCount = new SimpleIntegerProperty();
     private StringProperty mAliasListName = new SimpleStringProperty();
     private StringProperty mGroup = new SimpleStringProperty();
@@ -483,6 +484,12 @@ public class Alias
      */
     private void updatePriority()
     {
+        if(mPlaybackMuted)
+        {
+            mPriority.set(Priority.DO_NOT_MONITOR);
+            return;
+        }
+
         for(AliasID aliasID: mAliasIDs)
         {
             if(aliasID instanceof Priority)
@@ -559,6 +566,11 @@ public class Alias
     @JsonIgnore
     public int getPlaybackPriority()
     {
+        if(mPlaybackMuted)
+        {
+            return Priority.DO_NOT_MONITOR;
+        }
+
         for(AliasID id : mAliasIDs)
         {
             if(id.getType() == AliasIDType.PRIORITY)
@@ -568,6 +580,22 @@ public class Alias
         }
 
         return Priority.DEFAULT_PRIORITY;
+    }
+
+    /**
+     * Applies a runtime-only playback mute without changing the persisted alias priority.
+     */
+    @JsonIgnore
+    public void setPlaybackMuted(boolean muted)
+    {
+        mPlaybackMuted = muted;
+        updatePriority();
+    }
+
+    @JsonIgnore
+    public boolean isPlaybackMuted()
+    {
+        return mPlaybackMuted;
     }
 
     public boolean hasCallPriority()

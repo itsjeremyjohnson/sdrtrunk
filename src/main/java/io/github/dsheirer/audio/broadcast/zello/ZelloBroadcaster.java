@@ -886,6 +886,26 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
         mWebSocket.sendText(mGson.toJson(cmd), true);
     }
 
+    static boolean isSupersededStopCommand(String originCommand, long currentStreamId)
+    {
+        String prefix = "stop_stream(id=";
+
+        if(originCommand != null && originCommand.startsWith(prefix) && originCommand.endsWith(")"))
+        {
+            try
+            {
+                long stoppedStreamId = Long.parseLong(originCommand.substring(prefix.length(), originCommand.length() - 1));
+                return currentStreamId > 0 && stoppedStreamId != currentStreamId;
+            }
+            catch(NumberFormatException e)
+            {
+                //Fall through and handle the unrecognized command as a current stream error.
+            }
+        }
+
+        return false;
+    }
+
     private void sendAudioPacket(long streamId, byte[] opusData)
     {
         if(mWebSocket == null) return;
@@ -1057,6 +1077,12 @@ public class ZelloBroadcaster extends AbstractAudioBroadcaster<ZelloConfiguratio
                             ch(), bridgeCode, errorMsg, seq, originCmd != null ? originCmd : "unknown");
                         setLastErrorDetail("[" + bridgeCode + "] " + errorMsg +
                             (originCmd != null ? " — " + originCmd : ""));
+
+                        if(isSupersededStopCommand(originCmd, mCurrentStreamId.get()))
+                        {
+                            return;
+                        }
+
                         mStreamActive.set(false);
                         mStopPendingAcknowledgement.set(false);
                         mCurrentStreamId.set(-1);

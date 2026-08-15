@@ -204,23 +204,24 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
             final AudioRecording audioRecording = mAudioRecordingQueue.poll();
             broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_QUEUE_CHANGE));
 
-            if(!isValid(audioRecording))
+            try
             {
-                audioRecording.removePendingReplay();
-                incrementAgedOffAudioCount();
-                broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_AGED_OFF_COUNT_CHANGE));
-                continue;
-            }
+                if(!isValid(audioRecording))
+                {
+                    audioRecording.removePendingReplay();
+                    incrementAgedOffAudioCount();
+                    broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_AGED_OFF_COUNT_CHANGE));
+                    continue;
+                }
 
-            if(audioRecording.getRecordingLength() <= 0)
-            {
-                audioRecording.removePendingReplay();
-                incrementErrorAudioCount();
-                broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
-                continue;
-            }
+                if(audioRecording.getRecordingLength() <= 0)
+                {
+                    audioRecording.removePendingReplay();
+                    incrementErrorAudioCount();
+                    broadcast(new BroadcastEvent(this, BroadcastEvent.Event.BROADCASTER_ERROR_COUNT_CHANGE));
+                    continue;
+                }
 
-            {
                 float durationSeconds = (float)(audioRecording.getRecordingLength() / 1E3f);
                 long timestampSeconds = (int)(audioRecording.getStartTime() / 1E3);
                 String talkgroup = getTo(audioRecording);
@@ -233,10 +234,7 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                 String systemLabel = getSystemLabel(audioRecording);
                 String path = audioRecording.getPath().toString();
                 String audioName = path.substring(path.substring(0, path.lastIndexOf("_")).lastIndexOf("_") + 1);
-
-                try
-                {
-                    byte[] audioBytes = null;
+                byte[] audioBytes = null;
 
                     try
                     {
@@ -341,7 +339,6 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
                     audioRecording.removePendingReplay();
                 }
             }
-        }
 
         AudioRecording audioRecording = mAudioRecordingQueue.peek();
 
@@ -462,7 +459,7 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
         Identifier identifier = audioRecording.getIdentifierCollection().getToIdentifier();
 
         StringBuilder sb = new StringBuilder();
-        if(identifier != null)
+        if(aliasList != null && identifier != null)
         {
             List<Alias> aliases = aliasList.getAliases(identifier);
             if(!aliases.isEmpty())
@@ -480,7 +477,7 @@ public class ThinLineRadioBroadcaster extends AbstractAudioBroadcaster<ThinLineR
         Identifier identifier = audioRecording.getIdentifierCollection().getToIdentifier();
 
         StringBuilder sb = new StringBuilder();
-        if(identifier != null)
+        if(aliasList != null && identifier != null)
         {
             List<Alias> aliases = aliasList.getAliases(identifier);
             if(!aliases.isEmpty())
