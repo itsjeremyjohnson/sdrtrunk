@@ -818,6 +818,16 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		return mTunerInfoButton;
 	}
 
+	static int getPresetGainType(int mode)
+	{
+		return switch(mode)
+		{
+			case HydraSdrTunerController.GAIN_MODE_LINEARITY -> HydraSdrNative.GAIN_TYPE_LINEARITY;
+			case HydraSdrTunerController.GAIN_MODE_SENSITIVITY -> HydraSdrNative.GAIN_TYPE_SENSITIVITY;
+			default -> -1;
+		};
+	}
+
 	static int getSupportedGainMode(int requestedMode, boolean hasLinearityGain, boolean hasSensitivityGain)
 	{
 		if(requestedMode < HydraSdrTunerController.GAIN_MODE_LINEARITY ||
@@ -891,7 +901,7 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			getFilterGainValueLabel().setEnabled(isCustom && hasFilterGain);
 
 			/* Apply device ranges before restoring values so Swing does not clamp valid saved gains. */
-			updateGainRangesFromDevice();
+			updateGainRangesFromDevice(mode);
 
 			if(hasConfiguration())
 			{
@@ -963,7 +973,7 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 	/**
 	 * Queries device for actual gain ranges and updates slider min/max.
 	 */
-	private void updateGainRangesFromDevice()
+	private void updateGainRangesFromDevice(int mode)
 	{
 		if(!hasTuner())
 		{
@@ -971,6 +981,11 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		}
 
 		HydraSdrTunerController ctrl = getTuner().getController();
+		int presetGainType = getPresetGainType(mode);
+		if(presetGainType >= 0)
+		{
+			updateSliderRange(getMasterGainSlider(), ctrl.getGainInfo(presetGainType));
+		}
 
 		if(ctrl.hasCapability(HydraSdrNative.CAP_LNA_GAIN))
 		{

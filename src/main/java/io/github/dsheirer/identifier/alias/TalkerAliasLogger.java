@@ -174,8 +174,11 @@ public class TalkerAliasLogger extends Module
     private static class AliasFileState
     {
         private final Map<Integer, String> mBaseline = new HashMap<>();
+        private final Map<Integer, Long> mBaselineOrders = new HashMap<>();
         private final Map<Object, Map<Integer, String>> mInheritedAliases = new HashMap<>();
         private final Map<Object, Map<Integer, String>> mSnapshots = new LinkedHashMap<>();
+        private final Map<Object, Map<Integer, Long>> mSnapshotOrders = new HashMap<>();
+        private long mUpdateSequence;
         private boolean mLoaded;
         private String mLastWrittenContent;
         private boolean mWriteDirty;
@@ -196,28 +199,47 @@ public class TalkerAliasLogger extends Module
         {
             ensureLoaded(aliasFile);
             Map<Integer, String> inherited = mInheritedAliases.getOrDefault(sourceKey, mBaseline);
+            Map<Integer, String> previousSnapshot = mSnapshots.getOrDefault(sourceKey, Map.of());
+            Map<Integer, Long> previousOrders = mSnapshotOrders.getOrDefault(sourceKey, Map.of());
             Map<Integer, String> snapshot = new HashMap<>();
+            Map<Integer, Long> snapshotOrders = new HashMap<>();
             aliases.forEach((radioId, alias) ->
             {
                 String aliasValue = alias.getValue();
                 if(!Objects.equals(aliasValue, inherited.get(radioId)))
                 {
                     snapshot.put(radioId, aliasValue);
+                    if(Objects.equals(aliasValue, previousSnapshot.get(radioId)) && previousOrders.containsKey(radioId))
+                    {
+                        snapshotOrders.put(radioId, previousOrders.get(radioId));
+                    }
+                    else
+                    {
+                        snapshotOrders.put(radioId, ++mUpdateSequence);
+                    }
                 }
             });
 
-            // Reinsert so the latest manager update wins if two managers report the same radio.
-            mSnapshots.remove(sourceKey);
             mSnapshots.put(sourceKey, snapshot);
+            mSnapshotOrders.put(sourceKey, snapshotOrders);
             scheduleWrite(aliasFile);
         }
 
         public synchronized void release(Path aliasFile, Object sourceKey)
         {
             Map<Integer, String> snapshot = mSnapshots.remove(sourceKey);
-            if(snapshot != null)
+            Map<Integer, Long> snapshotOrders = mSnapshotOrders.remove(sourceKey);
+            if(snapshot != null && snapshotOrders != null)
             {
-                mBaseline.putAll(snapshot);
+                snapshot.forEach((radioId, alias) ->
+                {
+                    long order = snapshotOrders.getOrDefault(radioId, 0L);
+                    if(order >= mBaselineOrders.getOrDefault(radioId, 0L))
+                    {
+                        mBaseline.put(radioId, alias);
+                        mBaselineOrders.put(radioId, order);
+                    }
+                });
                 scheduleWrite(aliasFile);
             }
             mInheritedAliases.remove(sourceKey);
@@ -300,7 +322,20 @@ public class TalkerAliasLogger extends Module
         private Map<Integer, String> getMergedAliases()
         {
             Map<Integer, String> merged = new HashMap<>(mBaseline);
-            mSnapshots.values().forEach(merged::putAll);
+            Map<Integer, Long> mergedOrders = new HashMap<>(mBaselineOrders);
+            mSnapshots.forEach((sourceKey, snapshot) ->
+            {
+                Map<Integer, Long> orders = mSnapshotOrders.getOrDefault(sourceKey, Map.of());
+                snapshot.forEach((radioId, alias) ->
+                {
+                    long order = orders.getOrDefault(radioId, 0L);
+                    if(order >= mergedOrders.getOrDefault(radioId, 0L))
+                    {
+                        merged.put(radioId, alias);
+                        mergedOrders.put(radioId, order);
+                    }
+                });
+            });
             return merged;
         }
 

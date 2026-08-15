@@ -153,6 +153,23 @@ public class TalkerAliasLoggerTest
     }
 
     @Test
+    void preservesNewestAliasWhenItsSourceIsReleased(@TempDir Path logDirectory) throws IOException
+    {
+        String systemName = "release-order-system";
+        Path aliasFile = logDirectory.resolve(TalkerAliasLogger.getAliasFileName(systemName, Protocol.APCO25));
+        TalkerAliasLogger olderLogger = new TalkerAliasLogger(logDirectory, systemName);
+        TalkerAliasLogger newerLogger = new TalkerAliasLogger(logDirectory, systemName);
+        olderLogger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Older")));
+        newerLogger.onAliasUpdate(Map.of(10, P25TalkerAliasIdentifier.create("Newest")));
+        olderLogger.onAliasUpdate(Map.of(
+            10, P25TalkerAliasIdentifier.create("Older"),
+            20, P25TalkerAliasIdentifier.create("Unrelated")));
+        newerLogger.dispose();
+
+        assertEquals("RADIO_ID,TALKER_ALIAS\n10,Newest\n20,Unrelated\n", Files.readString(aliasFile));
+    }
+
+    @Test
     void separatesSystemIdentitiesThatSanitizeToTheSameName(@TempDir Path logDirectory) throws IOException
     {
         TalkerAliasLogger spaced = new TalkerAliasLogger(logDirectory, "County P25");

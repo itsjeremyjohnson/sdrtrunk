@@ -41,6 +41,30 @@ public class PcmStreamPreferenceEditor extends HBox
 {
     static final String VOICE_ID_FORMAT_DESCRIPTION =
         "// 1. Fast unit ID -- fires once per call, ~180ms after squelch opens (before audio starts)\n";
+    static final String PCM_DELIVERY_DESCRIPTION =
+        "P25 Phase 1 audio starts after SDRTrunk receives a complete LDU and its nine 20 ms frames then arrive " +
+        "in a burst. Late-entry calls can wait for a subsequent LDU2 while encryption state is determined.";
+    static final String PYTHON_PLAYBACK_EXAMPLE =
+        "import socket, json, base64, numpy as np, sounddevice as sd\n\n" +
+        "SDRTRUNK_HOST = '192.168.1.100'   # <- your SDRTrunk machine\n" +
+        "PCM_PORT      = 9503\n\n" +
+        "s = socket.create_connection((SDRTRUNK_HOST, PCM_PORT))\n" +
+        "print(f'Connected to PCM stream on {SDRTRUNK_HOST}:{PCM_PORT}')\n\n" +
+        "# Keep one stream open so burst-delivered chunks play sequentially instead of interrupting each other.\n" +
+        "with sd.OutputStream(samplerate=8000, channels=1, dtype='float32') as output:\n" +
+        "    for raw_line in s.makefile():\n" +
+        "        msg = json.loads(raw_line)\n" +
+        "        t = msg['type']\n\n" +
+        "        if t == 'voice_id':\n" +
+        "            # Fires ~180ms after squelch -- fastest possible unit ID\n" +
+        "            print(f'[ID]    TG {msg[\"talkgroup\"]} | FROM {msg[\"from\"]} | {msg[\"system\"]} / {msg[\"site\"]}')\n" +
+        "        elif t == 'call_start':\n" +
+        "            print(f'[START] TG {msg[\"talkgroup\"]} | FROM {msg[\"from\"]} | call {msg[\"callId\"]}')\n" +
+        "        elif t == 'pcm':\n" +
+        "            samples = np.frombuffer(base64.b64decode(msg['samples']), dtype='<i2').astype(np.float32) / 32767\n" +
+        "            output.write(samples.reshape(-1, 1))\n" +
+        "        elif t == 'call_end':\n" +
+        "            print(f'[END]   TG {msg[\"talkgroup\"]} | {msg[\"frames\"]} frames | call {msg[\"callId\"]}')";
     private final PcmStreamPreference mPreference;
 
     public PcmStreamPreferenceEditor(UserPreferences userPreferences)
@@ -76,8 +100,8 @@ public class PcmStreamPreferenceEditor extends HBox
             "decoded from the Link Control Word (~180 ms after squelch opens), well before " +
             "audio frames arrive.  This lets dispatch or alerting apps identify who is " +
             "talking almost instantly without waiting for the audio pipeline to start.\n\n" +
-            "This bypasses SDRTrunk's MP3 recording pipeline entirely, so audio is available " +
-            "within ~20 ms of the radio transmitting — before any file is written to disk.");
+            "This bypasses SDRTrunk's MP3 recording pipeline entirely, so no audio file must be " +
+            "completed before delivery. " + PCM_DELIVERY_DESCRIPTION);
         subtitle.setWrapText(true);
         subtitle.setStyle("-fx-text-fill: #555555;");
 
@@ -122,9 +146,9 @@ public class PcmStreamPreferenceEditor extends HBox
         String formatExample =
             VOICE_ID_FORMAT_DESCRIPTION +
             "{\"type\":\"voice_id\",\"system\":\"MySystem\",\"site\":\"MySite\",\"talkgroup\":\"12345\",\"from\":\"1234567\",\"timestamp\":\"2026-01-01 12:00:00\"}\n\n" +
-            "// 2. Call started -- emitted once when the audio pipeline opens (~360ms after squelch)\n" +
+            "// 2. Call started -- emitted once when the decoded audio pipeline opens\n" +
             "{\"type\":\"call_start\",\"callId\":\"a1b2c3d\",\"system\":\"MySystem\",\"site\":\"MySite\",\"talkgroup\":\"12345\",\"from\":\"1234567\",\"timestamp\":\"2026-01-01 12:00:00\"}\n\n" +
-            "// 3. PCM audio chunk -- one per decoded audio buffer (~20 ms per active channel)\n" +
+            "// 3. PCM audio chunk -- typically 20 ms of audio; P25 Phase 1 chunks arrive in LDU bursts\n" +
             "{\"type\":\"pcm\",\"callId\":\"a1b2c3d\",\"system\":\"MySystem\",\"site\":\"MySite\",\"talkgroup\":\"12345\",\"from\":\"1234567\",\"seq\":0,\"samples\":\"BASE64_ENCODED_PCM\"}\n" +
             "// samples = Base64-encoded 16-bit signed little-endian PCM at 8000 Hz mono\n\n" +
             "// 4. Call ended -- emitted once when squelch closes\n" +
@@ -142,27 +166,7 @@ public class PcmStreamPreferenceEditor extends HBox
         pyDesc.setWrapText(true);
         root.getChildren().add(pyDesc);
 
-        String pythonCode =
-            "import socket, json, base64, numpy as np, sounddevice as sd\n\n" +
-            "SDRTRUNK_HOST = '192.168.1.100'   # <- your SDRTrunk machine\n" +
-            "PCM_PORT      = 9503\n\n" +
-            "s = socket.create_connection((SDRTRUNK_HOST, PCM_PORT))\n" +
-            "print(f'Connected to PCM stream on {SDRTRUNK_HOST}:{PCM_PORT}')\n\n" +
-            "for raw_line in s.makefile():\n" +
-            "    msg = json.loads(raw_line)\n" +
-            "    t = msg['type']\n\n" +
-            "    if t == 'voice_id':\n" +
-            "        # Fires ~180ms after squelch -- fastest possible unit ID\n" +
-            "        print(f'[ID]    TG {msg[\"talkgroup\"]} | FROM {msg[\"from\"]} | {msg[\"system\"]} / {msg[\"site\"]}')\\n" +
-            "    elif t == 'call_start':\n" +
-            "        print(f'[START] TG {msg[\"talkgroup\"]} | FROM {msg[\"from\"]} | call {msg[\"callId\"]}')\n" +
-            "    elif t == 'pcm':\n" +
-            "        samples = np.frombuffer(base64.b64decode(msg['samples']), dtype='<i2').astype(np.float32) / 32767\n" +
-            "        sd.play(samples, 8000)\n" +
-            "    elif t == 'call_end':\n" +
-            "        print(f'[END]   TG {msg[\"talkgroup\"]} | {msg[\"frames\"]} frames | call {msg[\"callId\"]}')";
-
-        root.getChildren().add(codeBox(pythonCode, 300));
+        root.getChildren().add(codeBox(PYTHON_PLAYBACK_EXAMPLE, 340));
         root.getChildren().add(new Separator());
 
         // ── Audio format details ───────────────────────────────────────────

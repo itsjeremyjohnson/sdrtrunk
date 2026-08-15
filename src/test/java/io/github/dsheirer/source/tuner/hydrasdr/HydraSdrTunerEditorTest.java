@@ -75,6 +75,16 @@ class HydraSdrTunerEditorTest
     }
 
     @Test
+    void selectsHalGainTypeForEachPresetMode()
+    {
+        assertEquals(HydraSdrNative.GAIN_TYPE_LINEARITY,
+            HydraSdrTunerEditor.getPresetGainType(HydraSdrTunerController.GAIN_MODE_LINEARITY));
+        assertEquals(HydraSdrNative.GAIN_TYPE_SENSITIVITY,
+            HydraSdrTunerEditor.getPresetGainType(HydraSdrTunerController.GAIN_MODE_SENSITIVITY));
+        assertEquals(-1, HydraSdrTunerEditor.getPresetGainType(HydraSdrTunerController.GAIN_MODE_CUSTOM));
+    }
+
+    @Test
     void preservesSupportedModes()
     {
         assertEquals(HydraSdrTunerController.GAIN_MODE_LINEARITY,
