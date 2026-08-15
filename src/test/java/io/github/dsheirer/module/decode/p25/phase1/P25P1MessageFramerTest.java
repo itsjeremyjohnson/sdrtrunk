@@ -72,6 +72,18 @@ class P25P1MessageFramerTest
     }
 
     @Test
+    void doesNotFlywheelWithoutCarrierEvidence()
+    {
+        List<P25P1Message> messages = new ArrayList<>();
+        P25P1MessageFramer framer = createRunningFramer(messages);
+        framer.nidDetected(0x293, P25P1DataUnitID.LOGICAL_LINK_DATA_UNIT_1, 0);
+        feedUntilMessage(framer, messages, 1);
+        feed(framer, 5000);
+
+        assertEquals(0, framer.getFlywheelAttemptCount());
+    }
+
+    @Test
     void doesNotFlywheelWhenCarrierIsAbsent()
     {
         List<P25P1Message> messages = new ArrayList<>();

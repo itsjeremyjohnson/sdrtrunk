@@ -22,7 +22,8 @@ class DecodeQualityCompatibilityTest
         ConfigurableDecoder decoder = new ConfigurableDecoder();
         ConfigurableFramer framer = new ConfigurableFramer();
 
-        DecodeQualityTest.configureDecoder(decoder, framer, 0, 3);
+        decoder.mFramer = framer;
+        DecodeQualityTest.configureDecoder(decoder, 0, 3);
 
         assertEquals(0, decoder.mNac);
         assertEquals(3, framer.mMaxBchErrors);
@@ -43,22 +44,27 @@ class DecodeQualityCompatibilityTest
     {
         HistoricalDecoder decoder = new HistoricalDecoder();
 
-        assertDoesNotThrow(() -> DecodeQualityTest.invokeOptional(decoder, "setConfiguredNAC",
-                new Class<?>[]{int.class}, 0x293));
+        assertDoesNotThrow(() -> DecodeQualityTest.configureDecoder(decoder, 0x293, 3));
         assertEquals(0, decoder.getCalls());
     }
 
-    private static class ConfigurableDecoder
+    public static class ConfigurableDecoder
     {
         private int mNac = -1;
+        private ConfigurableFramer mFramer;
 
         public void setConfiguredNAC(int nac)
         {
             mNac = nac;
         }
+
+        public ConfigurableFramer getMessageFramer()
+        {
+            return mFramer;
+        }
     }
 
-    private static class ConfigurableFramer
+    public static class ConfigurableFramer
     {
         private int mMaxBchErrors = -1;
 

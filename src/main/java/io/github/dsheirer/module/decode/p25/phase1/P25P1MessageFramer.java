@@ -368,7 +368,7 @@ public class P25P1MessageFramer
             }
             //Strategy 5: Flywheel — predict DUID when sync is lost but frame timing is known
             else if(mFlywheelActive && mFlywheelConsecutiveMisses < MAX_FLYWHEEL_MISSES && mNacDetected &&
-                    (mEnergyProvider == null || mEnergyProvider.isSignalPresent()))
+                    mEnergyProvider != null && mEnergyProvider.isSignalPresent())
             {
                 P25P1DataUnitID predicted = predictNextDUID(mPreviousDataUnitID);
 

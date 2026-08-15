@@ -295,13 +295,30 @@ public class DecodeQualityTest
         return normalizedRoot.relativize(normalizedSample).toString().replace(File.separatorChar, '/');
     }
 
-    static void configureDecoder(Object decoder, Object framer, int nac, int maxBchErrors)
+    static void configureDecoder(Object decoder, int nac, int maxBchErrors)
     {
         if(nac >= 0)
         {
             invokeOptional(decoder, "setConfiguredNAC", new Class<?>[]{int.class}, nac);
         }
-        invokeOptional(framer, "setMaxBchErrors", new Class<?>[]{int.class}, maxBchErrors);
+
+        Object framer = invokeOptionalResult(decoder, "getMessageFramer");
+        if(framer != null)
+        {
+            invokeOptional(framer, "setMaxBchErrors", new Class<?>[]{int.class}, maxBchErrors);
+        }
+    }
+
+    static Object invokeOptionalResult(Object target, String methodName)
+    {
+        try
+        {
+            return target.getClass().getMethod(methodName).invoke(target);
+        }
+        catch(ReflectiveOperationException ignored)
+        {
+            return null;
+        }
     }
 
     private static DecoderWrapper createDecoder(String modulation, int nac, int maxBchErrors, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
@@ -311,7 +328,7 @@ public class DecodeQualityTest
             case "CQPSK" ->
             {
                 P25P1DecoderLSM d = new P25P1DecoderLSM();
-                configureDecoder(d, d.getMessageFramer(), nac, maxBchErrors);
+                configureDecoder(d, nac, maxBchErrors);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
@@ -325,7 +342,7 @@ public class DecodeQualityTest
             case "CQPSK_V2" ->
             {
                 P25P1DecoderLSMv2 d = new P25P1DecoderLSMv2();
-                configureDecoder(d, d.getMessageFramer(), nac, maxBchErrors);
+                configureDecoder(d, nac, maxBchErrors);
                 if(cmaAcqMu > 0 || cmaTrkMu > 0 || cmaShiftMs > 0) d.setCMAConfig(cmaAcqMu, cmaTrkMu, cmaShiftMs);
                 yield new DecoderWrapper()
                 {
@@ -340,7 +357,7 @@ public class DecodeQualityTest
             case "C4FM_V2" ->
             {
                 P25P1DecoderC4FMv2 d = new P25P1DecoderC4FMv2();
-                configureDecoder(d, d.getMessageFramer(), nac, maxBchErrors);
+                configureDecoder(d, nac, maxBchErrors);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
@@ -354,7 +371,7 @@ public class DecodeQualityTest
             default ->
             {
                 P25P1DecoderC4FM d = new P25P1DecoderC4FM();
-                configureDecoder(d, d.getMessageFramer(), nac, maxBchErrors);
+                configureDecoder(d, nac, maxBchErrors);
                 yield new DecoderWrapper()
                 {
                     public void setMessageListener(Listener<IMessage> l) { d.setMessageListener(l); }
