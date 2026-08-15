@@ -188,7 +188,11 @@ public class Dispatcher<E> implements Listener<E>
 
                 try
                 {
-                    if(!executorService.awaitTermination(2, TimeUnit.SECONDS))
+                    if(executorService.awaitTermination(2, TimeUnit.SECONDS))
+                    {
+                        mFlushOnStop.set(false);
+                    }
+                    else
                     {
                         mLog.warn("Timed out waiting for dispatcher [{}] to finish its in-flight batch", mThreadName);
                     }
@@ -218,8 +222,6 @@ public class Dispatcher<E> implements Listener<E>
                     }
                 }
             }
-
-            mFlushOnStop.set(false);
         }
         else
         {
@@ -277,6 +279,11 @@ public class Dispatcher<E> implements Listener<E>
             {
                 process();
                 mRunning.set(false);
+
+                if(!Dispatcher.this.mRunning.get())
+                {
+                    mFlushOnStop.set(false);
+                }
             }
         }
     }
@@ -306,6 +313,11 @@ public class Dispatcher<E> implements Listener<E>
                 }
 
                 mRunning.set(false);
+
+                if(!Dispatcher.this.mRunning.get())
+                {
+                    mFlushOnStop.set(false);
+                }
             }
         }
     }

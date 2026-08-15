@@ -11,6 +11,7 @@
 package io.github.dsheirer.module.decode.p25.audio;
 
 import io.github.dsheirer.alias.AliasList;
+import io.github.dsheirer.module.decode.p25.phase1.message.ldu.IMBEFrameDiagnostic;
 import io.github.dsheirer.preference.UserPreferences;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -18,6 +19,28 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class P25P1AudioModuleTest
 {
+    @Test
+    void uncorrectableCodewordAlwaysGatesWhenQualityGateIsEnabled()
+    {
+        IMBEFrameDiagnostic.FrameErrors uncorrectable =
+                new IMBEFrameDiagnostic.FrameErrors(new int[]{4, 0, 0, 0, 0, 0, 0}, 4, 1, true);
+
+        assertTrue(P25P1AudioModule.shouldGateFrame(uncorrectable, 4, false));
+        assertTrue(P25P1AudioModule.shouldGateFrame(uncorrectable, 10, false));
+        assertTrue(P25P1AudioModule.shouldGateFrame(uncorrectable, 10, true));
+    }
+
+    @Test
+    void correctableErrorsRespectThresholdAndAdaptiveGate()
+    {
+        IMBEFrameDiagnostic.FrameErrors correctable =
+                new IMBEFrameDiagnostic.FrameErrors(new int[]{3, 0, 0, 0, 0, 0, 0}, 3, 0, true);
+
+        assertFalse(P25P1AudioModule.shouldGateFrame(correctable, 4, false));
+        assertTrue(P25P1AudioModule.shouldGateFrame(correctable, 2, false));
+        assertFalse(P25P1AudioModule.shouldGateFrame(correctable, 2, true));
+    }
+
     @Test
     void restoresEncryptedStateAfterConfiguredConfirmationCount()
     {

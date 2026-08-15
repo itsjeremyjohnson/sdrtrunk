@@ -141,12 +141,13 @@ public class CTCSSDetectorTest
     }
 
     @Test
-    void testHysteresisPreventsInstantDetection()
+    void acquisitionLatencyStaysWithinSpecifiedWindow()
     {
-        // Feed only 30ms of tone - should NOT be enough to trigger detection (hysteresis requires ~500ms)
-        float[] shortTone = generateTone(TARGET_FREQUENCY, TONE_AMPLITUDE, 0.03);
-        mDetector.process(shortTone);
-        assertFalse(mDetector.isToneDetected(), "30ms of tone should not be enough to trigger detection");
+        mDetector.process(generateTone(TARGET_FREQUENCY, TONE_AMPLITUDE, 0.20));
+        assertFalse(mDetector.isToneDetected(), "Two-block hysteresis should not open before 200ms");
+
+        mDetector.process(generateTone(TARGET_FREQUENCY, TONE_AMPLITUDE, 0.10));
+        assertTrue(mDetector.isToneDetected(), "Tone should open by 300ms");
     }
 
     @Test
@@ -164,14 +165,16 @@ public class CTCSSDetectorTest
     }
 
     @Test
-    void toneLossClosesWithinFiveHundredMilliseconds()
+    void toneLossLatencyStaysWithinSpecifiedWindow()
     {
         mDetector.process(generateTone(TARGET_FREQUENCY, TONE_AMPLITUDE, 1.0));
         assertTrue(mDetector.isToneDetected());
 
-        mDetector.process(new float[(int)(SAMPLE_RATE * 0.5)]);
+        mDetector.process(new float[(int)(SAMPLE_RATE * 0.20)]);
+        assertTrue(mDetector.isToneDetected(), "Two-block hysteresis should not close before 200ms");
 
-        assertFalse(mDetector.isToneDetected());
+        mDetector.process(new float[(int)(SAMPLE_RATE * 0.10)]);
+        assertFalse(mDetector.isToneDetected(), "Tone should close by 300ms");
     }
 
     @Test

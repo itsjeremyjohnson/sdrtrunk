@@ -68,6 +68,53 @@ class DispatcherTest
     }
 
     @Test
+    void flushAndStopPreservesInFlightBatchAfterWaitTimeout() throws Exception
+    {
+        Dispatcher<Integer> dispatcher = new Dispatcher<>("dispatcher slow flush test", 10);
+        CountDownLatch firstElementStarted = new CountDownLatch(1);
+        CountDownLatch releaseFirstElement = new CountDownLatch(1);
+        CountDownLatch secondElementDelivered = new CountDownLatch(1);
+        List<Integer> received = new ArrayList<>();
+
+        dispatcher.setListener(element -> {
+            if(element == 1)
+            {
+                firstElementStarted.countDown();
+                try
+                {
+                    releaseFirstElement.await(5, TimeUnit.SECONDS);
+                }
+                catch(InterruptedException e)
+                {
+                    Thread.currentThread().interrupt();
+                }
+            }
+            synchronized(received)
+            {
+                received.add(element);
+            }
+
+            if(element == 2)
+            {
+                secondElementDelivered.countDown();
+            }
+        });
+        dispatcher.start();
+        dispatcher.receive(1);
+        dispatcher.receive(2);
+
+        assertTrue(firstElementStarted.await(2, TimeUnit.SECONDS));
+        Thread stopThread = Thread.ofPlatform().start(dispatcher::flushAndStop);
+        stopThread.join(3000);
+        assertEquals(false, stopThread.isAlive());
+
+        releaseFirstElement.countDown();
+
+        assertTrue(secondElementDelivered.await(2, TimeUnit.SECONDS));
+        assertEquals(List.of(1, 2), received);
+    }
+
+    @Test
     void flushAndStopWaitsForInFlightBatch() throws Exception
     {
         Dispatcher<Integer> dispatcher = new Dispatcher<>("dispatcher test", 10);

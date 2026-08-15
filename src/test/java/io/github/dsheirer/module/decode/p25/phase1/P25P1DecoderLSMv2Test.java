@@ -102,6 +102,19 @@ class P25P1DecoderLSMv2Test
     }
 
     @Test
+    void c4fmV2ReusesEstablishedNoiseFloorAfterShortSilence()
+    {
+        P25P1DecoderC4FMv2 decoder = new P25P1DecoderC4FMv2();
+        decoder.detectTransmissionBoundary(samples(4000, 1.0f), samples(4000, 0.0f));
+        decoder.detectTransmissionBoundary(samples(5000, 0.001f), samples(5000, 0.0f));
+
+        int boundary = decoder.detectTransmissionBoundary(samples(1000, 1.0f), samples(1000, 0.0f));
+
+        assertTrue(boundary >= 0);
+        assertEquals(1, decoder.getBoundaryResetCount());
+    }
+
+    @Test
     void c4fmV2IdleNoiseRemainsSilenceUntilEnergyRisesAboveTheLearnedFloor()
     {
         P25P1DecoderC4FMv2 decoder = new P25P1DecoderC4FMv2();

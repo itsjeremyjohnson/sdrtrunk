@@ -287,6 +287,13 @@ public class P25P1AudioModule extends ImbeAudioModule
         return ENCRYPTION_CONFIRMATION_THRESHOLD;
     }
 
+    static boolean shouldGateFrame(IMBEFrameDiagnostic.FrameErrors frameErrors, int maxImbeErrors,
+                                   boolean adaptiveGateDisabled)
+    {
+        return frameErrors.uncorrectableCount() > 0 ||
+                (frameErrors.totalErrors() > maxImbeErrors && !adaptiveGateDisabled);
+    }
+
     /**
      * Processes an audio packet by decoding the IMBE audio frames and rebroadcasting them as PCM audio packets.
      * Applies frame validation and concealment when corrupted frames are detected.
@@ -336,7 +343,7 @@ public class P25P1AudioModule extends ImbeAudioModule
                     // Adaptive gate: track pass rate and auto-disable when most frames fail
                     updateAdaptiveGate(exceedsThreshold);
 
-                    if(exceedsThreshold && !mAdaptiveGateDisabled)
+                    if(shouldGateFrame(fe, mMaxImbeErrors, mAdaptiveGateDisabled))
                     {
                         mPreCodecFilteredCount++;
                         mConsecutiveGatedFrames++;

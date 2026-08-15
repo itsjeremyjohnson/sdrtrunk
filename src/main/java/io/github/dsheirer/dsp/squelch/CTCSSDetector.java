@@ -23,9 +23,9 @@ package io.github.dsheirer.dsp.squelch;
  * frequency in demodulated FM audio. Uses hysteresis to avoid rapid toggling of the detection state.
  *
  * The detector accumulates samples into blocks and evaluates each block for the presence of the target tone.
- * Block size is set to 250ms which provides sufficient frequency resolution (~4 Hz) to distinguish adjacent
- * CTCSS tones while the center bin's main lobe naturally covers the ±2% frequency tolerance.
- * A configurable number of consecutive positive/negative detections are required before the state changes.
+ * Block size targets 125ms while retaining at least ten cycles of the configured tone. Two consecutive
+ * positive/negative detections keep transition latency within 100–300ms while adjacent-tone leakage checks preserve
+ * selectivity and the center/tolerance bins cover the ±2% frequency tolerance.
  */
 public class CTCSSDetector
 {
@@ -77,18 +77,16 @@ public class CTCSSDetector
 
     /**
      * Sets the sample rate and recalculates internal parameters.
-     * Block size is set to 250ms which places the Goertzel first null at the adjacent CTCSS tone spacing (~4 Hz),
-     * providing clean rejection of adjacent tones while the main lobe covers ±2% frequency tolerance.
+     * Block size targets 125ms, with a ten-cycle minimum for low tones. Adjacent-frequency response is measured and
+     * rejected explicitly while two-block hysteresis keeps acquisition and loss within the 100–300ms window.
      * @param sampleRate of the incoming demodulated audio stream
      */
     public void setSampleRate(double sampleRate)
     {
         mSampleRate = sampleRate;
 
-        // Block size targets 250ms for sufficient frequency resolution to reject adjacent CTCSS tones.
-        // At 250ms, the first null is at sampleRate/blockSize Hz offset from center, which for typical
-        // sample rates gives ~4 Hz resolution matching the minimum CTCSS tone spacing.
-        mBlockSize = (int)(sampleRate * 0.25);
+        // Two 125ms blocks provide robust hysteresis with a 250ms transition for most tones.
+        mBlockSize = (int)(sampleRate * 0.125);
 
         // Ensure block size gives at least 10 full cycles of the target frequency for accuracy
         int minimumBlockSize = (int)(10.0 * sampleRate / mTargetFrequency);
