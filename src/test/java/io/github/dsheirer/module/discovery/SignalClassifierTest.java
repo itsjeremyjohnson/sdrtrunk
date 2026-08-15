@@ -37,6 +37,7 @@ import io.github.dsheirer.sample.complex.ComplexSamples;
 import io.github.dsheirer.source.ComplexSource;
 import io.github.dsheirer.source.SourceEvent;
 import io.github.dsheirer.source.SourceException;
+import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -465,6 +466,38 @@ class SignalClassifierTest
 
         assertEquals(ClassificationOutcome.ERROR, result.outcome());
         assertFalse(result.summary().isBlank(), "error summary should not be blank");
+    }
+
+    @Test
+    @Timeout(5)
+    void classify_headroomReserveReached_doesNotAcquireSource() throws Exception
+    {
+        AtomicBoolean acquired = new AtomicBoolean(false);
+        SourceProvider provider = new SourceProvider()
+        {
+            @Override
+            public ComplexSource acquire(SourceConfiguration config, ChannelSpecification specification,
+                                         String threadName)
+            {
+                acquired.set(true);
+                return null;
+            }
+
+            @Override
+            public boolean hasCapacityBeyondHeadroom(int headroomChannels)
+            {
+                assertEquals(2, headroomChannels);
+                return false;
+            }
+        };
+        mUserPreferences.getDiscoveryPreference().setTunerHeadroomChannels(2);
+        FakeProbeChainFactory factory = new FakeProbeChainFactory(new HashMap<>(), new HashMap<>());
+
+        ClassificationResult result = buildClassifier(provider, factory)
+            .classify(ClassificationRequest.forFrequency(FREQ)).get();
+
+        assertEquals(ClassificationOutcome.ERROR, result.outcome());
+        assertFalse(acquired.get(), "Headroom rejection must occur before source acquisition");
     }
 
     // -------------------------------------------------------------------------

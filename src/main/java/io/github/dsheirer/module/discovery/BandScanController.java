@@ -740,24 +740,15 @@ public class BandScanController
                     Instant nowForExisting = Instant.now();
                     refreshObservation(existing, peak, nowForExisting);
 
-                    if(existing.getState() == DiscoveryState.UNIDENTIFIED)
+                    if(existing.getState() == DiscoveryState.ENERGY_DETECTED ||
+                        (existing.getState() == DiscoveryState.UNIDENTIFIED && existing.isWatched()))
                     {
-                        if(existing.isWatched())
-                        {
-                            // Re-probe watched unidentified rows.
-                            toProbeLater.add(existing);
-                        }
-                        else
-                        {
-                            // Fresh energy keeps an unwatched, previously-classified row UNIDENTIFIED.  ENERGY_DETECTED
-                            // is only a transient state for newly-created rows awaiting their first probe.
-                            mDiscoveryModel.update(existing);
-                        }
+                        // ENERGY_DETECTED rows were deferred by an earlier per-cycle limit; watched unidentified
+                        // rows are intentionally retried whenever they are observed.
+                        toProbeLater.add(existing);
                     }
-                    else
-                    {
-                        mDiscoveryModel.update(existing);
-                    }
+
+                    mDiscoveryModel.update(existing);
                 }
                 else
                 {
@@ -818,7 +809,7 @@ public class BandScanController
         }
         finally
         {
-            markUnprobedAsUnidentified(toProbeLater);
+            publishDeferredDiscoveries(toProbeLater);
         }
 
         if(mCurrentEpoch.get() != myEpoch)
@@ -873,6 +864,15 @@ public class BandScanController
 
         // Store before publishing state
         mActiveSurveyFuture.set(surveyFuture);
+
+        // stop()/replacement may have advanced the epoch while survey() was constructing its future, before the
+        // future was visible for cancellation.  Recheck immediately after registration and release that survey now.
+        if(mCurrentEpoch.get() != myEpoch || mShutdown.get() || Thread.currentThread().isInterrupted())
+        {
+            surveyFuture.cancel(true);
+            mActiveSurveyFuture.compareAndSet(surveyFuture, null);
+            return null;
+        }
 
         // Now publish SURVEYING — at this point mActiveSurveyFuture is visible to stop().
         // Guard the queued JavaFX update so a stopped/stale scan cannot overwrite CANCELLED.
@@ -967,7 +967,8 @@ public class BandScanController
                     refreshObservation(existing, peak, Instant.now());
                     mDiscoveryModel.update(existing);
 
-                    if(existing.getState() == DiscoveryState.UNIDENTIFIED ||
+                    if(existing.getState() == DiscoveryState.ENERGY_DETECTED ||
+                        existing.getState() == DiscoveryState.UNIDENTIFIED ||
                         existing.getState() == DiscoveryState.ERROR)
                     {
                         toProbeLater.add(existing);
@@ -1022,26 +1023,20 @@ public class BandScanController
         }
         finally
         {
-            markUnprobedAsUnidentified(toProbeLater);
+            publishDeferredDiscoveries(toProbeLater);
         }
     }
 
     /**
-     * Converts newly-created rows that were not probed because of the per-cycle limit from the transient
-     * ENERGY_DETECTED state to UNIDENTIFIED.  Rows that were probed or otherwise transitioned are left unchanged.
+     * Publishes rows deferred by the per-cycle probe limit while preserving ENERGY_DETECTED so a later
+     * continuous pass can distinguish them from rows that were already probed and found unidentified.
      */
-    private void markUnprobedAsUnidentified(List<Discovery> discoveries)
+    private void publishDeferredDiscoveries(List<Discovery> discoveries)
     {
         for(Discovery discovery : discoveries)
         {
             if(discovery.getState() == DiscoveryState.ENERGY_DETECTED)
             {
-                FxThreads.runAndWait(() -> {
-                    if(discovery.getState() == DiscoveryState.ENERGY_DETECTED)
-                    {
-                        discovery.setState(DiscoveryState.UNIDENTIFIED);
-                    }
-                });
                 mDiscoveryModel.update(discovery);
             }
         }

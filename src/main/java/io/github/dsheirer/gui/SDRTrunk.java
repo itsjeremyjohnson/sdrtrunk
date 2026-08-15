@@ -67,7 +67,10 @@ import io.github.dsheirer.record.LiveAudioRecordingManager;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.settings.SettingsManager;
 import io.github.dsheirer.source.ComplexSource;
+import io.github.dsheirer.source.SourceException;
+import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.Tuner;
+import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 import io.github.dsheirer.source.tuner.TunerEvent;
 import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
@@ -236,8 +239,26 @@ public class SDRTrunk implements Listener<TunerEvent>
             t.setDaemon(true);
             return t;
         });
-        SourceProvider sourceProvider = (config, spec, name) ->
-            (ComplexSource) mTunerManager.getSource(config, spec, name);
+        SourceProvider sourceProvider = new SourceProvider()
+        {
+            @Override
+            public ComplexSource acquire(SourceConfiguration config, ChannelSpecification spec,
+                                         String name) throws SourceException
+            {
+                return (ComplexSource)mTunerManager.getSource(config, spec, name);
+            }
+
+            @Override
+            public boolean hasCapacityBeyondHeadroom(int headroomChannels)
+            {
+                long idleTuners = mTunerManager.getAvailableTuners().stream()
+                    .filter(discovered -> discovered.getTuner() != null)
+                    .filter(discovered -> discovered.getTuner().getChannelSourceManager() != null)
+                    .filter(discovered -> discovered.getTuner().getChannelSourceManager().getTunerChannelCount() == 0)
+                    .count();
+                return idleTuners > headroomChannels;
+            }
+        };
         ProbeChainFactory probeChainFactory = new ProbeChainFactory(aliasModel,
             mPlaylistManager.getChannelMapModel(), mUserPreferences);
         // SignalClassifier is constructed unconditionally (before the !headless gate)

@@ -209,7 +209,7 @@ public class ProbeChainFactory
      * Removes any {@link AbstractAudioModule} instances from the list, returning a new list
      * containing only non-audio modules.
      */
-    private static List<Module> stripAudioModules(List<Module> modules)
+    static List<Module> stripAudioModules(List<Module> modules)
     {
         List<Module> stripped = new ArrayList<>(modules.size());
 
@@ -218,6 +218,7 @@ public class ProbeChainFactory
             if(module instanceof AbstractAudioModule || module instanceof AliasActionManager)
             {
                 mLog.trace("Stripping side-effect module from probe chain: {}", module.getClass().getSimpleName());
+                module.dispose();
             }
             else
             {

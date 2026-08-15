@@ -43,6 +43,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -609,9 +610,10 @@ class BandScanControllerTest
         awaitState(ctrl, ScanState.DONE, 5_000);
 
         assertEquals(1, classifier.getCallCount());
-        assertTrue(mModel.getDiscoveries().stream()
-                .noneMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED),
-            "Rows skipped by the probe limit must not remain in the transient ENERGY_DETECTED state");
+        assertEquals(2, mModel.getDiscoveries().stream()
+                .filter(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED)
+                .count(),
+            "Rows skipped by the probe limit must remain distinguishable for a later scan cycle");
     }
 
     // -------------------------------------------------------------------------
@@ -1242,6 +1244,49 @@ class BandScanControllerTest
             "Survey future cancel() must be called on stop() so the tuner source is released promptly");
     }
 
+    @Test
+    void stopWhileSurveyFutureIsBeingCreatedCancelsRegisteredFuture() throws Exception
+    {
+        CountDownLatch enteredSurvey = new CountDownLatch(1);
+        CountDownLatch releaseSurvey = new CountDownLatch(1);
+        AtomicBoolean futureCancelled = new AtomicBoolean();
+        SpectralSurveyApi delayedRegistration = (minHz, maxHz, dwell, threshold, progress, tunerControl) ->
+        {
+            enteredSurvey.countDown();
+            try
+            {
+                releaseSurvey.await();
+            }
+            catch(InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+            }
+            return new CompletableFuture<List<EnergyPeak>>()
+            {
+                @Override
+                public boolean cancel(boolean mayInterruptIfRunning)
+                {
+                    futureCancelled.set(true);
+                    return super.cancel(mayInterruptIfRunning);
+                }
+            };
+        };
+        BandScanController ctrl = makeController(delayedRegistration, new FakeClassifier(Map.of()));
+
+        ctrl.startScan(simpleScan());
+        assertTrue(enteredSurvey.await(2, TimeUnit.SECONDS));
+        ctrl.stop();
+        releaseSurvey.countDown();
+
+        long deadline = System.currentTimeMillis() + 2_000;
+        while(!futureCancelled.get() && System.currentTimeMillis() < deadline)
+        {
+            Thread.sleep(10);
+        }
+        assertTrue(futureCancelled.get(),
+            "A survey registered after stop advanced the epoch must be cancelled immediately");
+    }
+
     // -------------------------------------------------------------------------
     // Fix #4: double startScan is coherent (epoch prevents old scan clobbering new)
     // -------------------------------------------------------------------------
@@ -1433,7 +1478,7 @@ class BandScanControllerTest
     }
 
     @Test
-    void continuousScanDoesNotStrandEnergyDetectedRowsAtProbeLimit() throws InterruptedException
+    void continuousScanRevisitsRowsDeferredByProbeLimit() throws InterruptedException
     {
         AtomicInteger surveyCallCount = new AtomicInteger();
         SpectralSurveyApi switchingSurvey = (minHz, maxHz, dwell, threshold, progress, tunerControl) ->
@@ -1448,7 +1493,8 @@ class BandScanControllerTest
             EnumSet.of(DecoderType.NBFM), Duration.ofMillis(1), 6.0, 1,
             true, Duration.ofMillis(50));
 
-        BandScanController ctrl = makeController(switchingSurvey, new FakeClassifier(Map.of()));
+        FakeClassifier classifier = new FakeClassifier(Map.of());
+        BandScanController ctrl = makeController(switchingSurvey, classifier);
         ctrl.startScan(continuous);
 
         awaitState(ctrl, ScanState.IDLE_CONTINUOUS, 5_000);
@@ -1462,8 +1508,7 @@ class BandScanControllerTest
         assertTrue(surveyCallCount.get() >= 2, "A continuous rescan should have run");
 
         deadline = System.currentTimeMillis() + 5_000;
-        while((ctrl.getScanState() != ScanState.IDLE_CONTINUOUS || mModel.getDiscoveries().size() < 3)
-            && System.currentTimeMillis() < deadline)
+        while(classifier.getCallCount() < 3 && System.currentTimeMillis() < deadline)
         {
             Thread.sleep(20);
         }
@@ -1471,9 +1516,11 @@ class BandScanControllerTest
         ctrl.stop();
 
         assertEquals(3, mModel.getDiscoveries().size());
+        assertTrue(classifier.getCallCount() >= 3,
+            "Each discovery deferred by the per-cycle limit must receive a later probe budget");
         assertTrue(mModel.getDiscoveries().stream()
                 .noneMatch(discovery -> discovery.getState() == DiscoveryState.ENERGY_DETECTED),
-            "Continuous cycles must finalize rows skipped by the per-cycle probe limit");
+            "All deferred rows should be classified after enough continuous cycles");
     }
 
     @Test

@@ -334,10 +334,6 @@ public class DiscoveryPreference extends Preference
      * 0 = no restriction; positive values reserve that many slots before
      * allowing a classification to acquire a source.
      *
-     * <p>Note: since {@code TunerManager.getSource()} returning {@code null} already
-     * signals "no capacity", this setting is advisory; enforcement is deferred to
-     * a future scheduler layer.  It is persisted so callers can read it.</p>
-     *
      * @return number of channels to keep free (default 0)
      */
     public int getTunerHeadroomChannels()

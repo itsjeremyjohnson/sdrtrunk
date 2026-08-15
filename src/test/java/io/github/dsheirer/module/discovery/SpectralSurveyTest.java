@@ -525,6 +525,42 @@ class SpectralSurveyTest
     }
 
     @Test
+    @Timeout(10)
+    void survey_steppedPath_rejectsSamplesAfterExternalRetune() throws Exception
+    {
+        FakeTunerControl tunerControl = new FakeTunerControl(160_000_000L, 2_000_000.0)
+        {
+            @Override
+            public void addWidebandSampleListener(Listener<ComplexSamples> listener)
+            {
+                super.addWidebandSampleListener(listener);
+                Thread retuner = new Thread(() ->
+                {
+                    try
+                    {
+                        Thread.sleep(20);
+                        setCenterFreqHz(getCurrentCenterFreqHz() + 100_000L);
+                    }
+                    catch(Exception e)
+                    {
+                        throw new RuntimeException(e);
+                    }
+                }, "external-test-retune");
+                retuner.setDaemon(true);
+                retuner.start();
+            }
+        };
+        tunerControl.setAbsoluteToneHz(160_000_000L);
+        SpectralSurvey survey = new SpectralSurvey(mExecutor);
+
+        List<EnergyPeak> peaks = survey.survey(158_000_000L, 162_000_000L,
+            Duration.ofMillis(120), 6.0, null, tunerControl).get();
+
+        assertTrue(peaks.isEmpty(),
+            "A stepped frame set spanning an external tuner change must be discarded");
+    }
+
+    @Test
     @Timeout(20)
     void survey_steppedPath_restoresFrequencyOnNormalCompletion() throws Exception
     {

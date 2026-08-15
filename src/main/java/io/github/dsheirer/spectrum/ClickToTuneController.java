@@ -99,6 +99,7 @@ public class ClickToTuneController
      * to know which channels are "ours").
      */
     private final Set<Channel> mClickToTuneChannels = ConcurrentHashMap.newKeySet();
+    private final Set<Channel> mDeletedChannels = ConcurrentHashMap.newKeySet();
 
     /**
      * Reference to the currently in-progress classification future, so the pending overlay
@@ -370,11 +371,17 @@ public class ClickToTuneController
                 {
                     restartExistingChannel(channel);
                 }
+                mDeletedChannels.remove(channel);
                 return;
             }
 
             mPendingRedetectChannel.compareAndSet(channel, null);
             mUICallbacks.clearPending();
+
+            if(mDeletedChannels.remove(channel))
+            {
+                return;
+            }
 
             if(ex instanceof CancellationException)
             {
@@ -768,6 +775,7 @@ public class ClickToTuneController
      */
     private void startNewChannel(Channel channel)
     {
+        mDeletedChannels.remove(channel);
         FxThreads.runAndWait(() -> mChannelModel.addChannel(channel));
         mClickToTuneChannels.add(channel);
 
@@ -796,6 +804,11 @@ public class ClickToTuneController
      */
     private void restartExistingChannel(Channel channel)
     {
+        if(mDeletedChannels.contains(channel))
+        {
+            return;
+        }
+
         mClickToTuneChannels.add(channel); // defensive
 
         try
@@ -828,7 +841,24 @@ public class ClickToTuneController
     {
         if(event.getEvent() == ChannelEvent.Event.NOTIFICATION_DELETE)
         {
-            mClickToTuneChannels.remove(event.getChannel());
+            Channel channel = event.getChannel();
+            mDeletedChannels.add(channel);
+            mClickToTuneChannels.remove(channel);
+
+            if(mPendingRedetectChannel.compareAndSet(channel, null))
+            {
+                CompletableFuture<ClassificationResult> future = mPendingFuture.getAndSet(null);
+                if(future != null)
+                {
+                    future.cancel(true);
+                }
+                SwingUtilities.invokeLater(mUICallbacks::clearPending);
+            }
+            else
+            {
+                // If a completion callback is already queued/running, keep the tombstone until it has observed it.
+                SwingUtilities.invokeLater(() -> mDeletedChannels.remove(channel));
+            }
         }
     }
 

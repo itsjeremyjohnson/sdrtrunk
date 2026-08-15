@@ -18,6 +18,8 @@
  */
 package io.github.dsheirer.spectrum;
 
+import io.github.dsheirer.eventbus.MyEventBus;
+import io.github.dsheirer.gui.playlist.channel.ShowDiscoveryRequest;
 import io.github.dsheirer.module.discovery.Discovery;
 import io.github.dsheirer.module.discovery.DiscoveryEvent;
 import io.github.dsheirer.module.discovery.DiscoveryModel;
@@ -33,6 +35,8 @@ import java.awt.Graphics;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
 import java.awt.Stroke;
+import java.awt.event.MouseAdapter;
+import java.awt.event.MouseEvent;
 import java.util.List;
 import javax.swing.JComponent;
 import javax.swing.SwingUtilities;
@@ -62,9 +66,9 @@ import org.slf4j.LoggerFactory;
  * snapshot at paint time (on the EDT) — no locking needed because the EDT is single-threaded.
  *
  * <h3>Interactivity</h3>
- * This component is intentionally <em>non-interactive</em>: it installs no mouse or key listeners.
- * Pan, zoom, right-click, and click-to-tune events pass through to the underlying
- * {@link OverlayPanel} unimpeded.
+ * Visible discovery markers accept left clicks and open the matching discovery row.
+ * Points outside those markers remain mouse-transparent so pan, zoom, context-menu,
+ * and click-to-tune events continue to reach the underlying {@link OverlayPanel}.
  *
  * <h3>Lifecycle</h3>
  * Call {@link #dispose()} when removing the overlay from the JLayeredPane to deregister the
@@ -131,20 +135,33 @@ public class DiscoveryOverlay extends JComponent
 
         setOpaque(false);
 
-        // Register a discovery listener that triggers a repaint on the EDT.
-        // No mouse listeners are installed — this component is paint-only so that
-        // pan/zoom/right-click/click-to-tune events reach the underlying OverlayPanel.
         mDiscoveryListener = event -> SwingUtilities.invokeLater(this::repaint);
         mDiscoveryModel.addListener(mDiscoveryListener);
+        addMouseListener(new MouseAdapter()
+        {
+            @Override
+            public void mouseClicked(MouseEvent event)
+            {
+                if(SwingUtilities.isLeftMouseButton(event))
+                {
+                    Discovery discovery = discoveryAt(event.getX(), event.getY());
+                    if(discovery != null)
+                    {
+                        MyEventBus.getGlobalEventBus().post(
+                            new ShowDiscoveryRequest(discovery.getCenterFrequencyHz()));
+                    }
+                }
+            }
+        });
     }
 
     /**
-     * Paint-only overlays must not become the mouse target in the layered pane.
+     * Makes only visible discovery markers mouse targets in the layered pane.
      */
     @Override
     public boolean contains(int x, int y)
     {
-        return false;
+        return discoveryAt(x, y) != null;
     }
 
     // -------------------------------------------------------------------------
@@ -295,6 +312,55 @@ public class DiscoveryOverlay extends JComponent
     // -------------------------------------------------------------------------
     // Helpers
     // -------------------------------------------------------------------------
+
+    Discovery discoveryAt(int x, int y)
+    {
+        if(!shouldShowAny() || x < 0 || x >= getWidth() || y < 0 || y >= getHeight())
+        {
+            return null;
+        }
+
+        Discovery match = null;
+        double closestCenter = Double.MAX_VALUE;
+
+        for(Discovery discovery : mDiscoveryModel.snapshot())
+        {
+            if(discovery.getCreatedChannel() != null || !shouldShowDiscovery(discovery))
+            {
+                continue;
+            }
+
+            int bandwidthHz = discovery.getBandwidthHz() != 0 ? discovery.getBandwidthHz() : 12_500;
+            long centerHz = discovery.getCenterFrequencyHz();
+            int left = (int)mOverlayPanel.getAxisFromFrequency(centerHz - bandwidthHz / 2L);
+            int right = (int)mOverlayPanel.getAxisFromFrequency(centerHz + bandwidthHz / 2L);
+
+            if(right < 0 || left > getWidth())
+            {
+                continue;
+            }
+
+            left = Math.max(0, left);
+            right = Math.min(getWidth() - 1, right);
+            if(right - left < 2)
+            {
+                left = Math.max(0, left - 1);
+                right = Math.min(getWidth() - 1, left + 2);
+            }
+
+            if(x >= left && x <= right)
+            {
+                double distance = Math.abs(x - mOverlayPanel.getAxisFromFrequency(centerHz));
+                if(distance < closestCenter)
+                {
+                    match = discovery;
+                    closestCenter = distance;
+                }
+            }
+        }
+
+        return match;
+    }
 
     private boolean shouldShowAny()
     {

@@ -305,6 +305,32 @@ class ProbeChainFactoryTest
     }
 
     @Test
+    void strippedSideEffectModuleIsDisposed()
+    {
+        AtomicBoolean disposed = new AtomicBoolean();
+        AliasActionManager manager = new AliasActionManager(null)
+        {
+            @Override
+            public void dispose()
+            {
+                disposed.set(true);
+                super.dispose();
+            }
+        };
+        Module retained = new Module()
+        {
+            @Override public void reset() {}
+            @Override public void start() {}
+            @Override public void stop() {}
+        };
+
+        List<Module> modules = ProbeChainFactory.stripAudioModules(List.of(manager, retained));
+
+        assertTrue(disposed.get(), "A stripped side-effect module must release its registrations");
+        assertEquals(List.of(retained), modules);
+    }
+
+    @Test
     void probeChainsDoNotContainAliasActionManager()
     {
         ProbeChain chain = mFactory.build(DecoderType.NBFM);

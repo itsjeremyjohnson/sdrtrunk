@@ -581,11 +581,20 @@ public class SpectralSurvey implements SpectralSurveyApi
             final long stepCenterFinal = stepCenter;
 
             SampleAccumulator accumulator = buildAccumulator();
+            AtomicBoolean configurationChanged = new AtomicBoolean(false);
             Listener<ComplexSamples> listener = samples ->
             {
                 synchronized(accumulator)
                 {
-                    accumulator.process(samples);
+                    if(tunerControl.getCurrentCenterFreqHz() != stepCenterFinal
+                        || Double.compare(tunerControl.getCurrentSampleRateHz(), sampleRate) != 0)
+                    {
+                        configurationChanged.set(true);
+                    }
+                    else if(!configurationChanged.get())
+                    {
+                        accumulator.process(samples);
+                    }
                 }
             };
 
@@ -602,7 +611,10 @@ public class SpectralSurvey implements SpectralSurveyApi
 
             synchronized(accumulator)
             {
-                if(accumulator.hasData())
+                if(!configurationChanged.get()
+                    && tunerControl.getCurrentCenterFreqHz() == stepCenterFinal
+                    && Double.compare(tunerControl.getCurrentSampleRateHz(), sampleRate) == 0
+                    && accumulator.hasData())
                 {
                     // Estimate noise and detect peaks only within the requested portion of this
                     // step's alias-free tuner window.

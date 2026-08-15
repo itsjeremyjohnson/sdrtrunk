@@ -344,6 +344,14 @@ public class SignalClassifier implements Classifier
         ChannelSpecification channelSpec = buildSharedChannelSpecification(request);
 
         ComplexSource realSource;
+        int headroomChannels = mDiscoveryPreference.getTunerHeadroomChannels();
+
+        if(headroomChannels > 0 && !mSourceProvider.hasCapacityBeyondHeadroom(headroomChannels))
+        {
+            mLog.info("SignalClassifier: preserving {} tuner headroom channel(s) for {} Hz",
+                headroomChannels, freqHz);
+            return ClassificationResult.error(freqHz, "tuner headroom reserve reached");
+        }
 
         try
         {

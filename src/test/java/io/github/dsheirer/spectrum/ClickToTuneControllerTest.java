@@ -667,6 +667,30 @@ class ClickToTuneControllerTest
     }
 
     @Test
+    void redetect_deletedBeforeCompletionDoesNotRestartChannel() throws Exception
+    {
+        mFakeClassifier.setNextResult(ClassificationResult.identified(
+            FREQ, List.of(), DecoderType.NBFM,
+            DecoderFactory.getDecodeConfiguration(DecoderType.NBFM),
+            SignalKind.CONVENTIONAL, "", Map.of(), -80.0));
+        mController.classifyAndTune(FREQ, 12_500);
+        drainEdt();
+        Channel channel = mFakeChannelModel.mAdded.get(0);
+
+        CompletableFuture<ClassificationResult> pendingRedetect = new CompletableFuture<>();
+        mFakeClassifier.setNextResult(pendingRedetect);
+        mController.redetect(channel);
+        mFakeChannelModel.simulateUserDelete(channel);
+        drainEdt();
+
+        assertTrue(pendingRedetect.isCancelled());
+        assertEquals(1, mFakeCpm.mStarted.stream().filter(started -> started == channel).count(),
+            "A deleted channel must not be restarted by re-detect completion");
+        assertFalse(mController.getClickToTuneChannels().contains(channel));
+        assertNull(mFakeUI.mMissResult);
+    }
+
+    @Test
     void redetect_miss_leavesChannelIntact() throws Exception
     {
         // Create a channel with NBFM

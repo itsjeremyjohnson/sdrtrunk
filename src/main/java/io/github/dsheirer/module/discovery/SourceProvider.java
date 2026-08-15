@@ -50,4 +50,16 @@ public interface SourceProvider
      */
     ComplexSource acquire(SourceConfiguration config, ChannelSpecification specification, String threadName)
         throws SourceException;
+
+    /**
+     * Indicates whether a discovery source can be acquired while preserving the requested operator reserve.
+     * Implementations without capacity visibility may retain the default behavior.
+     *
+     * @param headroomChannels number of tuner channels to keep free
+     * @return {@code true} when acquisition may proceed
+     */
+    default boolean hasCapacityBeyondHeadroom(int headroomChannels)
+    {
+        return true;
+    }
 }
