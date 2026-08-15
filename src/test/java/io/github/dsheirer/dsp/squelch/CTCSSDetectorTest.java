@@ -57,6 +57,19 @@ public class CTCSSDetectorTest
         return samples;
     }
 
+    private float[] generateTones(double firstFrequency, float firstAmplitude, double secondFrequency,
+                                  float secondAmplitude, double durationSeconds)
+    {
+        int numSamples = (int)(SAMPLE_RATE * durationSeconds);
+        float[] samples = new float[numSamples];
+        for(int i = 0; i < numSamples; i++)
+        {
+            samples[i] = (float)(firstAmplitude * Math.sin(2.0 * Math.PI * firstFrequency * i / SAMPLE_RATE) +
+                    secondAmplitude * Math.sin(2.0 * Math.PI * secondFrequency * i / SAMPLE_RATE));
+        }
+        return samples;
+    }
+
     /**
      * Generates white noise at the specified amplitude.
      */
@@ -219,6 +232,16 @@ public class CTCSSDetectorTest
         detector.process(generateTone(67.0, TONE_AMPLITUDE, 1.0));
 
         assertTrue(detector.isToneDetected());
+    }
+
+    @Test
+    void configuredToneOpensWithStrongerAdjacentTone()
+    {
+        CTCSSDetector detector = new CTCSSDetector(67.0);
+        detector.setSampleRate(SAMPLE_RATE);
+        detector.process(generateTones(67.0, TONE_AMPLITUDE, 69.3, TONE_AMPLITUDE * 2.0f, 1.0));
+
+        assertTrue(detector.isToneDetected(), "Configured tone should remain detectable beside stronger 69.3 Hz");
     }
 
     @Test

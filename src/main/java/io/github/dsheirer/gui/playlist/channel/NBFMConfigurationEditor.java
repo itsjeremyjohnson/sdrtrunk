@@ -24,6 +24,7 @@ import io.github.dsheirer.gui.control.HexFormatter;
 import io.github.dsheirer.gui.control.IntegerFormatter;
 import io.github.dsheirer.gui.playlist.decoder.AuxDecoderConfigurationEditor;
 import io.github.dsheirer.gui.playlist.eventlog.EventLogConfigurationEditor;
+import io.github.dsheirer.gui.playlist.record.RecordConfigurationEditor;
 import io.github.dsheirer.gui.playlist.source.FrequencyEditor;
 import io.github.dsheirer.gui.playlist.source.SourceConfigurationEditor;
 import io.github.dsheirer.module.decode.DecoderType;
@@ -57,7 +58,6 @@ import javafx.scene.control.Toggle;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.layout.GridPane;
-import javafx.scene.text.TextAlignment;
 import org.controlsfx.control.SegmentedButton;
 import org.controlsfx.control.ToggleSwitch;
 
@@ -75,7 +75,7 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     private ToggleSwitch mAudioFilterEnable;
     private ComboBox<CTCSSFrequency> mCTCSSComboBox;
     private TextFormatter<Integer> mTalkgroupTextFormatter;
-    private ToggleSwitch mBasebandRecordSwitch;
+    private RecordConfigurationEditor mRecordConfigurationEditor;
     private SegmentedButton mBandwidthButton;
 
     private SourceConfigurationEditor mSourceConfigurationEditor;
@@ -201,24 +201,8 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     {
         if(mRecordPane == null)
         {
-            mRecordPane = new TitledPane();
-            mRecordPane.setText("Recording");
+            mRecordPane = new TitledPane("Recording", getRecordConfigurationEditor());
             mRecordPane.setExpanded(false);
-
-            GridPane gridPane = new GridPane();
-            gridPane.setPadding(new Insets(10,10,10,10));
-            gridPane.setHgap(10);
-            gridPane.setVgap(10);
-
-            GridPane.setConstraints(getBasebandRecordSwitch(), 0, 0);
-            gridPane.getChildren().add(getBasebandRecordSwitch());
-
-            Label recordBasebandLabel = new Label("Channel (Baseband I&Q)");
-            GridPane.setHalignment(recordBasebandLabel, HPos.LEFT);
-            GridPane.setConstraints(recordBasebandLabel, 1, 0);
-            gridPane.getChildren().add(recordBasebandLabel);
-
-            mRecordPane.setContent(gridPane);
         }
 
         return mRecordPane;
@@ -411,18 +395,17 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     }
 
 
-    private ToggleSwitch getBasebandRecordSwitch()
+    private RecordConfigurationEditor getRecordConfigurationEditor()
     {
-        if(mBasebandRecordSwitch == null)
+        if(mRecordConfigurationEditor == null)
         {
-            mBasebandRecordSwitch = new ToggleSwitch();
-            mBasebandRecordSwitch.setDisable(true);
-            mBasebandRecordSwitch.setTextAlignment(TextAlignment.RIGHT);
-            mBasebandRecordSwitch.selectedProperty()
-                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+            mRecordConfigurationEditor = new RecordConfigurationEditor(List.of(RecorderType.BASEBAND));
+            mRecordConfigurationEditor.setDisable(true);
+            mRecordConfigurationEditor.modifiedProperty()
+                    .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
         }
 
-        return mBasebandRecordSwitch;
+        return mRecordConfigurationEditor;
     }
 
     @Override
@@ -549,36 +532,15 @@ public class NBFMConfigurationEditor extends ChannelConfigurationEditor
     @Override
     protected void setRecordConfiguration(RecordConfiguration config)
     {
-        if(config != null)
-        {
-            getBasebandRecordSwitch().setDisable(false);
-            getBasebandRecordSwitch().selectedProperty().set(config.contains(RecorderType.BASEBAND));
-        }
-        else
-        {
-            getBasebandRecordSwitch().selectedProperty().set(false);
-            getBasebandRecordSwitch().setDisable(true);
-        }
+        getRecordConfigurationEditor().setDisable(config == null);
+        getRecordConfigurationEditor().setItem(config);
     }
 
     @Override
     protected void saveRecordConfiguration()
     {
-        RecordConfiguration config = getItem().getRecordConfiguration();
-
-        if(config == null)
-        {
-            config = new RecordConfiguration();
-        }
-
-        config.clearRecorders();
-
-        if(getBasebandRecordSwitch().selectedProperty().get())
-        {
-            config.addRecorder(RecorderType.BASEBAND);
-        }
-
-        getItem().setRecordConfiguration(config);
+        getRecordConfigurationEditor().save();
+        getItem().setRecordConfiguration(getRecordConfigurationEditor().getItem());
     }
 
     @Override

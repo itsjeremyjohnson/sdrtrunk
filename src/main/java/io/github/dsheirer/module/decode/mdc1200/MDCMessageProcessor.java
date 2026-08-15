@@ -64,13 +64,11 @@ public class MDCMessageProcessor implements Listener<CorrectedBinaryMessage>
          */
         boolean block1Valid = MDC1200FEC.correctAndValidate(buffer, 40);
 
-        /**
-         * Wrap the buffer in a message along with the designated alias list
-         * and send it on its merry way
-         */
-        MDCMessage message = new MDCMessage(buffer, block1Valid);
-
-        mBroadcaster.receive(message);
+        //Soft-sync candidates that fail CRC are expected on noise and must not reach shared message history/loggers.
+        if(block1Valid)
+        {
+            mBroadcaster.receive(new MDCMessage(buffer, true));
+        }
     }
 
     public void addMessageListener(Listener<IMessage> listener)

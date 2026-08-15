@@ -36,7 +36,7 @@ public class MDCDecoder extends AbstractAFSKDecoder
     //Allowed bit errors in the 40-bit preamble for soft sync matching. Soft matching is safe
     //because MDC1200FEC runs convolutional forward-error-correction + CRC-16-CCITT over each
     //framed message; noise matches that happen to satisfy soft sync will fail the CRC and be
-    //rejected by MDCDecoderState.receive(). Threshold 8 is ~20% BER tolerance on the preamble,
+    //suppressed by MDCMessageProcessor. Threshold 8 is ~20% BER tolerance on the preamble,
     //roughly matching what marginal real signals exhibit.
     //Override with -Dmdc.sync.threshold=N for field experimentation.
     private static final int SYNC_BIT_ERROR_THRESHOLD =

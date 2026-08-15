@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import hashlib
 import json
 import os
 import re
@@ -295,8 +296,8 @@ def format_delta(control_val, test_val, higher_is_better=True, fmt=".0f"):
 
 
 def metric_file_key(file_name):
-    """Match DecodeQualityTest's per-sample audio directory sanitizer."""
-    return re.sub(r'_baseband\.wav$', '', re.sub(r'[^a-zA-Z0-9._-]', '_', file_name))
+    """Match DecodeQualityTest's stable per-sample SHA-256 audio directory key."""
+    return hashlib.sha256(file_name.encode("utf-8")).hexdigest()
 
 
 def generate_report(control_metrics, test_metrics, control_audio=None, test_audio=None):

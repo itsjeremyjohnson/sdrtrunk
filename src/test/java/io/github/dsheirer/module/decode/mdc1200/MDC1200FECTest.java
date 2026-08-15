@@ -19,6 +19,7 @@
 package io.github.dsheirer.module.decode.mdc1200;
 
 import io.github.dsheirer.bits.CorrectedBinaryMessage;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -196,6 +197,18 @@ class MDC1200FECTest
 
         assertEquals(false, valid,
             "CRC should reject a frame with extensive bit errors — no phantom decode");
+    }
+
+    @Test
+    void crcInvalidCandidateIsNotBroadcast()
+    {
+        MDCMessageProcessor processor = new MDCMessageProcessor();
+        AtomicInteger messageCount = new AtomicInteger();
+        processor.addMessageListener(message -> messageCount.incrementAndGet());
+
+        processor.receive(new CorrectedBinaryMessage(304));
+
+        assertEquals(0, messageCount.get());
     }
 
     /**

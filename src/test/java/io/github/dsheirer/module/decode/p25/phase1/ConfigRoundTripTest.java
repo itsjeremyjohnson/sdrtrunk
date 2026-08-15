@@ -2,6 +2,7 @@ package io.github.dsheirer.module.decode.p25.phase1;
 
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.SerializationFeature;
+import com.fasterxml.jackson.databind.exc.InvalidFormatException;
 import com.fasterxml.jackson.dataformat.xml.JacksonXmlModule;
 import com.fasterxml.jackson.dataformat.xml.XmlMapper;
 import io.github.dsheirer.alias.AliasFactory;
@@ -91,6 +92,17 @@ public class ConfigRoundTripTest
         String output = mapper.writeValueAsString(config);
         assertTrue(output.contains("FUTURE_MOD_V3"),
             "Unknown modulation value must be preserved on round-trip, got: " + output);
+    }
+
+    @Test
+    void unknownScalarEnumWithoutDefaultFailsInsteadOfCoercingToNull()
+    {
+        XmlMapper mapper = createMapper();
+        String xml = """
+                <decode_configuration type="decodeConfigAM" bandwidth="FUTURE_BANDWIDTH" />
+                """;
+
+        assertThrows(InvalidFormatException.class, () -> mapper.readValue(xml, DecodeConfiguration.class));
     }
 
     @Test

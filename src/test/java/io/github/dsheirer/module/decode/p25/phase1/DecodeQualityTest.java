@@ -37,13 +37,17 @@ import java.io.FileOutputStream;
 import java.io.FileWriter;
 import java.io.IOException;
 import java.lang.reflect.Field;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import javax.xml.parsers.DocumentBuilderFactory;
@@ -196,7 +200,7 @@ public class DecodeQualityTest
             double qualityScore = 0;
             if(fullMode && codec != null)
             {
-                Path audioDir = outPath.resolve(sanitize(sampleId));
+                Path audioDir = outPath.resolve(audioDirectoryKey(sampleId));
                 try { Files.createDirectories(audioDir); } catch(IOException e) { /* ignore */ }
                 AudioResult ar = decodeAudio(bbFile, modulation, nac, codec, audioDir, maxBchErrors, maxImbeErrors, segmentGapMs, silenceThreshold, silenceMinMs, cmaAcqMu, cmaTrkMu, cmaShiftMs);
                 audioSegments = ar.segmentCount;
@@ -622,10 +626,22 @@ public class DecodeQualityTest
         return previousTimestamp > 0 && currentTimestamp - previousTimestamp > segmentGapMs;
     }
 
+    static boolean shouldGateImbeFrames(int maxImbeErrors)
+    {
+        return maxImbeErrors > 0;
+    }
+
+    static boolean startsAudioSegment(boolean explicitTerminator, long previousTimestamp, long currentTimestamp,
+                                      int segmentGapMs)
+    {
+        return explicitTerminator || isSegmentBoundary(previousTimestamp, currentTimestamp, segmentGapMs);
+    }
+
     private static AudioResult decodeAudio(File file, String modulation, int nac, TestJmbeCodecLoader codec, Path audioDir, int maxBchErrors, int maxImbeErrors, int segmentGapMs, float silenceThreshold, int silenceMinMs, float cmaAcqMu, float cmaTrkMu, int cmaShiftMs)
     {
         List<float[]> audioBuffers = new ArrayList<>();
         List<Long> lduTimestamps = new ArrayList<>();
+        List<Boolean> lduSegmentStarts = new ArrayList<>();
         int[] gatedFrames = {0};
         float[][] lastGoodFrame = {null};
         int[] consecutiveGated = {0};
@@ -637,6 +653,7 @@ public class DecodeQualityTest
         int[] adaptivePass = {0};
         boolean[] adaptiveDisabled = {false};
         boolean[] encryptedCall = {false};
+        boolean[] explicitSegmentBoundary = {false};
         long[] lastDecodedLduTimestamp = {0};
         codec.reset();
 
@@ -659,6 +676,7 @@ public class DecodeQualityTest
                     p25Message.getDUID() == P25P1DataUnitID.TERMINATOR_DATA_UNIT_LINK_CONTROL)
             {
                 encryptedCall[0] = false;
+                explicitSegmentBoundary[0] = true;
                 lastDecodedLduTimestamp[0] = 0;
                 codec.reset();
             }
@@ -666,18 +684,22 @@ public class DecodeQualityTest
             if(msg instanceof LDUMessage ldu && !encryptedCall[0])
             {
                 long timestamp = p25Message.getTimestamp();
-                if(isSegmentBoundary(lastDecodedLduTimestamp[0], timestamp, segmentGapMs))
+                boolean startsSegment = startsAudioSegment(explicitSegmentBoundary[0],
+                        lastDecodedLduTimestamp[0], timestamp, segmentGapMs);
+                if(startsSegment)
                 {
                     codec.reset();
                     lastGoodFrame[0] = null;
                     consecutiveGated[0] = 0;
                 }
+                explicitSegmentBoundary[0] = false;
                 lastDecodedLduTimestamp[0] = timestamp;
                 lduTimestamps.add(timestamp);
+                lduSegmentStarts.add(startsSegment);
                 for(byte[] frame : ldu.getIMBEFrames())
                 {
                     // Pre-codec quality gate with adaptive disable
-                    if(maxImbeErrors >= 0)
+                    if(shouldGateImbeFrames(maxImbeErrors))
                     {
                         IMBEFrameDiagnostic.FrameErrors fe = IMBEFrameDiagnostic.analyzeFrame(frame);
                         boolean exceedsThreshold = fe.totalErrors() > maxImbeErrors;
@@ -797,7 +819,7 @@ public class DecodeQualityTest
         double silSec = totalSilentFrames * 160.0 / 8000.0;
         double silPct = totalAudioSec > 0 ? (silSec / totalAudioSec) * 100.0 : 0;
 
-        // Segment by LDU gaps exceeding the configured threshold
+        // Segment at explicit terminators or LDU gaps exceeding the configured threshold
         List<List<float[]>> segments = new ArrayList<>();
         List<float[]> current = new ArrayList<>();
         int framesPerLdu = 9;
@@ -805,7 +827,7 @@ public class DecodeQualityTest
 
         for(int i = 0; i < lduTimestamps.size(); i++)
         {
-            if(i > 0 && (lduTimestamps.get(i) - lduTimestamps.get(i - 1)) > segmentGapMs)
+            if(i > 0 && lduSegmentStarts.get(i))
             {
                 if(!current.isEmpty()) { segments.add(current); current = new ArrayList<>(); }
             }
@@ -1053,49 +1075,74 @@ public class DecodeQualityTest
 
     static List<ChannelConfig> parsePlaylist(File xmlFile)
     {
-        List<ChannelConfig> configs = new ArrayList<>();
         try
         {
-            Document doc = DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(xmlFile);
-            NodeList channelNodes = doc.getElementsByTagName("channel");
+            return parsePlaylist(DocumentBuilderFactory.newInstance().newDocumentBuilder().parse(xmlFile));
+        }
+        catch(Exception e)
+        {
+            System.err.println("ERROR parsing playlist: " + e.getMessage());
+            return Collections.emptyList();
+        }
+    }
 
-            for(int i = 0; i < channelNodes.getLength(); i++)
+    static List<ChannelConfig> parsePlaylist(Document doc)
+    {
+        List<ChannelConfig> configs = new ArrayList<>();
+        NodeList channelNodes = doc.getElementsByTagName("channel");
+
+        for(int i = 0; i < channelNodes.getLength(); i++)
+        {
+            Element ch = (Element)channelNodes.item(i);
+            String name = ch.getAttribute("name");
+            String system = ch.getAttribute("system");
+            String site = ch.getAttribute("site");
+
+            NodeList decodeConfigs = ch.getElementsByTagName("decode_configuration");
+            if(decodeConfigs.getLength() == 0) continue;
+            Element dc = (Element)decodeConfigs.item(0);
+            if(!"decodeConfigP25Phase1".equals(dc.getAttribute("type"))) continue;
+
+            String modulation = dc.getAttribute("modulation");
+            int nac = -1;
+            if(dc.hasAttribute("configuredNAC"))
             {
-                Element ch = (Element)channelNodes.item(i);
-                String name = ch.getAttribute("name");
-                String system = ch.getAttribute("system");
-                String site = ch.getAttribute("site");
+                try { nac = Integer.parseInt(dc.getAttribute("configuredNAC")); } catch(NumberFormatException e) {}
+            }
 
-                NodeList decodeConfigs = ch.getElementsByTagName("decode_configuration");
-                if(decodeConfigs.getLength() == 0) continue;
-                Element dc = (Element)decodeConfigs.item(0);
-                if(!"decodeConfigP25Phase1".equals(dc.getAttribute("type"))) continue;
+            NodeList sourceConfigs = ch.getElementsByTagName("source_configuration");
+            if(sourceConfigs.getLength() == 0 || modulation == null || modulation.isEmpty()) continue;
 
-                String modulation = dc.getAttribute("modulation");
-                int nac = -1;
-                if(dc.hasAttribute("configuredNAC"))
+            Element sc = (Element)sourceConfigs.item(0);
+            String preferredTuner = "N/A";
+            String tuner = sc.getAttribute("preferred_tuner");
+            if(tuner != null && !tuner.isEmpty()) preferredTuner = tuner;
+
+            List<Long> frequencies = new ArrayList<>();
+            try
+            {
+                long frequency = Long.parseLong(sc.getAttribute("frequency"));
+                if(frequency > 0) frequencies.add(frequency);
+            }
+            catch(NumberFormatException e) {}
+
+            NodeList frequencyNodes = sc.getElementsByTagName("frequency");
+            for(int frequencyIndex = 0; frequencyIndex < frequencyNodes.getLength(); frequencyIndex++)
+            {
+                try
                 {
-                    try { nac = Integer.parseInt(dc.getAttribute("configuredNAC")); } catch(NumberFormatException e) {}
+                    long frequency = Long.parseLong(frequencyNodes.item(frequencyIndex).getTextContent().trim());
+                    if(frequency > 0 && !frequencies.contains(frequency)) frequencies.add(frequency);
                 }
+                catch(NumberFormatException e) {}
+            }
 
-                NodeList sourceConfigs = ch.getElementsByTagName("source_configuration");
-                long frequency = 0;
-                String preferredTuner = "N/A";
-                if(sourceConfigs.getLength() > 0)
-                {
-                    Element sc = (Element)sourceConfigs.item(0);
-                    try { frequency = Long.parseLong(sc.getAttribute("frequency")); } catch(NumberFormatException e) {}
-                    String t = sc.getAttribute("preferred_tuner");
-                    if(t != null && !t.isEmpty()) preferredTuner = t;
-                }
-
-                if(frequency > 0 && modulation != null && !modulation.isEmpty())
-                {
-                    configs.add(new ChannelConfig(name, system, site, frequency, modulation, nac, preferredTuner));
-                }
+            for(long frequency : frequencies)
+            {
+                configs.add(new ChannelConfig(name, system, site, frequency, modulation, nac, preferredTuner));
             }
         }
-        catch(Exception e) { System.err.println("ERROR parsing playlist: " + e.getMessage()); }
+
         return configs;
     }
 
@@ -1135,9 +1182,17 @@ public class DecodeQualityTest
         return files;
     }
 
-    private static String sanitize(String name)
+    static String audioDirectoryKey(String sampleId)
     {
-        return name.replaceAll("[^a-zA-Z0-9._-]", "_").replaceAll("_baseband\\.wav$", "");
+        try
+        {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(sampleId.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        }
+        catch(NoSuchAlgorithmException e)
+        {
+            throw new IllegalStateException("SHA-256 is unavailable", e);
+        }
     }
 
     private static String escapeJson(String s)
