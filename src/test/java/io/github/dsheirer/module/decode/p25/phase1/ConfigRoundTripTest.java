@@ -150,6 +150,27 @@ public class ConfigRoundTripTest
     }
 
     @Test
+    void channelCopyPreservesUnknownConfigurationProperties()
+    {
+        Channel original = new Channel("test");
+        original.setUnknownProperty("futureChannel", "channel-value");
+        original.getAuxDecodeConfiguration().setUnknownProperty("futureAux", "aux-value");
+        original.getDecodeConfiguration().setUnknownProperty("futureDecode", "decode-value");
+        original.getEventLogConfiguration().setUnknownProperty("futureLog", "log-value");
+        original.getRecordConfiguration().setUnknownProperty("futureRecord", "record-value");
+        original.getSourceConfiguration().setUnknownProperty("futureSource", "source-value");
+
+        Channel copy = original.copyOf();
+
+        assertEquals("channel-value", copy.getUnknownProperties().get("futureChannel"));
+        assertEquals("aux-value", copy.getAuxDecodeConfiguration().getUnknownProperties().get("futureAux"));
+        assertEquals("decode-value", copy.getDecodeConfiguration().getUnknownProperties().get("futureDecode"));
+        assertEquals("log-value", copy.getEventLogConfiguration().getUnknownProperties().get("futureLog"));
+        assertEquals("record-value", copy.getRecordConfiguration().getUnknownProperties().get("futureRecord"));
+        assertEquals("source-value", copy.getSourceConfiguration().getUnknownProperties().get("futureSource"));
+    }
+
+    @Test
     void decoderFactoryCopyPreservesNbfmCtcss()
     {
         DecodeConfigNBFM original = new DecodeConfigNBFM();

@@ -106,6 +106,16 @@ public class P25P1DemodulatorC4FM
         mFeedbackDecoder = feedbackDecoder;
     }
 
+    public void setConfiguredNAC(int nac)
+    {
+        mNACTracker.setConfiguredNAC(nac);
+    }
+
+    int getConfiguredNAC()
+    {
+        return mNACTracker.getConfiguredNAC();
+    }
+
     /**
      * Resets the PLL
      */

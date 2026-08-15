@@ -11,6 +11,7 @@
 package io.github.dsheirer.module.decode.p25.phase1;
 
 import org.junit.jupiter.api.Test;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class P25P1DemodulatorC4FMv2Test
@@ -23,5 +24,25 @@ class P25P1DemodulatorC4FMv2Test
 
         assertTrue(demodulator.isGardnerEnabled());
         assertTrue(demodulator.isAfcEnabled());
+    }
+
+    @Test
+    void boundsDuidCorrectionCycles()
+    {
+        P25P1DecoderC4FMv2 decoder = new P25P1DecoderC4FMv2();
+
+        assertEquals(3, decoder.getMessageFramer().getMaxConsecutiveDuidCorrections());
+    }
+
+    @Test
+    void configuredNacReachesBothC4fmDemodulators()
+    {
+        P25P1DecoderC4FM decoder = new P25P1DecoderC4FM();
+        decoder.setConfiguredNAC(0x293);
+        assertEquals(0x293, decoder.getDemodulator().getConfiguredNAC());
+
+        P25P1DecoderC4FMv2 decoderV2 = new P25P1DecoderC4FMv2();
+        decoderV2.setConfiguredNAC(0x293);
+        assertEquals(0x293, decoderV2.getDemodulator().getConfiguredNAC());
     }
 }

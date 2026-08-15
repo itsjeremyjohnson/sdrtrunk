@@ -336,6 +336,7 @@ public class P25P1DecoderC4FM extends FeedbackDecoder implements IByteBufferProv
     public void setConfiguredNAC(int nac)
     {
         mMessageFramer.setConfiguredNAC(nac);
+        mSymbolProcessor.setConfiguredNAC(nac);
     }
 
     /**

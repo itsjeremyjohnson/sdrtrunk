@@ -56,6 +56,19 @@ class ActivityTriggeredWaveRecorderTest
     }
 
     @Test
+    void firstAboveThresholdBufferTriggersImmediately() throws Exception
+    {
+        ActivityTriggeredWaveRecorder recorder =
+                new ActivityTriggeredWaveRecorder(25000.0f, "Test Channel", 155250000L, -70.0f, mTempDirectory);
+        recorder.start();
+        recorder.receive(createSamples(2048, 0.001f));
+        awaitRecordingCount(1);
+        recorder.stop();
+
+        assertEquals(1, findRecordings().size());
+    }
+
+    @Test
     void createsUniqueFilesForRecordingsStartedInTheSameSecond() throws Exception
     {
         ActivityTriggeredWaveRecorder recorder = createRecorder();
@@ -120,6 +133,13 @@ class ActivityTriggeredWaveRecorderTest
     private ComplexSamples createInactiveSamples(int length)
     {
         return new ComplexSamples(new float[length], new float[length], System.currentTimeMillis());
+    }
+
+    private ComplexSamples createSamples(int length, float amplitude)
+    {
+        float[] i = new float[length];
+        java.util.Arrays.fill(i, amplitude);
+        return new ComplexSamples(i, new float[length], System.currentTimeMillis());
     }
 
     private void awaitRecordingCount(int count) throws Exception

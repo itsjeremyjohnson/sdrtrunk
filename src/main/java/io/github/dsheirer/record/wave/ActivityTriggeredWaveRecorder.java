@@ -71,6 +71,7 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     private WaveWriter mWaveWriter;
     private RecordingState mRecordingState = RecordingState.IDLE;
     private float mSmoothedPowerDb = -100.0f;
+    private boolean mPowerEstimateInitialized;
     private long mHoldSamplesRemaining;
     private boolean mRunning;
     private boolean mErrorState;
@@ -136,6 +137,7 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
         mErrorState = false;
         mRecordingState = RecordingState.IDLE;
         mSmoothedPowerDb = -100.0f;
+        mPowerEstimateInitialized = false;
         initCircularBuffer();
         mBufferProcessor.setListener(queued -> process(queued.samples(), queued.generation()));
         mBufferProcessor.start();
@@ -156,6 +158,7 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
         closeActiveRecording();
         mRecordingState = RecordingState.IDLE;
         mSmoothedPowerDb = -100.0f;
+        mPowerEstimateInitialized = false;
 
         if(mCircularBuffer != null)
         {
@@ -177,7 +180,16 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
         }
 
         float powerDb = calculatePowerDb(complexSamples);
-        mSmoothedPowerDb = (POWER_ALPHA * powerDb) + ((1.0f - POWER_ALPHA) * mSmoothedPowerDb);
+
+        if(mPowerEstimateInitialized)
+        {
+            mSmoothedPowerDb = (POWER_ALPHA * powerDb) + ((1.0f - POWER_ALPHA) * mSmoothedPowerDb);
+        }
+        else
+        {
+            mSmoothedPowerDb = powerDb;
+            mPowerEstimateInitialized = true;
+        }
 
         boolean active = mSmoothedPowerDb > mSquelchThresholdDb;
 
@@ -374,6 +386,7 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
         closeActiveRecording();
         mRecordingState = RecordingState.IDLE;
         mSmoothedPowerDb = -100.0f;
+        mPowerEstimateInitialized = false;
         mHoldSamplesRemaining = 0;
         mCircularBuffer.clear();
     }

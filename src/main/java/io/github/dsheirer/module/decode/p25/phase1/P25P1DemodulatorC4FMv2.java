@@ -135,6 +135,16 @@ public class P25P1DemodulatorC4FMv2
         mFeedbackDecoder = feedbackDecoder;
     }
 
+    public void setConfiguredNAC(int nac)
+    {
+        mNACTracker.setConfiguredNAC(nac);
+    }
+
+    int getConfiguredNAC()
+    {
+        return mNACTracker.getConfiguredNAC();
+    }
+
     /**
      * Sets the Gardner TED loop bandwidth. Computes 2nd-order loop filter gains from bandwidth and damping=0.707.
      * @param bandwidth normalized loop bandwidth (0.001-0.1, typical 0.01)

@@ -128,6 +128,7 @@ public class Channel extends Configuration implements Listener<SourceEvent>
     public Channel copyOf()
     {
         Channel channel = new Channel(mName.get());
+        channel.copyUnknownPropertiesFrom(this);
         channel.setSystem(mSystem.get());
         channel.setSite(mSite.get());
         channel.setAliasListName(mAliasListName.get());
@@ -144,9 +145,15 @@ public class Channel extends Configuration implements Listener<SourceEvent>
             }
         }
 
+        auxCopy.copyUnknownPropertiesFrom(getAuxDecodeConfiguration());
         channel.setAuxDecodeConfiguration(auxCopy);
 
-        channel.setDecodeConfiguration(DecoderFactory.copy(mDecodeConfiguration));
+        DecodeConfiguration decodeCopy = DecoderFactory.copy(mDecodeConfiguration);
+        if(decodeCopy != null)
+        {
+            decodeCopy.copyUnknownPropertiesFrom(mDecodeConfiguration);
+        }
+        channel.setDecodeConfiguration(decodeCopy);
 
         EventLogConfiguration logCopy = new EventLogConfiguration();
 
@@ -158,6 +165,7 @@ public class Channel extends Configuration implements Listener<SourceEvent>
             }
         }
 
+        logCopy.copyUnknownPropertiesFrom(mEventLogConfiguration);
         channel.setEventLogConfiguration(logCopy);
 
         RecordConfiguration recordCopy = new RecordConfiguration();
@@ -169,9 +177,15 @@ public class Channel extends Configuration implements Listener<SourceEvent>
             recordCopy.setActivitySquelchThreshold(mRecordConfiguration.getActivitySquelchThreshold());
         }
 
+        recordCopy.copyUnknownPropertiesFrom(mRecordConfiguration);
         channel.setRecordConfiguration(recordCopy);
 
-        channel.setSourceConfiguration(SourceConfigFactory.copy(mSourceConfiguration));
+        SourceConfiguration sourceCopy = SourceConfigFactory.copy(mSourceConfiguration);
+        if(sourceCopy != null)
+        {
+            sourceCopy.copyUnknownPropertiesFrom(mSourceConfiguration);
+        }
+        channel.setSourceConfiguration(sourceCopy);
 
         return channel;
     }

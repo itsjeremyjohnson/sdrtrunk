@@ -928,6 +928,11 @@ public class P25P1MessageFramer
         mMaxConsecutiveDuidCorrections = limit;
     }
 
+    int getMaxConsecutiveDuidCorrections()
+    {
+        return mMaxConsecutiveDuidCorrections;
+    }
+
     public void nidDetected(int nac, P25P1DataUnitID dataUnitID, int detectedBitErrors)
     {
         mDetectedDataUnitID = dataUnitID;

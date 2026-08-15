@@ -47,4 +47,12 @@ public abstract class Configuration
     {
         return mUnknownProperties;
     }
+
+    public void copyUnknownPropertiesFrom(Configuration configuration)
+    {
+        if(configuration != null && configuration.mUnknownProperties != null)
+        {
+            mUnknownProperties = new LinkedHashMap<>(configuration.mUnknownProperties);
+        }
+    }
 }

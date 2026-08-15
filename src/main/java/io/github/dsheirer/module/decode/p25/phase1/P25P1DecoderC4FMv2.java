@@ -102,6 +102,11 @@ public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferPr
         // so blocked syncs are almost always genuine. Guard helps CQPSK (noisy symbol recovery)
         // but costs C4FM 0.8% LDUs and 12%+ words on busy channels like Salem Fire.
         mMessageFramer.mSyncGuardEnabled = false;
+        int duidLimit = Integer.parseInt(System.getProperty("p25.duid.limit.c4fm", "3"));
+        if(duidLimit > 0)
+        {
+            mMessageFramer.setMaxConsecutiveDuidCorrections(duidLimit);
+        }
         mMessageProcessor.setMessageListener(getMessageListener());
         mSymbolProcessor = new P25P1DemodulatorC4FMv2(mMessageFramer, this);
     }
@@ -155,9 +160,11 @@ public class P25P1DecoderC4FMv2 extends FeedbackDecoder implements IByteBufferPr
     public void setConfiguredNAC(int nac)
     {
         mMessageFramer.setConfiguredNAC(nac);
+        mSymbolProcessor.setConfiguredNAC(nac);
     }
 
     public P25P1MessageFramer getMessageFramer() { return mMessageFramer; }
+    P25P1DemodulatorC4FMv2 getDemodulator() { return mSymbolProcessor; }
 
     /**
      * Sets the sample rate and configures internal decoder components.
