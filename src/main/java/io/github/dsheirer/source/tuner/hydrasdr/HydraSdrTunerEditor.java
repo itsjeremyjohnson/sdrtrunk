@@ -517,6 +517,7 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 								HydraSdrNative.GAIN_TYPE_SENSITIVITY, value);
 						}
 						/* Custom mode: no immediate device changes, user adjusts sliders */
+						save();
 					}
 					catch(Exception ex)
 					{
@@ -524,7 +525,6 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 					}
 
 					updateGainControls();
-					save();
 				}
 			});
 		}

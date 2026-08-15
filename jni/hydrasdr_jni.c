@@ -46,7 +46,7 @@ static pthread_mutex_t g_table_mtx = PTHREAD_MUTEX_INITIALIZER;
  *
  * Lifecycle:
  *   startRx:  allocate context, create global refs, start streaming
- *   callback: attach thread once, de-interleave, call Java, detach on stop
+ *   callback: attach as needed, de-interleave, call Java, then detach
  *   stopRx:   hydrasdr_stop_rx() blocks until thread exits, then cleanup
  *
  * Pre-allocated Java arrays are reused across callbacks to eliminate
@@ -56,8 +56,6 @@ typedef struct {
 	JavaVM *jvm;
 	jobject callback;
 	jmethodID onSamplesMethod;
-	JNIEnv *attached_env;
-	volatile int thread_attached;
 	atomic_int stopping;           /* release/acquire stop signal */
 	/* Double-buffered pre-allocated Java arrays (global refs).
 	 * Two sets alternate so Java can consume one while native fills the other. */
@@ -158,8 +156,6 @@ static void cleanup_stream_ctx(JNIEnv *env, jni_stream_ctx_t *ctx)
 		(*env)->DeleteGlobalRef(env, ctx->callback);
 		ctx->callback = NULL;
 	}
-	ctx->thread_attached = 0;
-	ctx->attached_env = NULL;
 	atomic_store_explicit(&ctx->stopping, 0, memory_order_relaxed);
 	ctx->active = 0;
 }
@@ -465,31 +461,29 @@ static void deinterleave_iq(const float *iq, float *i_out, float *q_out, int sam
 /*
  * Native streaming callback - called on libhydrasdr's USB thread.
  *
- * - Attaches to JVM once on first call
+ * - Attaches the native callback thread to the JVM for this invocation
  * - De-interleaves IQ in native C (unrolled loop) into pre-split I/Q arrays
  * - Double-buffered arrays: no GC allocation per callback
- * - Detaches from JVM when streaming stops (preventing thread leak)
+ * - Detaches before returning so stream termination cannot leak an attachment
  */
 static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 {
 	jni_stream_ctx_t *ctx = (jni_stream_ctx_t *)transfer->ctx;
 	if (!ctx || !ctx->callback ||
 		atomic_load_explicit(&ctx->stopping, memory_order_acquire))
-		goto detach_and_exit;
+		return -1;
 
-	JNIEnv *env = ctx->attached_env;
+	JNIEnv *env = NULL;
+	int attached_here = 0;
+	int callback_result = 0;
+	jint status = (*ctx->jvm)->GetEnv(ctx->jvm, (void **)&env, JNI_VERSION_1_6);
 
-	/* Attach streaming thread to JVM on first callback */
-	if (!ctx->thread_attached) {
-		jint status = (*ctx->jvm)->GetEnv(ctx->jvm, (void **)&env, JNI_VERSION_1_6);
-		if (status == JNI_EDETACHED) {
-			if ((*ctx->jvm)->AttachCurrentThread(ctx->jvm, (void **)&env, NULL) != 0)
-				return -1;
-		} else if (status != JNI_OK) {
+	if (status == JNI_EDETACHED) {
+		if ((*ctx->jvm)->AttachCurrentThread(ctx->jvm, (void **)&env, NULL) != 0)
 			return -1;
-		}
-		ctx->attached_env = env;
-		ctx->thread_attached = 1;
+		attached_here = 1;
+	} else if (status != JNI_OK) {
+		return -1;
 	}
 
 	int sample_count = transfer->sample_count;
@@ -497,7 +491,7 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 
 	/* Sanity check: reject absurd sample counts */
 	if (sample_count <= 0 || sample_count > MAX_SAMPLES_PER_CALLBACK)
-		return 0;
+		goto callback_done;
 
 	/*
 	 * Double-buffer: reuse pre-allocated Java arrays when size matches.
@@ -532,7 +526,7 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 		}
 
 		if (!alloc_ok)
-			return 0; /* OOM -- skip this buffer, try again next callback */
+			goto callback_done; /* OOM -- skip this buffer, try again next callback */
 
 		ctx->buf_size = sample_count;
 		ctx->buf_index = 0;
@@ -563,19 +557,13 @@ static int jni_stream_callback(hydrasdr_transfer_t *transfer)
 
 	if ((*env)->ExceptionCheck(env)) {
 		(*env)->ExceptionClear(env);
-		return -1;
+		callback_result = -1;
 	}
 
-	return 0;
-
-detach_and_exit:
-	/* Streaming is ending -- detach this thread from JVM before it exits */
-	if (ctx && ctx->thread_attached && ctx->jvm) {
+callback_done:
+	if (attached_here)
 		(*ctx->jvm)->DetachCurrentThread(ctx->jvm);
-		ctx->thread_attached = 0;
-		ctx->attached_env = NULL;
-	}
-	return -1;
+	return callback_result;
 }
 
 JNIEXPORT jint JNICALL
@@ -640,13 +628,13 @@ Java_io_github_dsheirer_source_tuner_hydrasdr_HydraSdrNative_stopRx(
 		return HYDRASDR_SUCCESS;
 
 	/*
-	 * Signal the callback to detach its thread and stop processing.
+	 * Signal the callback to stop processing.
 	 *
 	 * PINNED API CONTRACT: libhydrasdr v1.1.1 documents that
 	 * hydrasdr_stop_rx() blocks until all streaming threads have terminated
 	 * and guarantees that no callbacks occur after it returns.
-	 * The callback checks 'stopping' and calls DetachCurrentThread before
-	 * the thread terminates. If hydrasdr_stop_rx() returned before the
+	 * Each callback detaches before returning and checks 'stopping' before
+	 * accessing context state. If hydrasdr_stop_rx() returned before the
 	 * thread exits, cleanup_stream_ctx() below would free resources still
 	 * in use by the callback — causing a use-after-free.
 	 */

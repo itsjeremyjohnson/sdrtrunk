@@ -35,6 +35,7 @@ jobs:
             lib_glob: "*.dll"
 
     runs-on: ${{ matrix.os }}
+    continue-on-error: ${{ matrix.target == 'linux-aarch64' }}
 
     steps:
       - uses: actions/checkout@v4

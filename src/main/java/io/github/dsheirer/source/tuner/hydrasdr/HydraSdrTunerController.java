@@ -714,7 +714,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		int result = HydraSdrNative.setBiasT(mDeviceHandle, enabled);
 		if(result != HydraSdrNative.SUCCESS)
 		{
-			mLog.warn("Failed to set Bias-T: " + HydraSdrNative.errorName(result));
+			throw new SourceException("Failed to set Bias-T: " + HydraSdrNative.errorName(result));
 		}
 	}
 
