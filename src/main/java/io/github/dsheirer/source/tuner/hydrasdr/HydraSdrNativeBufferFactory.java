@@ -57,7 +57,12 @@ public class HydraSdrNativeBufferFactory
 	 */
 	public synchronized void setSampleRate(int sampleRate)
 	{
-		mSamplesPerMillisecond = sampleRate / 1000.0f;
+		float samplesPerMillisecond = sampleRate / 1000.0f;
+		if(mSamplesPerMillisecond != 0.0f && mSamplesPerMillisecond != samplesPerMillisecond)
+		{
+			reset();
+		}
+		mSamplesPerMillisecond = samplesPerMillisecond;
 	}
 
 	/**
@@ -84,7 +89,10 @@ public class HydraSdrNativeBufferFactory
 	public synchronized List<HydraSdrNativeBuffer> get(float[] iSamples, float[] qSamples,
 		int sampleCount, long timestamp)
 	{
-		updateBufferLength(sampleCount);
+		if(mIResidual.length == 0)
+		{
+			updateBufferLength(sampleCount);
+		}
 
 		if(mIResidual.length == 0)
 		{

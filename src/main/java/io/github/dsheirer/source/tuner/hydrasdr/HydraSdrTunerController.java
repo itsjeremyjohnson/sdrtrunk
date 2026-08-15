@@ -183,8 +183,8 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			/* Query available sample rates */
 			determineAvailableSampleRates();
 
-			/* Set default frequency */
-			setFrequency(FREQUENCY_DEFAULT);
+			/* Set an initialization frequency within the device-reported range. */
+			setFrequency(clampFrequency(FREQUENCY_DEFAULT, getMinimumFrequency(), getMaximumFrequency()));
 
 			/* Set default sample rate */
 			if(!mSampleRates.isEmpty())
@@ -442,6 +442,11 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		}
 	}
 
+	static long clampFrequency(long frequency, long minimum, long maximum)
+	{
+		return Math.max(minimum, Math.min(maximum, frequency));
+	}
+
 	@Override
 	public long getTunedFrequency() throws SourceException
 	{
@@ -675,13 +680,22 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		{
 			case GAIN_MODE_LINEARITY -> deviceInfo.hasCapability(HydraSdrNative.CAP_LINEARITY_GAIN);
 			case GAIN_MODE_SENSITIVITY -> deviceInfo.hasCapability(HydraSdrNative.CAP_SENSITIVITY_GAIN);
-			case GAIN_MODE_CUSTOM -> deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_GAIN) ||
-				deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_GAIN) ||
-				deviceInfo.hasCapability(HydraSdrNative.CAP_VGA_GAIN) ||
-				deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_AGC) ||
-				deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC);
+			case GAIN_MODE_CUSTOM -> supportsCustomGain(deviceInfo);
 			default -> false;
 		};
+	}
+
+	static boolean supportsCustomGain(HydraSdrDeviceInfo deviceInfo)
+	{
+		return deviceInfo != null && (deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_GAIN) ||
+			deviceInfo.hasCapability(HydraSdrNative.CAP_RF_GAIN) ||
+			deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_GAIN) ||
+			deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_GAIN) ||
+			deviceInfo.hasCapability(HydraSdrNative.CAP_VGA_GAIN) ||
+			deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_AGC) ||
+			deviceInfo.hasCapability(HydraSdrNative.CAP_RF_AGC) ||
+			deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC) ||
+			deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_AGC));
 	}
 
 	static int selectSupportedGainMode(int requestedMode, boolean supportsLinearity, boolean supportsSensitivity,
@@ -746,16 +760,26 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		}
 
 		int count = (deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_AGC) ? 1 : 0) +
-			(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC) ? 1 : 0);
+			(deviceInfo.hasCapability(HydraSdrNative.CAP_RF_AGC) ? 1 : 0) +
+			(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC) ? 1 : 0) +
+			(deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_AGC) ? 1 : 0);
 		int[] gainTypes = new int[count];
 		int index = 0;
 		if(deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_AGC))
 		{
 			gainTypes[index++] = HydraSdrNative.GAIN_TYPE_LNA_AGC;
 		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_RF_AGC))
+		{
+			gainTypes[index++] = HydraSdrNative.GAIN_TYPE_RF_AGC;
+		}
 		if(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC))
 		{
-			gainTypes[index] = HydraSdrNative.GAIN_TYPE_MIXER_AGC;
+			gainTypes[index++] = HydraSdrNative.GAIN_TYPE_MIXER_AGC;
+		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_AGC))
+		{
+			gainTypes[index] = HydraSdrNative.GAIN_TYPE_FILTER_AGC;
 		}
 		return gainTypes;
 	}
@@ -783,9 +807,17 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 		{
 			setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, config.isLnaAgc() ? 1 : 0);
 		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_RF_AGC))
+		{
+			setGain(HydraSdrNative.GAIN_TYPE_RF_AGC, config.isRfAgc() ? 1 : 0);
+		}
 		if(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC))
 		{
 			setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, config.isMixerAgc() ? 1 : 0);
+		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_AGC))
+		{
+			setGain(HydraSdrNative.GAIN_TYPE_FILTER_AGC, config.isFilterAgc() ? 1 : 0);
 		}
 		if(deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_GAIN) && config.getLnaGain() >= 0)
 		{
@@ -793,11 +825,23 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			setGain(HydraSdrNative.GAIN_TYPE_LNA, gain);
 			config.setLnaGain(gain);
 		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_RF_GAIN) && config.getRfGain() >= 0)
+		{
+			int gain = normalizeGainValue(config.getRfGain(), getGainInfo(HydraSdrNative.GAIN_TYPE_RF));
+			setGain(HydraSdrNative.GAIN_TYPE_RF, gain);
+			config.setRfGain(gain);
+		}
 		if(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_GAIN) && config.getMixerGain() >= 0)
 		{
 			int gain = normalizeGainValue(config.getMixerGain(), getGainInfo(HydraSdrNative.GAIN_TYPE_MIXER));
 			setGain(HydraSdrNative.GAIN_TYPE_MIXER, gain);
 			config.setMixerGain(gain);
+		}
+		if(deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_GAIN) && config.getFilterGain() >= 0)
+		{
+			int gain = normalizeGainValue(config.getFilterGain(), getGainInfo(HydraSdrNative.GAIN_TYPE_FILTER));
+			setGain(HydraSdrNative.GAIN_TYPE_FILTER, gain);
+			config.setFilterGain(gain);
 		}
 		if(deviceInfo.hasCapability(HydraSdrNative.CAP_VGA_GAIN) && config.getVgaGain() >= 0)
 		{

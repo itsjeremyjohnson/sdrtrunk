@@ -52,6 +52,35 @@ public class HydraSdrNativeBufferTest
     }
 
     @Test
+    void preservesBufferSizeUntilResidualSamplesAreEmitted()
+    {
+        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000);
+
+        assertTrue(factory.get(new float[200], new float[200], 200, 1_000).isEmpty());
+        assertTrue(factory.get(new float[40], new float[40], 40, 1_200).isEmpty());
+        List<HydraSdrNativeBuffer> buffers = factory.get(new float[16], new float[16], 16, 1_240);
+
+        assertEquals(1, buffers.size());
+        assertEquals(256, buffers.getFirst().sampleCount());
+        assertEquals(1_000, buffers.getFirst().getTimestamp());
+    }
+
+    @Test
+    void sampleRateChangeDiscardsResidualSamplesAndTimestamp()
+    {
+        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000);
+
+        assertTrue(factory.get(new float[100], new float[100], 100, 1_000).isEmpty());
+        factory.setSampleRate(2_000);
+
+        assertTrue(factory.get(new float[100], new float[100], 100, 2_000).isEmpty());
+        List<HydraSdrNativeBuffer> buffers = factory.get(new float[28], new float[28], 28, 2_050);
+
+        assertEquals(1, buffers.size());
+        assertEquals(2_000, buffers.getFirst().getTimestamp());
+    }
+
+    @Test
     void resetDiscardsResidualSamplesAndTimestamp()
     {
         HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000);

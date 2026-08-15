@@ -52,6 +52,26 @@ public class HydraSdrTunerConfigurationTest
     }
 
     @Test
+    void persistsRfAndFilterCustomGainSettings() throws Exception
+    {
+        HydraSdrTunerConfiguration configuration = mMapper.readValue(
+            "{\"type\":\"hydraSdrTunerConfiguration\",\"rfGain\":7,\"filterGain\":11," +
+                "\"rfAgc\":true,\"filterAgc\":true}",
+            HydraSdrTunerConfiguration.class);
+
+        assertEquals(7, configuration.getRfGain());
+        assertEquals(11, configuration.getFilterGain());
+        assertTrue(configuration.isRfAgc());
+        assertTrue(configuration.isFilterAgc());
+
+        String serialized = mMapper.writeValueAsString(configuration);
+        assertTrue(serialized.contains("\"rfGain\":7"));
+        assertTrue(serialized.contains("\"filterGain\":11"));
+        assertTrue(serialized.contains("\"rfAgc\":true"));
+        assertTrue(serialized.contains("\"filterAgc\":true"));
+    }
+
+    @Test
     void migratesLegacyCustomGainAndDoesNotReserializeLegacyFields() throws Exception
     {
         HydraSdrTunerConfiguration configuration = mMapper.readValue(

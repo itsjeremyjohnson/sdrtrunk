@@ -63,10 +63,16 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 	private JLabel mVgaGainValueLabel;
 	private JSlider mLnaGainSlider;
 	private JLabel mLnaGainValueLabel;
+	private JSlider mRfGainSlider;
+	private JLabel mRfGainValueLabel;
 	private JSlider mMixerGainSlider;
 	private JLabel mMixerGainValueLabel;
+	private JSlider mFilterGainSlider;
+	private JLabel mFilterGainValueLabel;
 	private JCheckBox mLnaAgcCheckBox;
+	private JCheckBox mRfAgcCheckBox;
 	private JCheckBox mMixerAgcCheckBox;
+	private JCheckBox mFilterAgcCheckBox;
 	private JCheckBox mBiasTCheckBox;
 
 	public HydraSdrTunerEditor(UserPreferences userPreferences, TunerManager tunerManager,
@@ -200,9 +206,17 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		add(getVgaGainSlider());
 		add(getVgaGainValueLabel());
 
+		add(getFilterAgcCheckBox());
+		add(getFilterGainSlider());
+		add(getFilterGainValueLabel());
+
 		add(getMixerAgcCheckBox());
 		add(getMixerGainSlider());
 		add(getMixerGainValueLabel());
+
+		add(getRfAgcCheckBox());
+		add(getRfGainSlider());
+		add(getRfGainValueLabel());
 
 		add(getLnaAgcCheckBox());
 		add(getLnaGainSlider());
@@ -239,6 +253,36 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		return mLnaAgcCheckBox;
 	}
 
+	private JCheckBox getRfAgcCheckBox()
+	{
+		if(mRfAgcCheckBox == null)
+		{
+			mRfAgcCheckBox = new JCheckBox("AGC RF:");
+			mRfAgcCheckBox.setEnabled(false);
+			mRfAgcCheckBox.addActionListener(e ->
+			{
+				if(hasTuner() && !isLoading())
+				{
+					try
+					{
+						HydraSdrTunerController controller = getTuner().getController();
+						controller.setGain(HydraSdrNative.GAIN_TYPE_RF_AGC,
+							mRfAgcCheckBox.isSelected() ? 1 : 0);
+						HydraSdrDeviceInfo deviceInfo = controller.getDeviceInfo();
+						getRfGainSlider().setEnabled(!mRfAgcCheckBox.isSelected() && deviceInfo != null &&
+							deviceInfo.hasCapability(HydraSdrNative.CAP_RF_GAIN));
+						save();
+					}
+					catch(Exception e1)
+					{
+						mLog.error("Error setting RF AGC", e1);
+					}
+				}
+			});
+		}
+		return mRfAgcCheckBox;
+	}
+
 	private JCheckBox getMixerAgcCheckBox()
 	{
 		if(mMixerAgcCheckBox == null)
@@ -267,6 +311,36 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			});
 		}
 		return mMixerAgcCheckBox;
+	}
+
+	private JCheckBox getFilterAgcCheckBox()
+	{
+		if(mFilterAgcCheckBox == null)
+		{
+			mFilterAgcCheckBox = new JCheckBox("AGC Filter:");
+			mFilterAgcCheckBox.setEnabled(false);
+			mFilterAgcCheckBox.addActionListener(e ->
+			{
+				if(hasTuner() && !isLoading())
+				{
+					try
+					{
+						HydraSdrTunerController controller = getTuner().getController();
+						controller.setGain(HydraSdrNative.GAIN_TYPE_FILTER_AGC,
+							mFilterAgcCheckBox.isSelected() ? 1 : 0);
+						HydraSdrDeviceInfo deviceInfo = controller.getDeviceInfo();
+						getFilterGainSlider().setEnabled(!mFilterAgcCheckBox.isSelected() && deviceInfo != null &&
+							deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_GAIN));
+						save();
+					}
+					catch(Exception e1)
+					{
+						mLog.error("Error setting filter AGC", e1);
+					}
+				}
+			});
+		}
+		return mFilterAgcCheckBox;
 	}
 
 	private JCheckBox getBiasTCheckBox()
@@ -338,6 +412,47 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		return mLnaGainSlider;
 	}
 
+	private JLabel getRfGainValueLabel()
+	{
+		if(mRfGainValueLabel == null)
+		{
+			mRfGainValueLabel = new JLabel("0");
+			mRfGainValueLabel.setEnabled(false);
+		}
+		return mRfGainValueLabel;
+	}
+
+	private JSlider getRfGainSlider()
+	{
+		if(mRfGainSlider == null)
+		{
+			mRfGainSlider = new JSlider(JSlider.HORIZONTAL, 0, 15, 0);
+			mRfGainSlider.setEnabled(false);
+			mRfGainSlider.setMajorTickSpacing(1);
+			mRfGainSlider.setPaintTicks(true);
+			mRfGainSlider.addChangeListener(event ->
+			{
+				int gain = mRfGainSlider.getValue();
+				if(hasTuner() && !isLoading())
+				{
+					try
+					{
+						getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_RF, gain);
+						save();
+					}
+					catch(Exception e)
+					{
+						mLog.error("Couldn't set RF gain to:" + gain, e);
+						JOptionPane.showMessageDialog(mRfGainSlider,
+							"Couldn't set RF gain value to " + gain);
+					}
+				}
+				getRfGainValueLabel().setText(String.valueOf(gain));
+			});
+		}
+		return mRfGainSlider;
+	}
+
 	private JLabel getMixerGainValueLabel()
 	{
 		if(mMixerGainValueLabel == null)
@@ -377,6 +492,47 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			});
 		}
 		return mMixerGainSlider;
+	}
+
+	private JLabel getFilterGainValueLabel()
+	{
+		if(mFilterGainValueLabel == null)
+		{
+			mFilterGainValueLabel = new JLabel("0");
+			mFilterGainValueLabel.setEnabled(false);
+		}
+		return mFilterGainValueLabel;
+	}
+
+	private JSlider getFilterGainSlider()
+	{
+		if(mFilterGainSlider == null)
+		{
+			mFilterGainSlider = new JSlider(JSlider.HORIZONTAL, 0, 15, 0);
+			mFilterGainSlider.setEnabled(false);
+			mFilterGainSlider.setMajorTickSpacing(1);
+			mFilterGainSlider.setPaintTicks(true);
+			mFilterGainSlider.addChangeListener(event ->
+			{
+				int gain = mFilterGainSlider.getValue();
+				if(hasTuner() && !isLoading())
+				{
+					try
+					{
+						getTuner().getController().setGain(HydraSdrNative.GAIN_TYPE_FILTER, gain);
+						save();
+					}
+					catch(Exception e)
+					{
+						mLog.error("Couldn't set filter gain to:" + gain, e);
+						JOptionPane.showMessageDialog(mFilterGainSlider,
+							"Couldn't set filter gain value to " + gain);
+					}
+				}
+				getFilterGainValueLabel().setText(String.valueOf(gain));
+			});
+		}
+		return mFilterGainSlider;
 	}
 
 	private JLabel getVgaGainLabel()
@@ -521,9 +677,17 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 							{
 								controller.setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, 0);
 							}
+							if(deviceInfo.hasCapability(HydraSdrNative.CAP_RF_AGC))
+							{
+								controller.setGain(HydraSdrNative.GAIN_TYPE_RF_AGC, 0);
+							}
 							if(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC))
 							{
 								controller.setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, 0);
+							}
+							if(deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_AGC))
+							{
+								controller.setGain(HydraSdrNative.GAIN_TYPE_FILTER_AGC, 0);
 							}
 							getTuner().getController().setGain(
 								HydraSdrNative.GAIN_TYPE_LINEARITY, presetValue);
@@ -536,9 +700,17 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 							{
 								controller.setGain(HydraSdrNative.GAIN_TYPE_LNA_AGC, 0);
 							}
+							if(deviceInfo.hasCapability(HydraSdrNative.CAP_RF_AGC))
+							{
+								controller.setGain(HydraSdrNative.GAIN_TYPE_RF_AGC, 0);
+							}
 							if(deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC))
 							{
 								controller.setGain(HydraSdrNative.GAIN_TYPE_MIXER_AGC, 0);
+							}
+							if(deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_AGC))
+							{
+								controller.setGain(HydraSdrNative.GAIN_TYPE_FILTER_AGC, 0);
 							}
 							getTuner().getController().setGain(
 								HydraSdrNative.GAIN_TYPE_SENSITIVITY, presetValue);
@@ -673,9 +845,13 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			getMasterGainValueLabel().setEnabled(!isCustom);
 			boolean supportsVgaGain = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_VGA_GAIN);
 			boolean supportsLnaGain = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_GAIN);
+			boolean supportsRfGain = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_RF_GAIN);
 			boolean supportsMixerGain = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_GAIN);
+			boolean supportsFilterGain = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_GAIN);
 			boolean supportsLnaAgc = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_LNA_AGC);
+			boolean supportsRfAgc = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_RF_AGC);
 			boolean supportsMixerAgc = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_MIXER_AGC);
+			boolean supportsFilterAgc = deviceInfo != null && deviceInfo.hasCapability(HydraSdrNative.CAP_FILTER_AGC);
 			getVgaGainLabel().setEnabled(isCustom && supportsVgaGain);
 			getVgaGainSlider().setEnabled(isCustom && supportsVgaGain);
 			getVgaGainValueLabel().setEnabled(isCustom && supportsVgaGain);
@@ -683,10 +859,18 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			getLnaGainSlider().setEnabled(isCustom && supportsLnaGain &&
 				!(supportsLnaAgc && hasConfiguration() && getConfiguration().isLnaAgc()));
 			getLnaGainValueLabel().setEnabled(isCustom && supportsLnaGain);
+			getRfAgcCheckBox().setEnabled(isCustom && supportsRfAgc);
+			getRfGainSlider().setEnabled(isCustom && supportsRfGain &&
+				!(supportsRfAgc && hasConfiguration() && getConfiguration().isRfAgc()));
+			getRfGainValueLabel().setEnabled(isCustom && supportsRfGain);
 			getMixerAgcCheckBox().setEnabled(isCustom && supportsMixerAgc);
 			getMixerGainSlider().setEnabled(isCustom && supportsMixerGain &&
 				!(supportsMixerAgc && hasConfiguration() && getConfiguration().isMixerAgc()));
 			getMixerGainValueLabel().setEnabled(isCustom && supportsMixerGain);
+			getFilterAgcCheckBox().setEnabled(isCustom && supportsFilterAgc);
+			getFilterGainSlider().setEnabled(isCustom && supportsFilterGain &&
+				!(supportsFilterAgc && hasConfiguration() && getConfiguration().isFilterAgc()));
+			getFilterGainValueLabel().setEnabled(isCustom && supportsFilterGain);
 
 			/* Expand and step slider models before restoring saved values to avoid clamping. */
 			updateGainRangesFromDevice(mode);
@@ -697,9 +881,13 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 				{
 					getVgaGainSlider().setValue(getConfiguration().getVgaGain());
 					getLnaGainSlider().setValue(getConfiguration().getLnaGain());
+					getRfGainSlider().setValue(getConfiguration().getRfGain());
 					getMixerGainSlider().setValue(getConfiguration().getMixerGain());
-					getMixerAgcCheckBox().setSelected(getConfiguration().isMixerAgc());
+					getFilterGainSlider().setValue(getConfiguration().getFilterGain());
 					getLnaAgcCheckBox().setSelected(getConfiguration().isLnaAgc());
+					getRfAgcCheckBox().setSelected(getConfiguration().isRfAgc());
+					getMixerAgcCheckBox().setSelected(getConfiguration().isMixerAgc());
+					getFilterAgcCheckBox().setSelected(getConfiguration().isFilterAgc());
 				}
 				else if(mode == 0)
 				{
@@ -729,11 +917,21 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 			getLnaGainSlider().setEnabled(false);
 			getLnaGainSlider().setValue(0);
 			getLnaGainValueLabel().setEnabled(false);
+			getRfAgcCheckBox().setEnabled(false);
+			getRfAgcCheckBox().setSelected(false);
+			getRfGainSlider().setEnabled(false);
+			getRfGainSlider().setValue(0);
+			getRfGainValueLabel().setEnabled(false);
 			getMixerAgcCheckBox().setEnabled(false);
 			getMixerAgcCheckBox().setSelected(false);
 			getMixerGainSlider().setEnabled(false);
 			getMixerGainSlider().setValue(0);
 			getMixerGainValueLabel().setEnabled(false);
+			getFilterAgcCheckBox().setEnabled(false);
+			getFilterAgcCheckBox().setSelected(false);
+			getFilterGainSlider().setEnabled(false);
+			getFilterGainSlider().setValue(0);
+			getFilterGainValueLabel().setEnabled(false);
 		}
 	}
 
@@ -750,7 +948,9 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 		HydraSdrTunerController ctrl = getTuner().getController();
 
 		updateSliderRange(getLnaGainSlider(), ctrl.getGainInfo(HydraSdrNative.GAIN_TYPE_LNA));
+		updateSliderRange(getRfGainSlider(), ctrl.getGainInfo(HydraSdrNative.GAIN_TYPE_RF));
 		updateSliderRange(getMixerGainSlider(), ctrl.getGainInfo(HydraSdrNative.GAIN_TYPE_MIXER));
+		updateSliderRange(getFilterGainSlider(), ctrl.getGainInfo(HydraSdrNative.GAIN_TYPE_FILTER));
 		updateSliderRange(getVgaGainSlider(), ctrl.getGainInfo(HydraSdrNative.GAIN_TYPE_VGA));
 		if(mode == HydraSdrTunerController.GAIN_MODE_LINEARITY)
 		{
@@ -823,10 +1023,14 @@ public class HydraSdrTunerEditor extends TunerEditor<HydraSdrTuner, HydraSdrTune
 				if(previousMode == 2)
 				{
 					getConfiguration().setVgaGain(getVgaGainSlider().getValue());
-					getConfiguration().setMixerGain(getMixerGainSlider().getValue());
 					getConfiguration().setLnaGain(getLnaGainSlider().getValue());
-					getConfiguration().setMixerAgc(getMixerAgcCheckBox().isSelected());
+					getConfiguration().setRfGain(getRfGainSlider().getValue());
+					getConfiguration().setMixerGain(getMixerGainSlider().getValue());
+					getConfiguration().setFilterGain(getFilterGainSlider().getValue());
 					getConfiguration().setLnaAgc(getLnaAgcCheckBox().isSelected());
+					getConfiguration().setRfAgc(getRfAgcCheckBox().isSelected());
+					getConfiguration().setMixerAgc(getMixerAgcCheckBox().isSelected());
+					getConfiguration().setFilterAgc(getFilterAgcCheckBox().isSelected());
 				}
 			}
 			getConfiguration().setBiasT(getBiasTCheckBox().isSelected());

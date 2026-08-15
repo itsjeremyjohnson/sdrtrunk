@@ -12,6 +12,7 @@ package io.github.dsheirer.source.tuner.hydrasdr;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -76,6 +77,23 @@ class HydraSdrTunerControllerTest
     }
 
     @Test
+    void clampsStartupFrequencyToAdvertisedRange()
+    {
+        assertEquals(100, HydraSdrTunerController.clampFrequency(50, 100, 200));
+        assertEquals(150, HydraSdrTunerController.clampFrequency(150, 100, 200));
+        assertEquals(200, HydraSdrTunerController.clampFrequency(250, 100, 200));
+    }
+
+    @Test
+    void recognizesRfAndFilterOnlyCustomGainCapabilities()
+    {
+        HydraSdrDeviceInfo deviceInfo = new HydraSdrDeviceInfo();
+        deviceInfo.setCapabilities(HydraSdrNative.CAP_RF_GAIN | HydraSdrNative.CAP_FILTER_AGC);
+
+        assertTrue(HydraSdrTunerController.supportsCustomGain(deviceInfo));
+    }
+
+    @Test
     void selectsAdvertisedPresetWhenRequestedModeIsUnavailable()
     {
         assertEquals(HydraSdrTunerController.GAIN_MODE_SENSITIVITY,
@@ -114,8 +132,10 @@ class HydraSdrTunerControllerTest
         HydraSdrDeviceInfo deviceInfo = new HydraSdrDeviceInfo();
         assertArrayEquals(new int[0], HydraSdrTunerController.getSupportedPresetAgcTypes(deviceInfo));
 
-        deviceInfo.setCapabilities(HydraSdrNative.CAP_LNA_AGC | HydraSdrNative.CAP_MIXER_AGC);
-        assertArrayEquals(new int[] {HydraSdrNative.GAIN_TYPE_LNA_AGC, HydraSdrNative.GAIN_TYPE_MIXER_AGC},
+        deviceInfo.setCapabilities(HydraSdrNative.CAP_LNA_AGC | HydraSdrNative.CAP_RF_AGC |
+            HydraSdrNative.CAP_MIXER_AGC | HydraSdrNative.CAP_FILTER_AGC);
+        assertArrayEquals(new int[] {HydraSdrNative.GAIN_TYPE_LNA_AGC, HydraSdrNative.GAIN_TYPE_RF_AGC,
+            HydraSdrNative.GAIN_TYPE_MIXER_AGC, HydraSdrNative.GAIN_TYPE_FILTER_AGC},
             HydraSdrTunerController.getSupportedPresetAgcTypes(deviceInfo));
     }
 
