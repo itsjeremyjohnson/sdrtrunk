@@ -107,6 +107,7 @@ public class HeartbeatPreference extends Preference
             entry.setEnabled(mPreferences.getBoolean(KEY_PREFIX + i + ".enabled", true));
             entry.setChannelName(mPreferences.get(KEY_PREFIX + i + ".channelName", ""));
             entry.setSystemId(mPreferences.getInt(KEY_PREFIX + i + ".systemId", 0));
+            entry.setRfssId(mPreferences.getInt(KEY_PREFIX + i + ".rfssId", 0));
             entry.setSiteId(mPreferences.getInt(KEY_PREFIX + i + ".siteId", 0));
             entry.setKumaUrl(mPreferences.get(KEY_PREFIX + i + ".kumaUrl", ""));
             entry.setPushUrl2(mPreferences.get(KEY_PREFIX + i + ".pushUrl2", ""));
@@ -128,6 +129,7 @@ public class HeartbeatPreference extends Preference
             mPreferences.putBoolean(KEY_PREFIX + i + ".enabled", entry.isEnabled());
             mPreferences.put(KEY_PREFIX + i + ".channelName", entry.getChannelName());
             mPreferences.putInt(KEY_PREFIX + i + ".systemId", entry.getSystemId());
+            mPreferences.putInt(KEY_PREFIX + i + ".rfssId", entry.getRfssId());
             mPreferences.putInt(KEY_PREFIX + i + ".siteId", entry.getSiteId());
             mPreferences.put(KEY_PREFIX + i + ".kumaUrl", entry.getKumaUrl());
             mPreferences.put(KEY_PREFIX + i + ".pushUrl2", entry.getPushUrl2());
@@ -140,6 +142,7 @@ public class HeartbeatPreference extends Preference
             mPreferences.remove(KEY_PREFIX + i + ".enabled");
             mPreferences.remove(KEY_PREFIX + i + ".channelName");
             mPreferences.remove(KEY_PREFIX + i + ".systemId");
+            mPreferences.remove(KEY_PREFIX + i + ".rfssId");
             mPreferences.remove(KEY_PREFIX + i + ".siteId");
             mPreferences.remove(KEY_PREFIX + i + ".kumaUrl");
             mPreferences.remove(KEY_PREFIX + i + ".pushUrl2");

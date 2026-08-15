@@ -26,6 +26,7 @@ public class HeartbeatEntry
     private boolean mEnabled = true;
     private String mChannelName = "";
     private int mSystemId;
+    private int mRfssId;
     private int mSiteId;
     private String mKumaUrl = "";
     private String mPushUrl2 = "";
@@ -47,6 +48,7 @@ public class HeartbeatEntry
         mEnabled = other.mEnabled;
         mChannelName = other.mChannelName;
         mSystemId = other.mSystemId;
+        mRfssId = other.mRfssId;
         mSiteId = other.mSiteId;
         mKumaUrl = other.mKumaUrl;
         mPushUrl2 = other.mPushUrl2;
@@ -81,6 +83,16 @@ public class HeartbeatEntry
     public void setSystemId(int systemId)
     {
         mSystemId = systemId;
+    }
+
+    public int getRfssId()
+    {
+        return mRfssId;
+    }
+
+    public void setRfssId(int rfssId)
+    {
+        mRfssId = rfssId;
     }
 
     public int getSiteId()

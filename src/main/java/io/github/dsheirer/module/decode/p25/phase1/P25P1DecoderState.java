@@ -303,7 +303,8 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
     @Override
     public void receive(IMessage iMessage)
     {
-        if(mRawStreamListener != null && iMessage.isValid())
+        if(mRawStreamListener != null && iMessage.isValid() &&
+                (iMessage instanceof TSBKMessage || iMessage instanceof AMBTCMessage))
         {
             mRawStreamListener.receive(iMessage);
         }
@@ -669,11 +670,12 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                     mNetworkConfigurationMonitor.process(ambtc);
                     if(!mHeartbeatMonitors.isEmpty() && ambtc instanceof AMBTCRFSSStatusBroadcast rsbHb
                             && rsbHb.getSystem() instanceof IntegerIdentifier sysIdent
+                            && rsbHb.getRFSS() instanceof IntegerIdentifier rfssIdent
                             && rsbHb.getSite() instanceof IntegerIdentifier siteIdent)
                     {
                         for(ControlChannelHeartbeat hb : mHeartbeatMonitors)
                         {
-                            hb.onRFSSStatusBroadcast(sysIdent.getValue(), siteIdent.getValue());
+                            hb.onRFSSStatusBroadcast(sysIdent.getValue(), rfssIdent.getValue(), siteIdent.getValue());
                         }
                     }
                     break;
@@ -1323,11 +1325,12 @@ public class P25P1DecoderState extends DecoderState implements IChannelEventList
                     mNetworkConfigurationMonitor.process(tsbk);
                     if(!mHeartbeatMonitors.isEmpty() && tsbk instanceof RFSSStatusBroadcast rfssHb
                             && rfssHb.getSystem() instanceof IntegerIdentifier sysIdent
+                            && rfssHb.getRfss() instanceof IntegerIdentifier rfssIdent
                             && rfssHb.getSite() instanceof IntegerIdentifier siteIdent)
                     {
                         for(ControlChannelHeartbeat hb : mHeartbeatMonitors)
                         {
-                            hb.onRFSSStatusBroadcast(sysIdent.getValue(), siteIdent.getValue());
+                            hb.onRFSSStatusBroadcast(sysIdent.getValue(), rfssIdent.getValue(), siteIdent.getValue());
                         }
                     }
                     break;

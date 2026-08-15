@@ -263,11 +263,11 @@ public class DecoderFactory
         modules.add(new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_1, aliasList));
         modules.add(new P25P2AudioModule(userPreferences, P25P2Message.TIMESLOT_2, aliasList));
 
-        String systemName = getSafeSystemName(channel);
+        String systemName = getSystemName(channel);
 
         if(channel.isStandardChannel())
         {
-            attachTalkerAliasLogger(userPreferences, systemName, Protocol.APCO25,
+            attachTalkerAliasLogger(userPreferences, getSafeSystemName(channel), Protocol.APCO25,
                 p25TrafficChannelManager.getTalkerAliasManager());
         }
 
@@ -315,14 +315,14 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            final String safeSystemName = getSafeSystemName(channel);
+            final String systemName = getSystemName(channel);
 
             P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel);
             modules.add(primaryTCM);
             P25P1DecoderState p25DecoderState = new P25P1DecoderState(channel, primaryTCM);
             modules.add(p25DecoderState);
 
-            attachTalkerAliasLogger(userPreferences, safeSystemName, Protocol.APCO25,
+            attachTalkerAliasLogger(userPreferences, getSafeSystemName(channel), Protocol.APCO25,
                 primaryTCM.getTalkerAliasManager());
 
             p25DecoderState.setHeartbeatMonitors(loadHeartbeatMonitors(userPreferences));
@@ -330,10 +330,10 @@ public class DecoderFactory
             NetworkStreamManager streamManager = loadNetworkStreamManager(userPreferences);
             if(streamManager != null)
             {
-                modules.add(new NetworkEventBroadcastModule(safeSystemName, streamManager));
+                modules.add(new NetworkEventBroadcastModule(systemName, streamManager));
                 final NetworkStreamManager mgr = streamManager;
                 p25DecoderState.setRawStreamListener(msg ->
-                        mgr.broadcastRaw(formatRawMessage(safeSystemName, msg)));
+                        mgr.broadcastRaw(formatRawMessage(systemName, msg)));
             }
         }
         else if(trafficChannelManager instanceof P25TrafficChannelManager parentTCM)
@@ -345,10 +345,7 @@ public class DecoderFactory
             NetworkStreamManager trafficStreamManager = loadNetworkStreamManager(userPreferences);
             if(trafficStreamManager != null)
             {
-                String trafficSystem = channel.getSystem();
-                if(trafficSystem == null || trafficSystem.trim().isEmpty()) { trafficSystem = channel.getName(); }
-                String safeTrafficSystem = StringUtils.replaceIllegalCharacters(trafficSystem.trim());
-                modules.add(new NetworkEventBroadcastModule(safeTrafficSystem, trafficStreamManager));
+                modules.add(new NetworkEventBroadcastModule(getSystemName(channel), trafficStreamManager));
             }
         }
         else
@@ -361,10 +358,7 @@ public class DecoderFactory
         ImbeStreamManager imbeStreamManager = loadImbeStreamManager(userPreferences);
         if(imbeStreamManager != null)
         {
-            String imbeSystem = channel.getSystem();
-            if(imbeSystem == null || imbeSystem.trim().isEmpty()) { imbeSystem = channel.getName(); }
-            String safeImbeSystem = StringUtils.replaceIllegalCharacters(imbeSystem.trim());
-            modules.add(new ImbeAudioStreamModule(safeImbeSystem, imbeStreamManager));
+            modules.add(new ImbeAudioStreamModule(getSystemName(channel), imbeStreamManager));
         }
 
         //Add a channel rotation monitor when we have multiple control channel frequencies specified
@@ -629,11 +623,11 @@ public class DecoderFactory
             modules.add(new ChannelRotationMonitor(activeStates, sctmf.getFrequencyRotationDelay(), userPreferences));
         }
 
-        final String safeDmrSystem = getSafeSystemName(channel);
+        final String dmrSystem = getSystemName(channel);
 
         if(channel.isStandardChannel())
         {
-            attachTalkerAliasLogger(userPreferences, safeDmrSystem, Protocol.DMR,
+            attachTalkerAliasLogger(userPreferences, getSafeSystemName(channel), Protocol.DMR,
                 dmrTrafficChannelManager.getTalkerAliasManager());
         }
 
@@ -643,13 +637,13 @@ public class DecoderFactory
             //Traffic decode events are rebroadcast through the parent channel; attach the aggregate listener once.
             if(channel.isStandardChannel())
             {
-                modules.add(new NetworkEventBroadcastModule(safeDmrSystem, dmrStreamManager));
+                modules.add(new NetworkEventBroadcastModule(dmrSystem, dmrStreamManager));
             }
             final NetworkStreamManager dmrMgr = dmrStreamManager;
             state1.setRawStreamListener(msg ->
-                    dmrMgr.broadcastRaw(formatDmrRawMessage(safeDmrSystem, DMRMessage.TIMESLOT_1, msg)));
+                    dmrMgr.broadcastRaw(formatDmrRawMessage(dmrSystem, DMRMessage.TIMESLOT_1, msg)));
             state2.setRawStreamListener(msg ->
-                    dmrMgr.broadcastRaw(formatDmrRawMessage(safeDmrSystem, DMRMessage.TIMESLOT_2, msg)));
+                    dmrMgr.broadcastRaw(formatDmrRawMessage(dmrSystem, DMRMessage.TIMESLOT_2, msg)));
         }
     }
 
@@ -899,14 +893,19 @@ public class DecoderFactory
         return PcmStreamManager.getInstance(port);
     }
 
-    private static String getSafeSystemName(Channel channel)
+    private static String getSystemName(Channel channel)
     {
         String systemName = channel.getSystem();
         if(systemName == null || systemName.trim().isEmpty())
         {
             systemName = channel.getName();
         }
-        return StringUtils.replaceIllegalCharacters(systemName.trim());
+        return systemName.trim();
+    }
+
+    private static String getSafeSystemName(Channel channel)
+    {
+        return StringUtils.replaceIllegalCharacters(getSystemName(channel));
     }
 
     private static void attachTalkerAliasLogger(UserPreferences userPreferences, String systemName,
@@ -937,7 +936,7 @@ public class DecoderFactory
             if(entry.isEnabled())
             {
                 monitors.add(new ControlChannelHeartbeat(
-                    entry.getSystemId(), entry.getSiteId(), entry.getChannelName(),
+                    entry.getSystemId(), entry.getRfssId(), entry.getSiteId(), entry.getChannelName(),
                     entry.getPushUrl2(), entry.getKumaUrl(), entry.getIntervalSeconds()));
             }
         }

@@ -110,8 +110,8 @@ public class HeartbeatPreferenceEditor extends HBox
         Label howItWorks = new Label(
             "P25 trunking towers transmit RFSS Status Broadcast messages on the control channel " +
             "several times per second — these are normal housekeeping messages that carry the " +
-            "system ID and site ID of the site your receiver is locked to.\n\n" +
-            "SDRTrunk watches for these messages on each configured (System ID, Site ID) pair.  " +
+            "system, RFSS, and site IDs of the site your receiver is locked to.\n\n" +
+            "SDRTrunk watches for these messages on each configured (System ID, RFSS ID, Site ID) pair.  " +
             "When a match is found, it fires a throttled HTTP GET request to each of your " +
             "configured push URL endpoints.  If the control channel goes silent — antenna " +
             "problem, SDR disconnect, coverage gap — the pings stop, and your monitoring tool " +
@@ -124,7 +124,7 @@ public class HeartbeatPreferenceEditor extends HBox
 
         Label scope = new Label(
             "✓  The control channel is tuned, receiving RF, and decoding valid P25 messages\n" +
-            "✓  The specific site (System ID + Site ID) is actively broadcasting\n" +
+            "✓  The specific site (System ID + RFSS ID + Site ID) is actively broadcasting\n" +
             "✗  It does NOT verify that voice calls are being decoded\n" +
             "✗  It does NOT apply to DMR or other protocols (P25 Phase 1 control channels only)\n" +
             "✗  It does NOT apply to traffic/voice channels — only the control channel");
@@ -134,13 +134,13 @@ public class HeartbeatPreferenceEditor extends HBox
 
         box.getChildren().add(scope);
         box.getChildren().add(new Separator());
-        box.getChildren().add(sectionHeader("FINDING YOUR SYSTEM ID AND SITE ID"));
+        box.getChildren().add(sectionHeader("FINDING YOUR SYSTEM, RFSS, AND SITE IDS"));
 
         Label findIds = new Label(
             "1.  Start SDRTrunk and let the control channel lock on your P25 system.\n" +
             "2.  Click the channel in the main window and open the Details tab.\n" +
-            "3.  Look for lines like:  SYSTEM: 1674   and   SITE: 1\n" +
-            "4.  Use those decimal numbers in the System ID and Site ID fields below.\n\n" +
+            "3.  Look for lines like:  SYSTEM: 1674   RFSS: 1   and   SITE: 1\n" +
+            "4.  Use those decimal numbers in the System ID, RFSS ID, and Site ID fields below.\n\n" +
             "Note: SDRTrunk sometimes shows both decimal and hex (e.g. SYSTEM: 1674 / 0x68A).\n" +
             "Always use the decimal number — the one before the slash.");
         findIds.setWrapText(true);
@@ -209,6 +209,11 @@ public class HeartbeatPreferenceEditor extends HBox
         sysCol.setCellValueFactory(data ->
                 new SimpleIntegerProperty(data.getValue().getSystemId()));
 
+        TableColumn<HeartbeatEntry, Number> rfssCol = new TableColumn<>("RFSS ID");
+        rfssCol.setMaxWidth(76); rfssCol.setMinWidth(68);
+        rfssCol.setCellValueFactory(data ->
+                new SimpleIntegerProperty(data.getValue().getRfssId()));
+
         TableColumn<HeartbeatEntry, Number> siteCol = new TableColumn<>("Site ID");
         siteCol.setMaxWidth(76); siteCol.setMinWidth(68);
         siteCol.setCellValueFactory(data ->
@@ -227,7 +232,7 @@ public class HeartbeatPreferenceEditor extends HBox
         rdioCol.setCellValueFactory(data ->
                 new SimpleStringProperty(data.getValue().getPushUrl2()));
 
-        mTable.getColumns().addAll(enabledCol, nameCol, sysCol, siteCol, intervalCol, kumaCol, rdioCol);
+        mTable.getColumns().addAll(enabledCol, nameCol, sysCol, rfssCol, siteCol, intervalCol, kumaCol, rdioCol);
 
         mTable.getSelectionModel().selectedItemProperty().addListener((obs, old, selected) -> {
             boolean hasSelection = selected != null;
@@ -341,8 +346,19 @@ public class HeartbeatPreferenceEditor extends HBox
         sysRow.setAlignment(Pos.CENTER_LEFT);
         grid.add(sysRow, 1, row++);
 
+        Spinner<Integer> rfssIdSpinner = new Spinner<>(
+                new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 255, working.getRfssId()));
+        rfssIdSpinner.setEditable(true);
+        rfssIdSpinner.setPrefWidth(120);
+        rfssIdSpinner.valueProperty().addListener((obs, o, v) -> { if(v != null) working.setRfssId(v); });
+        Label rfssIdHint = smallHint("Decimal — shown in the Details tab as RFSS: 1");
+        grid.add(rightLabel("RFSS ID:"), 0, row);
+        HBox rfssRow = new HBox(8, rfssIdSpinner, rfssIdHint);
+        rfssRow.setAlignment(Pos.CENTER_LEFT);
+        grid.add(rfssRow, 1, row++);
+
         Spinner<Integer> siteIdSpinner = new Spinner<>(
-                new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 65535, working.getSiteId()));
+                new SpinnerValueFactory.IntegerSpinnerValueFactory(0, 255, working.getSiteId()));
         siteIdSpinner.setEditable(true);
         siteIdSpinner.setPrefWidth(120);
         siteIdSpinner.valueProperty().addListener((obs, o, v) -> { if(v != null) working.setSiteId(v); });
@@ -386,12 +402,13 @@ public class HeartbeatPreferenceEditor extends HBox
 
         Node saveButton = dialog.getDialogPane().lookupButton(saveType);
         Runnable validate = () -> {
-            boolean ok = (working.getSystemId() > 0 || working.getSiteId() > 0) &&
+            boolean ok = working.getSystemId() > 0 && working.getRfssId() > 0 && working.getSiteId() > 0 &&
                          (!working.getKumaUrl().isBlank() || !working.getPushUrl2().isBlank());
             saveButton.setDisable(!ok);
         };
         validate.run();
         sysIdSpinner.valueProperty().addListener((obs, o, v) -> validate.run());
+        rfssIdSpinner.valueProperty().addListener((obs, o, v) -> validate.run());
         siteIdSpinner.valueProperty().addListener((obs, o, v) -> validate.run());
         kumaField.textProperty().addListener((obs, o, v) -> validate.run());
         rdioField.textProperty().addListener((obs, o, v) -> validate.run());

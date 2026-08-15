@@ -22,6 +22,7 @@ package io.github.dsheirer.module.log;
 import io.github.dsheirer.alias.AliasModel;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.module.Module;
+import io.github.dsheirer.module.decode.dmr.DecodeConfigDMR;
 import io.github.dsheirer.module.log.config.EventLogConfiguration;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.source.config.SourceConfigTuner;
@@ -80,7 +81,11 @@ public class EventLogManager
                     }
                     break;
                 case SYSTEM_CALL_EVENT:
-                    loggers.add(getSystemEventLogModule(channel));
+                    //DMR traffic events are rebroadcast through the parent channel's aggregate event chain.
+                    if(!(channel.isTrafficChannel() && channel.getDecodeConfiguration() instanceof DecodeConfigDMR))
+                    {
+                        loggers.add(getSystemEventLogModule(channel));
+                    }
                     break;
             }
         }

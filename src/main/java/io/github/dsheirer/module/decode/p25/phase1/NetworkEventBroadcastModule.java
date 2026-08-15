@@ -29,7 +29,8 @@ import io.github.dsheirer.module.decode.event.IDecodeEvent;
 import io.github.dsheirer.module.decode.event.IDecodeEventListener;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.util.JsonUtils;
-import java.time.LocalDateTime;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
@@ -92,16 +93,21 @@ public class NetworkEventBroadcastModule extends Module implements IDecodeEventL
         }
     }
 
-    private String toJson(IDecodeEvent event)
+    String toJson(IDecodeEvent event)
     {
         StringBuilder sb = new StringBuilder();
         sb.append("{");
         appendField(sb, "pipe", "events", true);
         appendField(sb, "system", mSystemName, false);
-        appendField(sb, "timestamp", LocalDateTime.now().format(TIMESTAMP_FMT), false);
+        appendField(sb, "timestamp", formatTimestamp(event.getTimeStart()), false);
 
         sb.append(",\"durationMs\":");
         sb.append(event.getDuration());
+
+        if(event.hasTimeslot())
+        {
+            sb.append(",\"timeslot\":").append(event.getTimeslot());
+        }
 
         appendField(sb, "protocol", safeString(event.getProtocol()), false);
         appendField(sb, "event", safeString(event.getEventType()), false);
@@ -144,6 +150,11 @@ public class NetworkEventBroadcastModule extends Module implements IDecodeEventL
 
         sb.append("}");
         return sb.toString();
+    }
+
+    private String formatTimestamp(long timestamp)
+    {
+        return Instant.ofEpochMilli(timestamp).atZone(ZoneId.systemDefault()).toLocalDateTime().format(TIMESTAMP_FMT);
     }
 
     private void appendField(StringBuilder sb, String key, String value, boolean first)

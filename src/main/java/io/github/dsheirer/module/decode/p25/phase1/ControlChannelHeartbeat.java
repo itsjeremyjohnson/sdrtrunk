@@ -40,6 +40,7 @@ public class ControlChannelHeartbeat
             .build();
 
     private final int mSystemId;
+    private final int mRfssId;
     private final int mSiteId;
     private final String mChannelName;
     private final String mPushUrl2;
@@ -50,16 +51,18 @@ public class ControlChannelHeartbeat
     /**
      * Constructs an instance.
      * @param systemId P25 system ID to match
+     * @param rfssId P25 RF subsystem ID to match
      * @param siteId P25 site ID to match
      * @param channelName descriptive name for logging
      * @param pushUrl2 optional URL (may be null or blank)
      * @param kumaUrl optional Uptime Kuma push URL (may be null or blank)
      * @param intervalSeconds minimum seconds between successive pings
      */
-    public ControlChannelHeartbeat(int systemId, int siteId, String channelName,
+    public ControlChannelHeartbeat(int systemId, int rfssId, int siteId, String channelName,
                                    String pushUrl2, String kumaUrl, int intervalSeconds)
     {
         mSystemId = systemId;
+        mRfssId = rfssId;
         mSiteId = siteId;
         mChannelName = channelName;
         mPushUrl2 = pushUrl2;
@@ -71,11 +74,12 @@ public class ControlChannelHeartbeat
      * Called whenever an RFSS Status Broadcast is received. Fires heartbeat pings if IDs match
      * and the throttle interval has elapsed.
      * @param systemId received system ID
+     * @param rfssId received RF subsystem ID
      * @param siteId received site ID
      */
-    public void onRFSSStatusBroadcast(int systemId, int siteId)
+    public void onRFSSStatusBroadcast(int systemId, int rfssId, int siteId)
     {
-        if(systemId != mSystemId || siteId != mSiteId)
+        if(!matches(systemId, rfssId, siteId))
         {
             return;
         }
@@ -104,6 +108,11 @@ public class ControlChannelHeartbeat
             final String url = mKumaUrl;
             Thread.ofVirtual().start(() -> fireGet(url));
         }
+    }
+
+    boolean matches(int systemId, int rfssId, int siteId)
+    {
+        return systemId == mSystemId && rfssId == mRfssId && siteId == mSiteId;
     }
 
     /**
@@ -136,6 +145,7 @@ public class ControlChannelHeartbeat
     {
         public String channelName;
         public int systemId;
+        public int rfssId;
         public int siteId;
         public String pushUrl2;
         public String kumaUrl;
