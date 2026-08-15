@@ -28,7 +28,6 @@ import io.github.dsheirer.module.decode.config.AuxDecodeConfiguration;
 import io.github.dsheirer.module.decode.config.DecodeConfiguration;
 import io.github.dsheirer.module.log.EventLogType;
 import io.github.dsheirer.module.log.config.EventLogConfiguration;
-import io.github.dsheirer.record.RecorderType;
 import io.github.dsheirer.record.config.RecordConfiguration;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.source.SourceEvent;
@@ -165,10 +164,7 @@ public class Channel extends Configuration implements Listener<SourceEvent>
 
         if(mRecordConfiguration != null)
         {
-            for(RecorderType recordType : mRecordConfiguration.getRecorders())
-            {
-                recordCopy.addRecorder(recordType);
-            }
+            recordCopy.setRecorderValues(mRecordConfiguration.getRecorderValues());
             recordCopy.setActivityTriggeredRecording(mRecordConfiguration.isActivityTriggeredRecording());
             recordCopy.setActivitySquelchThreshold(mRecordConfiguration.getActivitySquelchThreshold());
         }

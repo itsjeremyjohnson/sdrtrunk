@@ -29,6 +29,18 @@ class ActivityTriggeredWaveRecorderTest
     Path mTempDirectory;
 
     @Test
+    void preTriggerBufferRetainsAtMostConfiguredSampleDuration()
+    {
+        CircularSampleBuffer buffer = new CircularSampleBuffer(50000);
+        for(int x = 0; x < 30; x++)
+        {
+            buffer.add(createInactiveSamples(2048));
+        }
+
+        assertEquals(49152, buffer.getSampleCount());
+    }
+
+    @Test
     void writesTriggerBufferOnce() throws Exception
     {
         int sampleCount = 256;

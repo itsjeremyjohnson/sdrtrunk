@@ -168,7 +168,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             gridPane.getChildren().add(directionLabel);
 
             // NAC configuration (row 1) - visible for all modulations
-            mNACLabel = new Label("NAC (0=auto)");
+            mNACLabel = new Label("NAC (-1=auto)");
             GridPane.setHalignment(mNACLabel, HPos.RIGHT);
             GridPane.setConstraints(mNACLabel, 0, 1);
             gridPane.getChildren().add(mNACLabel);
@@ -451,13 +451,14 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         {
             mNACSpinner = new Spinner();
             mNACSpinner.setDisable(true);
-            mNACSpinner.setTooltip(new Tooltip("Network Access Code (NAC) for this channel. Set to 0 for auto-detect, " +
-                    "or enter the known NAC (1-4095) for improved NID error correction."));
+            mNACSpinner.setTooltip(new Tooltip("Network Access Code (NAC) for this channel. Set to -1 for auto-detect, " +
+                    "or enter the known NAC (0-4095) for improved NID error correction."));
             mNACSpinner.getStyleClass().add(Spinner.STYLE_CLASS_SPLIT_ARROWS_HORIZONTAL);
             mNACSpinner.setEditable(true);
             mNACSpinner.setPrefWidth(100);
             SpinnerValueFactory<Integer> svf = new SpinnerValueFactory.IntegerSpinnerValueFactory(
-                    DecodeConfigP25Phase1.NAC_MINIMUM, DecodeConfigP25Phase1.NAC_MAXIMUM, 0);
+                    DecodeConfigP25Phase1.NAC_AUTODETECT, DecodeConfigP25Phase1.NAC_MAXIMUM,
+                    DecodeConfigP25Phase1.NAC_AUTODETECT);
             mNACSpinner.setValueFactory(svf);
             mNACSpinner.getValueFactory().valueProperty()
                 .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
@@ -741,7 +742,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         {
             getIgnoreDataCallsButton().setSelected(false);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(0);
-            getNACSpinner().getValueFactory().setValue(0);
+            getNACSpinner().getValueFactory().setValue(DecodeConfigP25Phase1.NAC_AUTODETECT);
             getIgnoreEncryptionSwitch().setSelected(false);
             getMaxImbeErrorsSpinner().getValueFactory().setValue(0);
             getMaxBchErrorsSpinner().getValueFactory().setValue(DecodeConfigP25Phase1.MAX_BCH_ERRORS_DEFAULT);

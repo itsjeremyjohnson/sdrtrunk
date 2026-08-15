@@ -62,7 +62,7 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     private long mChannelFrequency;
     private final float mSquelchThresholdDb;
     private final Path mRecordingBaseDir;
-    private final Dispatcher<ComplexSamples> mBufferProcessor =
+    private final Dispatcher<QueuedSamples> mBufferProcessor =
             new Dispatcher<>("sdrtrunk activity wave recorder", 250);
 
     private float mSampleRate;
@@ -77,6 +77,9 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     private EventBus mEventBus;
     private Path mRecordingDirectory;
     private int mPowerLogCounter;
+    private volatile long mSourceGeneration;
+
+    private record QueuedSamples(ComplexSamples samples, long generation) {}
 
     /**
      * Constructs an instance.
@@ -116,10 +119,8 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
      */
     private void initCircularBuffer()
     {
-        // At 25kHz with ~2048 sample buffers, 2 seconds needs ~24 entries.
-        // Use a generous estimate: sampleRate * durationSec / typical buffer size
-        int estimatedBuffers = Math.max(10, (int)(mSampleRate * PRE_BUFFER_DURATION_MS / 1000.0 / 1024.0) + 2);
-        mCircularBuffer = new CircularSampleBuffer(estimatedBuffers);
+        long maximumSamples = Math.max(1, (long)(mSampleRate * PRE_BUFFER_DURATION_MS / 1000.0));
+        mCircularBuffer = new CircularSampleBuffer(maximumSamples);
     }
 
     @Override
@@ -136,7 +137,7 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
         mRecordingState = RecordingState.IDLE;
         mSmoothedPowerDb = -100.0f;
         initCircularBuffer();
-        mBufferProcessor.setListener(this::process);
+        mBufferProcessor.setListener(queued -> process(queued.samples(), queued.generation()));
         mBufferProcessor.start();
     }
 
@@ -165,12 +166,12 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     @Override
     public void receive(ComplexSamples complexSamples)
     {
-        mBufferProcessor.receive(complexSamples);
+        mBufferProcessor.receive(new QueuedSamples(complexSamples, mSourceGeneration));
     }
 
-    private synchronized void process(ComplexSamples complexSamples)
+    private synchronized void process(ComplexSamples complexSamples, long sourceGeneration)
     {
-        if(!mRunning || mErrorState)
+        if(!mRunning || mErrorState || sourceGeneration != mSourceGeneration)
         {
             return;
         }
@@ -369,6 +370,7 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
 
     private void resetForSourceChange()
     {
+        mSourceGeneration++;
         closeActiveRecording();
         mRecordingState = RecordingState.IDLE;
         mSmoothedPowerDb = -100.0f;

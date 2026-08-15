@@ -18,7 +18,9 @@
  */
 package io.github.dsheirer.record.config;
 
+import com.fasterxml.jackson.annotation.JsonGetter;
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.controller.config.Configuration;
 import io.github.dsheirer.record.RecorderType;
@@ -37,6 +39,7 @@ public class RecordConfiguration extends Configuration
      * Recording types requested for this configuration
      */
     private List<RecorderType> mRecorders = new ArrayList<>();
+    private List<String> mRecorderValues = new ArrayList<>();
     private boolean mActivityTriggeredRecording = false;
     private float mActivitySquelchThreshold = DEFAULT_ACTIVITY_SQUELCH_THRESHOLD;
 
@@ -51,20 +54,46 @@ public class RecordConfiguration extends Configuration
     /**
      * List of recorder types specified in this configuration
      */
-    @JacksonXmlProperty(isAttribute = false, localName = "recorder")
+    @JsonIgnore
     public List<RecorderType> getRecorders()
     {
         return mRecorders;
     }
 
     /**
-     * Sets the (complete) list of recorder types for this configuration, erasing any existing recording types.
+     * Sets the complete runtime recorder list and serialized values.
      */
+    @JsonIgnore
     public void setRecorders(List<RecorderType> recorders)
     {
-        mRecorders = recorders == null ? new ArrayList<>() : new ArrayList<>(recorders.stream()
-                .filter(recorder -> recorder != null && recorder != RecorderType.UNKNOWN)
-                .toList());
+        mRecorders = recorders == null ? new ArrayList<>() : new ArrayList<>(recorders);
+        mRecorderValues = new ArrayList<>(mRecorders.stream().map(RecorderType::name).toList());
+    }
+
+    @JacksonXmlProperty(isAttribute = false, localName = "recorder")
+    @JsonGetter("recorder")
+    public List<String> getRecorderValues()
+    {
+        return mRecorderValues;
+    }
+
+    @JsonSetter("recorder")
+    public void setRecorderValues(List<String> recorderValues)
+    {
+        mRecorderValues = recorderValues == null ? new ArrayList<>() : new ArrayList<>(recorderValues);
+        mRecorders = new ArrayList<>();
+
+        for(String value : mRecorderValues)
+        {
+            try
+            {
+                mRecorders.add(RecorderType.valueOf(value));
+            }
+            catch(IllegalArgumentException ignored)
+            {
+                // Preserve future recorder values for round-trip, but omit unsupported runtime recorders.
+            }
+        }
     }
 
     /**
@@ -73,14 +102,38 @@ public class RecordConfiguration extends Configuration
     public void addRecorder(RecorderType recorder)
     {
         mRecorders.add(recorder);
+        mRecorderValues.add(recorder.name());
     }
 
     /**
-     * Clears all recorder types from this configuration
+     * Removes all occurrences of a supported recorder type.
+     * @return number of removed values
+     */
+    public int removeRecorder(RecorderType recorder)
+    {
+        int initialSize = mRecorders.size();
+        mRecorders.removeIf(value -> value == recorder);
+        mRecorderValues.removeIf(value -> recorder.name().equals(value));
+        return initialSize - mRecorders.size();
+    }
+
+    /**
+     * Clears supported recorder types while preserving unknown serialized values.
      */
     public void clearRecorders()
     {
         mRecorders.clear();
+        mRecorderValues.removeIf(value -> {
+            try
+            {
+                RecorderType.valueOf(value);
+                return true;
+            }
+            catch(IllegalArgumentException ignored)
+            {
+                return false;
+            }
+        });
     }
 
     /**

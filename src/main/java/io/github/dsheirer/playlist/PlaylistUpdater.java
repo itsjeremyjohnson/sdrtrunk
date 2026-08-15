@@ -193,16 +193,7 @@ public class PlaylistUpdater
 
             if(recordConfiguration.contains(RecorderType.AUDIO))
             {
-                Iterator<RecorderType> it = recordConfiguration.getRecorders().iterator();
-
-                while(it.hasNext())
-                {
-                    if(it.next() == RecorderType.AUDIO)
-                    {
-                        it.remove();
-                        removed++;
-                    }
-                }
+                removed += recordConfiguration.removeRecorder(RecorderType.AUDIO);
             }
         }
 

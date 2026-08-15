@@ -37,11 +37,11 @@ public class NACTracker
     private static final int MAX_TRACKER_COUNT = 3;
     private static final int MIN_OBSERVATION_THRESHOLD = 2; // Reduced from 3 for faster NAC acquisition
 
-    // User-configured NAC value (0 = not configured, use tracking)
-    private int mConfiguredNAC = 0;
+    // User-configured NAC value (-1 = not configured, use tracking)
+    private int mConfiguredNAC = -1;
 
     /**
-     * Sets a user-configured NAC value. When set (non-zero), this NAC will always be returned
+     * Sets a user-configured NAC value. When set (0-4095), this NAC will always be returned
      * by getTrackedNAC() regardless of observed NAC values, providing optimal NID error correction.
      *
      * @param nac the configured NAC value, or 0 to use automatic tracking
@@ -64,7 +64,7 @@ public class NACTracker
      */
     public boolean hasConfiguredNAC()
     {
-        return mConfiguredNAC > 0;
+        return mConfiguredNAC >= 0;
     }
 
     /**
@@ -116,7 +116,7 @@ public class NACTracker
     public int getTrackedNAC()
     {
         // If user has configured a known NAC, always use it
-        if(mConfiguredNAC > 0)
+        if(mConfiguredNAC >= 0)
         {
             return mConfiguredNAC;
         }

@@ -182,6 +182,24 @@ public class BCH_63_16_23_P25_Test
     }
 
     @Test
+    void acceptsConfiguredZeroNacForAssistedCorrection()
+    {
+        int configuredNAC = 0;
+        CorrectedBinaryMessage message = create(configuredNAC, 5);
+        message.setInt(0xFFF, NAC_FIELD);
+        for(int bit = 16; bit < 24; bit++)
+        {
+            message.flip(bit);
+        }
+
+        new BCH_63_16_23_P25().decode(message, configuredNAC, 11);
+
+        assertEquals(configuredNAC, message.getInt(NAC_FIELD));
+        assertEquals(5, message.getInt(DUID_FIELD));
+        assertEquals(8, message.getCorrectedBitCount());
+    }
+
+    @Test
     void acceptsForcedCandidateWithinThreshold()
     {
         int configuredNAC = 0x293;

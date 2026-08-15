@@ -110,7 +110,7 @@ public class ConfigRoundTripTest
     }
 
     @Test
-    void unknownRecorderTypeIsSafelyOmitted() throws Exception
+    void unknownRecorderTypeIsOmittedAtRuntimeAndPreservedOnSave() throws Exception
     {
         String xml = """
             <record_configuration>
@@ -122,6 +122,15 @@ public class ConfigRoundTripTest
         RecordConfiguration config = createMapper().readValue(xml, RecordConfiguration.class);
         assertEquals(1, config.getRecorders().size());
         assertEquals(RecorderType.BASEBAND, config.getRecorders().getFirst());
+
+        //Simulate saving the recorder editor, which replaces the supported selections.
+        config.clearRecorders();
+        config.addRecorder(RecorderType.DEMODULATED_BIT_STREAM);
+
+        String output = createMapper().writeValueAsString(config);
+        assertTrue(output.contains("FUTURE_RECORDER"));
+        assertTrue(output.contains("DEMODULATED_BIT_STREAM"));
+        assertFalse(output.contains("BASEBAND"));
     }
 
     @Test
@@ -129,11 +138,13 @@ public class ConfigRoundTripTest
     {
         Channel original = new Channel("test");
         RecordConfiguration recordConfiguration = new RecordConfiguration();
+        recordConfiguration.setRecorderValues(java.util.List.of("FUTURE_RECORDER", "BASEBAND"));
         recordConfiguration.setActivityTriggeredRecording(true);
         recordConfiguration.setActivitySquelchThreshold(-55.0f);
         original.setRecordConfiguration(recordConfiguration);
 
         RecordConfiguration copy = original.copyOf().getRecordConfiguration();
+        assertEquals(java.util.List.of("FUTURE_RECORDER", "BASEBAND"), copy.getRecorderValues());
         assertTrue(copy.isActivityTriggeredRecording());
         assertEquals(-55.0f, copy.getActivitySquelchThreshold());
     }
@@ -146,6 +157,31 @@ public class ConfigRoundTripTest
 
         DecodeConfigNBFM copy = (DecodeConfigNBFM)DecoderFactory.copy(original);
         assertEquals(CTCSSFrequency.TONE_114_8, copy.getCTCSSFrequency());
+    }
+
+    @Test
+    void absentCmaOverridesAndNacRemainUnset()
+    {
+        DecodeConfigP25Phase1 config = new DecodeConfigP25Phase1();
+        assertEquals(0.0f, config.getCmaAcquisitionMu());
+        assertEquals(0.0f, config.getCmaTrackingMu());
+        assertEquals(0, config.getCmaGearShiftMs());
+        assertEquals(DecodeConfigP25Phase1.NAC_AUTODETECT, config.getConfiguredNAC());
+        assertFalse(config.hasConfiguredNAC());
+    }
+
+    @Test
+    void zeroNacCanBeExplicitlyConfigured()
+    {
+        DecodeConfigP25Phase1 config = new DecodeConfigP25Phase1();
+        config.setConfiguredNAC(0);
+        assertTrue(config.hasConfiguredNAC());
+        assertEquals(0, config.getConfiguredNAC());
+
+        NACTracker tracker = new NACTracker();
+        tracker.setConfiguredNAC(0);
+        assertTrue(tracker.hasConfiguredNAC());
+        assertEquals(0, tracker.getTrackedNAC());
     }
 
     @Test

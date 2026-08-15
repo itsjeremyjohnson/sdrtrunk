@@ -21,7 +21,6 @@
  */
 package io.github.dsheirer.record;
 
-import com.fasterxml.jackson.annotation.JsonEnumDefaultValue;
 import java.util.EnumSet;
 
 /**
@@ -69,10 +68,7 @@ public enum RecorderType
      * Activity-triggered baseband recording -- records complex I/Q samples only when RF signal
      * energy exceeds the squelch threshold, with a pre-trigger buffer and post-activity hold.
      */
-    ACTIVITY_BASEBAND("Activity-Triggered Baseband I/Q (.wav)"),
-
-    @JsonEnumDefaultValue
-    UNKNOWN("Unknown Recorder Type");
+    ACTIVITY_BASEBAND("Activity-Triggered Baseband I/Q (.wav)");
 
     private String mDisplayString;
 

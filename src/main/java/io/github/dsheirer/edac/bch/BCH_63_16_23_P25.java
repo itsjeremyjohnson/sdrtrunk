@@ -59,7 +59,7 @@ public class BCH_63_16_23_P25 extends BCH_63
      * with known information, significantly improving recovery on simulcast channels where NID corruption is common.
      *
      * @param message to correct
-     * @param configuredNAC that can be used for NAC-assisted correction (0 = disabled).
+     * @param configuredNAC that can be used for NAC-assisted correction (-1 = disabled).
      */
     public void decode(CorrectedBinaryMessage message, int configuredNAC)
     {
@@ -73,7 +73,7 @@ public class BCH_63_16_23_P25 extends BCH_63
      * the threshold allows. This filters out frames where heavy NID correction indicates likely voice data corruption.
      *
      * @param message to correct
-     * @param configuredNAC that can be used for NAC-assisted correction (0 = disabled).
+     * @param configuredNAC that can be used for NAC-assisted correction (-1 = disabled).
      * @param maxBchErrors maximum BCH corrections allowed for NAC-assisted/DUID-enumerated corrections (1-11).
      */
     public void decode(CorrectedBinaryMessage message, int configuredNAC, int maxBchErrors)
@@ -81,7 +81,7 @@ public class BCH_63_16_23_P25 extends BCH_63
         // First: standard BCH decode (works for all channels, always uses full T=11 capability)
         decode(message);
 
-        if(message.getCorrectedBitCount() != BCH.MESSAGE_NOT_CORRECTED || configuredNAC <= 0)
+        if(message.getCorrectedBitCount() != BCH.MESSAGE_NOT_CORRECTED || configuredNAC < 0)
         {
             return;
         }

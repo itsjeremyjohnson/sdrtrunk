@@ -34,6 +34,7 @@ public class DecodeConfigP25Phase1 extends DecodeConfigP25
     public static final int CHANNEL_ROTATION_DELAY_MINIMUM_MS = 400;
     public static final int CHANNEL_ROTATION_DELAY_DEFAULT_MS = 500;
     public static final int CHANNEL_ROTATION_DELAY_MAXIMUM_MS = 2000;
+    public static final int NAC_AUTODETECT = -1;
     public static final int NAC_MINIMUM = 0;
     public static final int NAC_MAXIMUM = 4095;
 
@@ -73,14 +74,14 @@ public class DecodeConfigP25Phase1 extends DecodeConfigP25
 
     private Modulation mModulation = Modulation.C4FM;
     private String mModulationRaw; // Preserves unknown modulation enum values for round-trip serialization
-    private int mConfiguredNAC = 0; // 0 = auto-detect, 1-4095 = configured NAC
+    private int mConfiguredNAC = NAC_AUTODETECT;
     private int mAudioHoldoverMs = DEFAULT_AUDIO_HOLDOVER_MS;
     private boolean mIgnoreEncryptionState = false;
     private int mMaxImbeErrors = 0; // 0 = disabled, 1-10 = quality gate threshold
     private int mMaxBchErrors = MAX_BCH_ERRORS_DEFAULT;
-    private float mCmaAcquisitionMu = 0.003f; // Fast convergence for initial lock after cold-start
-    private float mCmaTrackingMu = 0.001f;   // Stable tracking, proven +69% LDUs on ROC W simulcast
-    private int mCmaGearShiftMs = 200;        // 200ms acquisition before switching to tracking
+    private float mCmaAcquisitionMu; // 0 = use decoder/system-property default
+    private float mCmaTrackingMu;   // 0 = use decoder/system-property default
+    private int mCmaGearShiftMs;    // 0 = use decoder/system-property default
 
     private boolean mPipelineDiagnostics = false;
 
@@ -155,10 +156,9 @@ public class DecodeConfigP25Phase1 extends DecodeConfigP25
 
     /**
      * Gets the configured NAC (Network Access Code) for this channel.
-     * When set to a non-zero value (1-4095), the decoder will use this NAC for improved NID error correction.
-     * When set to 0 (default), the decoder will auto-detect the NAC from received transmissions.
+     * Values 0-4095 configure the full valid 12-bit NAC range. A value of -1 enables auto-detection.
      *
-     * @return configured NAC value, or 0 for auto-detect
+     * @return configured NAC value, or -1 for auto-detect
      */
     @JacksonXmlProperty(isAttribute = true, localName = "configuredNAC")
     public int getConfiguredNAC()
@@ -168,28 +168,29 @@ public class DecodeConfigP25Phase1 extends DecodeConfigP25
 
     /**
      * Sets the configured NAC (Network Access Code) for this channel.
-     * Set to a value between 1-4095 to use a known NAC for improved error correction.
-     * Set to 0 to auto-detect the NAC from received transmissions.
+     * Set to a value between 0-4095 to use a known NAC for improved error correction.
+     * Set to -1 to auto-detect the NAC from received transmissions.
      *
-     * @param nac the NAC value (0-4095)
+     * @param nac the NAC value (-1 for auto, otherwise 0-4095)
      */
     public void setConfiguredNAC(int nac)
     {
-        if(nac < NAC_MINIMUM || nac > NAC_MAXIMUM)
+        if(nac < NAC_AUTODETECT || nac > NAC_MAXIMUM)
         {
-            throw new IllegalArgumentException("NAC must be between " + NAC_MINIMUM + " and " + NAC_MAXIMUM);
+            throw new IllegalArgumentException("NAC must be -1 for auto-detect or between " + NAC_MINIMUM +
+                    " and " + NAC_MAXIMUM);
         }
         mConfiguredNAC = nac;
     }
 
     /**
      * Indicates if a NAC is configured for this channel.
-     * @return true if a NAC is configured (non-zero)
+     * @return true if a NAC in the valid 0-4095 range is configured
      */
     @JsonIgnore
     public boolean hasConfiguredNAC()
     {
-        return mConfiguredNAC > 0;
+        return mConfiguredNAC >= NAC_MINIMUM;
     }
 
     /**
