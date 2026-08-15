@@ -589,6 +589,33 @@ class ClickToTuneControllerTest
     }
 
     @Test
+    void redetect_supersededByNewClickRestartsOriginalChannel() throws Exception
+    {
+        mFakeClassifier.setNextResult(ClassificationResult.identified(
+            FREQ, List.of(), DecoderType.NBFM,
+            DecoderFactory.getDecodeConfiguration(DecoderType.NBFM),
+            SignalKind.CONVENTIONAL, "", Map.of(), -80.0));
+        mController.classifyAndTune(FREQ, 12_500);
+        drainEdt();
+        Channel original = mFakeChannelModel.mAdded.get(0);
+
+        CompletableFuture<ClassificationResult> pendingRedetect = new CompletableFuture<>();
+        mFakeClassifier.setNextResult(pendingRedetect);
+        mController.redetect(original);
+
+        mFakeClassifier.setNextResult(ClassificationResult.identified(
+            FREQ + 20_000L, List.of(), DecoderType.DMR,
+            DecoderFactory.getDecodeConfiguration(DecoderType.DMR),
+            SignalKind.CONVENTIONAL, "", Map.of(), -70.0));
+        mController.classifyAndTune(FREQ + 20_000L, 12_500);
+        drainEdt();
+
+        assertTrue(pendingRedetect.isCancelled());
+        assertEquals(2, mFakeCpm.mStarted.stream().filter(channel -> channel == original).count(),
+            "The superseded redetect must restart its original stopped channel");
+    }
+
+    @Test
     void redetect_miss_leavesChannelIntact() throws Exception
     {
         // Create a channel with NBFM

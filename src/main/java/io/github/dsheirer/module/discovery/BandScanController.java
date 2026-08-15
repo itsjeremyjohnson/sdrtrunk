@@ -959,18 +959,36 @@ public class BandScanController
                     continue;
                 }
 
-                Discovery discovery = new Discovery(peak, Instant.now());
+                Discovery discovery = findExistingDiscovery(peak);
 
-                // Check if an existing channel already covers this frequency
-                if(isKnownChannel(peak))
+                if(discovery != null)
                 {
-                    FxThreads.run(() -> discovery.setState(DiscoveryState.KNOWN));
-                    mDiscoveryModel.add(discovery);
+                    Discovery existing = discovery;
+                    FxThreads.runAndWait(() -> existing.setLastSeen(Instant.now()));
+                    mDiscoveryModel.update(existing);
+
+                    if(existing.getState() == DiscoveryState.UNIDENTIFIED ||
+                        existing.getState() == DiscoveryState.ERROR)
+                    {
+                        toProbeLater.add(existing);
+                    }
                 }
                 else
                 {
-                    mDiscoveryModel.add(discovery);
-                    toProbeLater.add(discovery);
+                    discovery = new Discovery(peak, Instant.now());
+
+                    // Check if an existing channel already covers this frequency
+                    if(isKnownChannel(peak))
+                    {
+                        Discovery newDiscovery = discovery;
+                        FxThreads.runAndWait(() -> newDiscovery.setState(DiscoveryState.KNOWN));
+                        mDiscoveryModel.add(newDiscovery);
+                    }
+                    else
+                    {
+                        mDiscoveryModel.add(discovery);
+                        toProbeLater.add(discovery);
+                    }
                 }
             }
 

@@ -421,6 +421,22 @@ class BandScanControllerTest
         assertEquals(ScanState.DONE, ctrl.getScanState());
     }
 
+    @Test
+    void repeatedOneShotScanRefreshesExistingDiscoveryWithoutDuplicate() throws InterruptedException
+    {
+        BandScanController ctrl = makeController(
+            new FakeSurvey(List.of(makePeak(FREQ_A))), new FakeClassifier(Map.of()));
+
+        ctrl.startScan(simpleScan());
+        awaitState(ctrl, ScanState.DONE, 5_000);
+        ctrl.startScan(simpleScan());
+        awaitState(ctrl, ScanState.DONE, 5_000);
+
+        assertEquals(1, mModel.snapshot().stream()
+            .filter(discovery -> discovery.getCenterFrequencyHz() == FREQ_A)
+            .count());
+    }
+
     // -------------------------------------------------------------------------
     // ENERGY_DETECTED rows added before probing — #9 strengthened test
     // -------------------------------------------------------------------------

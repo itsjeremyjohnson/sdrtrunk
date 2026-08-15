@@ -138,6 +138,15 @@ public class DiscoveryOverlay extends JComponent
         mDiscoveryModel.addListener(mDiscoveryListener);
     }
 
+    /**
+     * Paint-only overlays must not become the mouse target in the layered pane.
+     */
+    @Override
+    public boolean contains(int x, int y)
+    {
+        return false;
+    }
+
     // -------------------------------------------------------------------------
     // Public API
     // -------------------------------------------------------------------------

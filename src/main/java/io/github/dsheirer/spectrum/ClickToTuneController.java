@@ -107,6 +107,7 @@ public class ClickToTuneController
      */
     private final AtomicReference<CompletableFuture<ClassificationResult>> mPendingFuture =
         new AtomicReference<>();
+    private final AtomicReference<Channel> mPendingRedetectChannel = new AtomicReference<>();
 
     // -------------------------------------------------------------------------
     // UICallbacks interface
@@ -207,6 +208,7 @@ public class ClickToTuneController
             : mUserPreferences.getDiscoveryPreference().getClickDefaultBandwidthHz();
 
         // Cancel any in-progress classification before starting a new one
+        mPendingRedetectChannel.set(null);
         CompletableFuture<ClassificationResult> prior = mPendingFuture.getAndSet(null);
         if(prior != null)
         {
@@ -239,6 +241,7 @@ public class ClickToTuneController
      */
     public void cancelPending()
     {
+        mPendingRedetectChannel.set(null);
         CompletableFuture<ClassificationResult> f = mPendingFuture.getAndSet(null);
 
         if(f != null)
@@ -334,12 +337,13 @@ public class ClickToTuneController
             mLog.warn("Error stopping channel '{}' before re-detect: {}", channel.getName(), e.getMessage());
         }
 
-        // Cancel any prior pending classification and start a new one for this channel
+        // Cancel any prior pending classification and start a new one for this channel.
         CompletableFuture<ClassificationResult> prior = mPendingFuture.getAndSet(null);
         if(prior != null)
         {
             prior.cancel(true);
         }
+        mPendingRedetectChannel.set(channel);
 
         int bwHz = mUserPreferences.getDiscoveryPreference().getClickDefaultBandwidthHz();
         mUICallbacks.showPending(freqHz, bwHz);
@@ -354,9 +358,16 @@ public class ClickToTuneController
         {
             if(!mPendingFuture.compareAndSet(future, null))
             {
+                // A different request superseded this redetect.  Restore this channel unless
+                // the newer request is itself re-detecting the same channel.
+                if(mPendingRedetectChannel.get() != channel)
+                {
+                    restartExistingChannel(channel);
+                }
                 return;
             }
 
+            mPendingRedetectChannel.compareAndSet(channel, null);
             mUICallbacks.clearPending();
 
             if(ex instanceof CancellationException)
@@ -479,6 +490,7 @@ public class ClickToTuneController
             : mUserPreferences.getDiscoveryPreference().getClickDefaultBandwidthHz();
 
         // Cancel any in-progress classification before starting a new one
+        mPendingRedetectChannel.set(null);
         CompletableFuture<ClassificationResult> prior = mPendingFuture.getAndSet(null);
         if(prior != null)
         {

@@ -394,7 +394,13 @@ public class SpectralSurvey implements SpectralSurveyApi
 
         SampleAccumulator accumulator = buildAccumulator();
 
-        Listener<ComplexSamples> listener = samples -> accumulator.process(samples);
+        Listener<ComplexSamples> listener = samples ->
+        {
+            synchronized(accumulator)
+            {
+                accumulator.process(samples);
+            }
+        };
 
         tunerControl.addWidebandSampleListener(listener);
 
@@ -407,15 +413,18 @@ public class SpectralSurvey implements SpectralSurveyApi
             tunerControl.removeWidebandSampleListener(listener);
         }
 
-        if(!accumulator.hasData())
+        synchronized(accumulator)
         {
-            return Collections.emptyList();
+            if(!accumulator.hasData())
+            {
+                return Collections.emptyList();
+            }
+
+            List<EnergyPeak> peaks = extractPeaks(accumulator, centerHz, sampleRate, thresholdDb);
+
+            // Filter to requested sub-span
+            return filterToSpan(peaks, minHz, maxHz);
         }
-
-        List<EnergyPeak> peaks = extractPeaks(accumulator, centerHz, sampleRate, thresholdDb);
-
-        // Filter to requested sub-span
-        return filterToSpan(peaks, minHz, maxHz);
     }
 
     /**
@@ -572,7 +581,13 @@ public class SpectralSurvey implements SpectralSurveyApi
             final long stepCenterFinal = stepCenter;
 
             SampleAccumulator accumulator = buildAccumulator();
-            Listener<ComplexSamples> listener = samples -> accumulator.process(samples);
+            Listener<ComplexSamples> listener = samples ->
+            {
+                synchronized(accumulator)
+                {
+                    accumulator.process(samples);
+                }
+            };
 
             tunerControl.addWidebandSampleListener(listener);
 
@@ -585,12 +600,15 @@ public class SpectralSurvey implements SpectralSurveyApi
                 tunerControl.removeWidebandSampleListener(listener);
             }
 
-            if(accumulator.hasData())
+            synchronized(accumulator)
             {
-                List<EnergyPeak> stepPeaks = extractPeaks(accumulator, stepCenterFinal, sampleRate, thresholdDb);
-                // Filter to requested span
-                List<EnergyPeak> filtered = filterToSpan(stepPeaks, minHz, maxHz);
-                allPeaks.addAll(filtered);
+                if(accumulator.hasData())
+                {
+                    List<EnergyPeak> stepPeaks = extractPeaks(accumulator, stepCenterFinal, sampleRate, thresholdDb);
+                    // Filter to requested span
+                    List<EnergyPeak> filtered = filterToSpan(stepPeaks, minHz, maxHz);
+                    allPeaks.addAll(filtered);
+                }
             }
         }
 

@@ -1198,32 +1198,24 @@ public class SpectralDisplayPanel extends JPanel
     }
 
     /**
-     * Builds a discovery scan span centered on the active SDR center frequency.
+     * Builds a discovery scan span from the currently visible zoom/pan axis.
      */
     long[] getCurrentTunerScanSpan()
     {
-        long centerHz = 0L;
-        long widthHz = 0L;
+        int width = mOverlayPanel.getWidth();
 
-        if(mTuner != null && mTuner.getTunerController() != null)
+        if(width > 0)
         {
-            TunerController controller = mTuner.getTunerController();
-            centerHz = controller.getFrequency();
-            widthHz = controller.getUsableBandwidth();
+            long leftHz = mOverlayPanel.getFrequencyFromAxis(0);
+            long rightHz = mOverlayPanel.getFrequencyFromAxis(width);
+
+            if(leftHz > 0 && rightHz > leftHz)
+            {
+                return new long[]{leftHz, rightHz};
+            }
         }
 
-        if(centerHz <= 0)
-        {
-            centerHz = mOverlayPanel.getMinFrequency() + ((mOverlayPanel.getMaxFrequency() - mOverlayPanel.getMinFrequency()) / 2L);
-        }
-
-        if(widthHz <= 0)
-        {
-            widthHz = mOverlayPanel.getMaxFrequency() - mOverlayPanel.getMinFrequency();
-        }
-
-        long halfWidth = widthHz / 2L;
-        return new long[]{centerHz - halfWidth, centerHz + halfWidth};
+        return new long[]{mOverlayPanel.getMinFrequency(), mOverlayPanel.getMaxFrequency()};
     }
 
     /**
