@@ -36,9 +36,22 @@ public class HydraSdrNativeBufferTest
     }
 
     @Test
-    void preservesTimestampForResidualSamples()
+    void defaultFactoryEmitsAdvertisedControllerBufferSize()
     {
         HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000);
+        int half = HydraSdrTunerController.BUFFER_SAMPLE_COUNT / 2;
+
+        assertTrue(factory.get(new float[half], new float[half], half, 1_000).isEmpty());
+        List<HydraSdrNativeBuffer> buffers = factory.get(new float[half], new float[half], half, 2_000);
+
+        assertEquals(1, buffers.size());
+        assertEquals(HydraSdrTunerController.BUFFER_SAMPLE_COUNT, buffers.getFirst().sampleCount());
+    }
+
+    @Test
+    void preservesTimestampForResidualSamples()
+    {
+        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000, 128);
 
         assertTrue(factory.get(new float[100], new float[100], 100, 1_000).isEmpty());
 
@@ -52,9 +65,9 @@ public class HydraSdrNativeBufferTest
     }
 
     @Test
-    void preservesBufferSizeUntilResidualSamplesAreEmitted()
+    void emitsConfiguredBufferSizeAcrossVariableCallbacks()
     {
-        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000);
+        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000, 256);
 
         assertTrue(factory.get(new float[200], new float[200], 200, 1_000).isEmpty());
         assertTrue(factory.get(new float[40], new float[40], 40, 1_200).isEmpty());
@@ -68,7 +81,7 @@ public class HydraSdrNativeBufferTest
     @Test
     void sampleRateChangeDiscardsResidualSamplesAndTimestamp()
     {
-        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000);
+        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000, 128);
 
         assertTrue(factory.get(new float[100], new float[100], 100, 1_000).isEmpty());
         factory.setSampleRate(2_000);
@@ -83,7 +96,7 @@ public class HydraSdrNativeBufferTest
     @Test
     void resetDiscardsResidualSamplesAndTimestamp()
     {
-        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000);
+        HydraSdrNativeBufferFactory factory = new HydraSdrNativeBufferFactory(1_000, 128);
 
         assertTrue(factory.get(new float[100], new float[100], 100, 1_000).isEmpty());
         factory.reset();

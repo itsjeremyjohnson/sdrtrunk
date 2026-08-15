@@ -27,10 +27,9 @@ import java.util.List;
  * Native buffer factory for HydraSDR tuners.
  *
  * Receives pre-split I/Q float arrays from the JNI layer and repackages them
- * into power-of-2 length buffers required by downstream SIMD processing.
- *
- * Optimized fast path: when libhydrasdr delivers power-of-2 buffers (common
- * case: 65536 samples), the arrays are passed through with zero copies.
+ * into the fixed buffer length advertised by the tuner controller. This keeps
+ * downstream delay-buffer duration calculations accurate across HAL backends
+ * that deliver different callback sizes.
  */
 public class HydraSdrNativeBufferFactory
 {
@@ -38,8 +37,7 @@ public class HydraSdrNativeBufferFactory
 	private float[] mQResidual = new float[0];
 	private long mResidualTimestamp = System.currentTimeMillis();
 	private double mFractionalMsAccumulator = 0.0;
-	private int mIncomingBufferLength = 0;
-	private int mOptimalBufferLength = 128;
+	private final int mBufferLength;
 	private float mSamplesPerMillisecond;
 
 	/**
@@ -48,6 +46,12 @@ public class HydraSdrNativeBufferFactory
 	 */
 	public HydraSdrNativeBufferFactory(int sampleRate)
 	{
+		this(sampleRate, HydraSdrTunerController.BUFFER_SAMPLE_COUNT);
+	}
+
+	HydraSdrNativeBufferFactory(int sampleRate, int bufferLength)
+	{
+		mBufferLength = bufferLength;
 		setSampleRate(sampleRate);
 	}
 
@@ -74,12 +78,10 @@ public class HydraSdrNativeBufferFactory
 		mQResidual = new float[0];
 		mResidualTimestamp = System.currentTimeMillis();
 		mFractionalMsAccumulator = 0.0;
-		mIncomingBufferLength = 0;
-		mOptimalBufferLength = 128;
 	}
 
 	/**
-	 * Repackages pre-split I/Q sample arrays into optimal-length native buffers.
+	 * Repackages pre-split I/Q sample arrays into fixed-length native buffers.
 	 * @param iSamples in-phase float samples
 	 * @param qSamples quadrature float samples
 	 * @param sampleCount number of complex samples
@@ -91,11 +93,6 @@ public class HydraSdrNativeBufferFactory
 	{
 		if(mIResidual.length == 0)
 		{
-			updateBufferLength(sampleCount);
-		}
-
-		if(mIResidual.length == 0)
-		{
 			mResidualTimestamp = timestamp;
 			mFractionalMsAccumulator = 0.0;
 		}
@@ -105,7 +102,7 @@ public class HydraSdrNativeBufferFactory
 		 * Copy I/Q arrays since the JNI layer reuses the underlying array objects
 		 * (double-buffered). Arrays.copyOf compiles to a fast memcpy.
 		 */
-		if(mIResidual.length == 0 && sampleCount == mOptimalBufferLength)
+		if(mIResidual.length == 0 && sampleCount == mBufferLength)
 		{
 			return Collections.singletonList(new HydraSdrNativeBuffer(
 				Arrays.copyOf(iSamples, sampleCount),
@@ -122,7 +119,7 @@ public class HydraSdrNativeBufferFactory
 		System.arraycopy(mQResidual, 0, qCombined, 0, mQResidual.length);
 		System.arraycopy(qSamples, 0, qCombined, mQResidual.length, sampleCount);
 
-		if(iCombined.length < mOptimalBufferLength)
+		if(iCombined.length < mBufferLength)
 		{
 			mIResidual = iCombined;
 			mQResidual = qCombined;
@@ -131,19 +128,19 @@ public class HydraSdrNativeBufferFactory
 
 		List<HydraSdrNativeBuffer> buffers = new ArrayList<>();
 
-		while(iCombined.length >= mOptimalBufferLength)
+		while(iCombined.length >= mBufferLength)
 		{
-			float[] iOpt = Arrays.copyOf(iCombined, mOptimalBufferLength);
-			float[] qOpt = Arrays.copyOf(qCombined, mOptimalBufferLength);
-			iCombined = Arrays.copyOfRange(iCombined, mOptimalBufferLength, iCombined.length);
-			qCombined = Arrays.copyOfRange(qCombined, mOptimalBufferLength, qCombined.length);
+			float[] iOpt = Arrays.copyOf(iCombined, mBufferLength);
+			float[] qOpt = Arrays.copyOf(qCombined, mBufferLength);
+			iCombined = Arrays.copyOfRange(iCombined, mBufferLength, iCombined.length);
+			qCombined = Arrays.copyOfRange(qCombined, mBufferLength, qCombined.length);
 
 			buffers.add(new HydraSdrNativeBuffer(iOpt, qOpt,
 				mResidualTimestamp, mSamplesPerMillisecond));
 			/* Accumulate fractional milliseconds to avoid timestamp drift.
 			 * e.g. 65536 samples @ 10 MSps = 6.5536 ms; truncating each buffer
 			 * would lose ~0.55 ms per buffer (~84 ms/sec drift). */
-			mFractionalMsAccumulator += (mOptimalBufferLength / (double)mSamplesPerMillisecond);
+			mFractionalMsAccumulator += (mBufferLength / (double)mSamplesPerMillisecond);
 			long whole = (long)mFractionalMsAccumulator;
 			mResidualTimestamp += whole;
 			mFractionalMsAccumulator -= whole;
@@ -155,21 +152,4 @@ public class HydraSdrNativeBufferFactory
 		return buffers;
 	}
 
-	/**
-	 * Updates the optimal buffer length.
-	 * Target is the nearest power-of-2 >= sample count.
-	 */
-	private void updateBufferLength(int sampleCount)
-	{
-		if(mIncomingBufferLength != sampleCount)
-		{
-			int optimal = 128;
-			while(optimal < sampleCount)
-			{
-				optimal *= 2;
-			}
-			mOptimalBufferLength = optimal;
-			mIncomingBufferLength = sampleCount;
-		}
-	}
 }

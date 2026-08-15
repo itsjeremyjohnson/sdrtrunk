@@ -56,6 +56,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	public static final long FALLBACK_MAX_FREQUENCY_HZ = 6_000_000_000L;
 	public static final long FREQUENCY_DEFAULT = 101_100_000;
 	public static final int DEFAULT_SAMPLE_RATE = 10_000_000;
+	public static final int BUFFER_SAMPLE_COUNT = 65_536;
 	public static final double USABLE_BANDWIDTH_PERCENT = 0.90;
 
 	/* Gain mode constants matching HydraSdrTunerConfiguration.gainMode */
@@ -73,6 +74,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	private long mDeviceHandle;
 	private long mSerialNumber;
 	private HydraSdrDeviceInfo mDeviceInfo;
+	private final Object mSampleRateTransitionLock = new Object();
 	private HydraSdrNativeBufferFactory mNativeBufferFactory;
 	private int mSampleRate = DEFAULT_SAMPLE_RATE;
 	private volatile boolean mStreaming = false;
@@ -116,7 +118,7 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	@Override
 	public int getBufferSampleCount()
 	{
-		return 65536;
+		return BUFFER_SAMPLE_COUNT;
 	}
 
 	@Override
@@ -291,32 +293,35 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	@Override
 	public void onSamples(float[] iSamples, float[] qSamples, int sampleCount, long droppedSamples)
 	{
-		mLastCallbackTime = System.currentTimeMillis();
-		long t0 = System.nanoTime();
-
-		if(droppedSamples > mLastDroppedSamples)
+		synchronized(mSampleRateTransitionLock)
 		{
-			mLog.warn("HydraSDR dropped samples: " + (droppedSamples - mLastDroppedSamples) +
-				" (total: " + droppedSamples + ")");
-			mLastDroppedSamples = droppedSamples;
-			mNativeBufferFactory.reset();
+			mLastCallbackTime = System.currentTimeMillis();
+			long t0 = System.nanoTime();
+
+			if(droppedSamples > mLastDroppedSamples)
+			{
+				mLog.warn("HydraSDR dropped samples: " + (droppedSamples - mLastDroppedSamples) +
+					" (total: " + droppedSamples + ")");
+				mLastDroppedSamples = droppedSamples;
+				mNativeBufferFactory.reset();
+			}
+
+			long tFactory = System.nanoTime();
+			List<HydraSdrNativeBuffer> buffers = mNativeBufferFactory.get(iSamples, qSamples,
+				sampleCount, System.currentTimeMillis());
+			mFactoryTimeNs += (System.nanoTime() - tFactory);
+
+			long tBroadcast = System.nanoTime();
+			for(HydraSdrNativeBuffer buffer : buffers)
+			{
+				mNativeBufferBroadcaster.broadcast(buffer);
+			}
+			mBroadcastTimeNs += (System.nanoTime() - tBroadcast);
+
+			mCallbackCount++;
+			mTotalSamples += sampleCount;
+			mCallbackTimeNs += (System.nanoTime() - t0);
 		}
-
-		long tFactory = System.nanoTime();
-		List<HydraSdrNativeBuffer> buffers = mNativeBufferFactory.get(iSamples, qSamples,
-			sampleCount, System.currentTimeMillis());
-		mFactoryTimeNs += (System.nanoTime() - tFactory);
-
-		long tBroadcast = System.nanoTime();
-		for(HydraSdrNativeBuffer buffer : buffers)
-		{
-			mNativeBufferBroadcaster.broadcast(buffer);
-		}
-		mBroadcastTimeNs += (System.nanoTime() - tBroadcast);
-
-		mCallbackCount++;
-		mTotalSamples += sampleCount;
-		mCallbackTimeNs += (System.nanoTime() - t0);
 	}
 
 	/**
@@ -478,10 +483,9 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 	@Override
 	public void apply(TunerConfiguration tunerConfiguration) throws SourceException
 	{
-		super.apply(tunerConfiguration);
-
 		if(tunerConfiguration instanceof HydraSdrTunerConfiguration config)
 		{
+			applyFrequencyConfiguration(config);
 			int sampleRate = config.getSampleRate();
 			HydraSdrSampleRate rate = getSampleRate(sampleRate);
 
@@ -554,6 +558,40 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 				throw new SourceException("Couldn't apply HydraSDR gain settings", e);
 			}
 		}
+		else
+		{
+			super.apply(tunerConfiguration);
+		}
+	}
+
+	private void applyFrequencyConfiguration(HydraSdrTunerConfiguration config) throws SourceException
+	{
+		long hardwareMinimum = mDeviceInfo != null && mDeviceInfo.getMinFrequency() > 0 ?
+			mDeviceInfo.getMinFrequency() : getMinimumFrequency();
+		long hardwareMaximum = mDeviceInfo != null && mDeviceInfo.getMaxFrequency() > 0 ?
+			mDeviceInfo.getMaxFrequency() : getMaximumFrequency();
+		long[] limits = intersectFrequencyRange(hardwareMinimum, hardwareMaximum,
+			config.getMinimumFrequency(), config.getMaximumFrequency());
+
+		setMinimumFrequency(limits[0]);
+		setMaximumFrequency(limits[1]);
+		config.setMinimumFrequency(limits[0]);
+		config.setMaximumFrequency(limits[1]);
+
+		long frequency = clampFrequency(config.getFrequency(), limits[0], limits[1]);
+		setFrequency(frequency);
+		config.setFrequency(frequency);
+		setFrequencyCorrection(config.getFrequencyCorrection());
+		getFrequencyErrorCorrectionManager().setEnabled(config.getAutoPPMCorrectionEnabled());
+	}
+
+	static long[] intersectFrequencyRange(long hardwareMinimum, long hardwareMaximum,
+		long configuredMinimum, long configuredMaximum)
+	{
+		long minimum = configuredMinimum > 0 ? Math.max(hardwareMinimum, configuredMinimum) : hardwareMinimum;
+		long maximum = configuredMaximum > 0 ? Math.min(hardwareMaximum, configuredMaximum) : hardwareMaximum;
+		return minimum <= maximum ? new long[] {minimum, maximum} :
+			new long[] {hardwareMinimum, hardwareMaximum};
 	}
 
 	/* ==================== Sample Rate ==================== */
@@ -576,18 +614,20 @@ public class HydraSdrTunerController extends TunerController implements HydraSdr
 			throw new SourceException("Device not open");
 		}
 
-		int result = HydraSdrNative.setSampleRate(mDeviceHandle, rateHz);
-		if(result != HydraSdrNative.SUCCESS)
+		synchronized(mSampleRateTransitionLock)
 		{
-			throw new SourceException("Error setting sample rate [" + rateHz + "]: " +
-				HydraSdrNative.errorName(result));
+			int result = HydraSdrNative.setSampleRate(mDeviceHandle, rateHz);
+			if(result != HydraSdrNative.SUCCESS)
+			{
+				throw new SourceException("Error setting sample rate [" + rateHz + "]: " +
+					HydraSdrNative.errorName(result));
+			}
+
+			mSampleRate = rateHz;
+			mFrequencyController.setSampleRate(mSampleRate);
+			mNativeBufferFactory.setSampleRate(mSampleRate);
+			updateUsableBandwidthForRate(mSampleRate);
 		}
-
-		mSampleRate = rateHz;
-		mFrequencyController.setSampleRate(mSampleRate);
-		mNativeBufferFactory.setSampleRate(mSampleRate);
-
-		updateUsableBandwidthForRate(mSampleRate);
 	}
 
 	/**

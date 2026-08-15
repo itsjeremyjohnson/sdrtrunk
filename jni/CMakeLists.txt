@@ -279,6 +279,23 @@ if(WIN32)
 	endif()
 endif()
 
+# Bundle a fetched Linux libhydrasdr beside the JNI bridge and make the bridge
+# resolve that packaged copy instead of the temporary FetchContent build tree.
+if(UNIX AND NOT APPLE AND HYDRASDR_USE_FETCH)
+	set_target_properties(hydrasdr_jni PROPERTIES
+		BUILD_RPATH "$ORIGIN"
+		INSTALL_RPATH "$ORIGIN"
+	)
+	add_custom_command(TARGET hydrasdr_jni POST_BUILD
+		COMMAND bash -c "set -e; \
+			SRC_DIR=\"$(dirname $<TARGET_FILE:hydrasdr>)\"; \
+			DST_DIR='$<TARGET_FILE_DIR:hydrasdr_jni>'; \
+			cp -P \"$SRC_DIR\"/libhydrasdr.so* \"$DST_DIR/\""
+		VERBATIM
+		COMMENT "Copying libhydrasdr shared library beside JNI bridge"
+	)
+endif()
+
 # ============================================================
 # Post-build: macOS dylib bundling
 # ============================================================

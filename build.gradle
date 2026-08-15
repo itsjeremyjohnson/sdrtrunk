@@ -311,7 +311,7 @@ distributions {
             if(!crossTargetRuntimeRequested || hostNativePackagingRequested) {
                 from(hydraSdrJniDir) {
                     include '*.dll'
-                    include '*.so'
+                    include '*.so*'
                     include '*.dylib'
                     into 'lib/native'
                 }
@@ -399,7 +399,7 @@ def configure(org.beryx.runtime.RuntimeZipTask rt, List<String> jvmArgs, boolean
                         copy {
                             from(nativeDir) {
                                 include '*.dll'
-                                include '*.so'
+                                include '*.so*'
                                 include '*.dylib'
                             }
                             into targetDir

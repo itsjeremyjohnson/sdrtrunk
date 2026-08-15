@@ -85,6 +85,17 @@ class HydraSdrTunerControllerTest
     }
 
     @Test
+    void intersectsRestoredLimitsWithAdvertisedRange()
+    {
+        assertArrayEquals(new long[] {100, 200},
+            HydraSdrTunerController.intersectFrequencyRange(100, 200, 50, 250));
+        assertArrayEquals(new long[] {125, 175},
+            HydraSdrTunerController.intersectFrequencyRange(100, 200, 125, 175));
+        assertArrayEquals(new long[] {100, 200},
+            HydraSdrTunerController.intersectFrequencyRange(100, 200, 300, 400));
+    }
+
+    @Test
     void recognizesRfAndFilterOnlyCustomGainCapabilities()
     {
         HydraSdrDeviceInfo deviceInfo = new HydraSdrDeviceInfo();
