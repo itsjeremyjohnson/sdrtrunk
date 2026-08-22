@@ -42,7 +42,7 @@ import javax.sound.sampled.UnsupportedAudioFileException;
  *
  * Gradle invocation:
  *   ./gradlew runMdcReplay -Pwav=/path/to/sample.wav
- *                         [-PsyncThreshold=N]   sync bit-error tolerance (default 5)
+ *                         [-PsyncThreshold=N]   sync bit-error tolerance (default 8)
  *                         [-Pdump]              print every decoded bit
  *                         [-Pexport=/tmp/x.wav] export FM-demodulated audio as 8kHz mono WAV
  *                         [-PiqScale=N]         multiply I/Q samples by N before demod
@@ -76,7 +76,7 @@ public class MDCDecoderReplayTest
 
         System.out.println("MDC Replay Test: " + wav.getAbsolutePath());
         System.out.printf("  Sync bit-error threshold: %d (override with -Dmdc.sync.threshold=N)%n",
-            Integer.getInteger("mdc.sync.threshold", 5));
+            Integer.getInteger("mdc.sync.threshold", 8));
         float[] audio = loadAs8kHzAudio(wav);
         System.out.printf("  Loaded %d demodulated samples (%.2f s at 8kHz)%n",
             audio.length, audio.length / DECODER_SAMPLE_RATE);
