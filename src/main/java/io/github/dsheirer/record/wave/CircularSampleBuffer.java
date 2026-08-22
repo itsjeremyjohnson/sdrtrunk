@@ -83,20 +83,4 @@ public class CircularSampleBuffer
         mBuffer.clear();
         mSampleCount = 0;
     }
-
-    /**
-     * @return current number of buffer entries
-     */
-    public int size()
-    {
-        return mBuffer.size();
-    }
-
-    /**
-     * @return currently retained sample count
-     */
-    long getSampleCount()
-    {
-        return mSampleCount;
-    }
 }

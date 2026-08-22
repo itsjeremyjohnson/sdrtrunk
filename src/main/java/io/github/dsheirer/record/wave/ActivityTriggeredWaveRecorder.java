@@ -91,18 +91,10 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
         mAudioFormat = new AudioFormat(sampleRate, 16, 2, true, false);
 
         // Create per-channel recording subdirectory path
-        String sanitized = sanitizeChannelName(channelName);
+        String sanitized = StringUtils.replaceIllegalCharacters(channelName);
         mRecordingDirectory = recordingBaseDir.resolve(sanitized);
 
         initCircularBuffer();
-    }
-
-    /**
-     * Sanitizes a channel name for use as a filesystem directory name.
-     */
-    private static String sanitizeChannelName(String name)
-    {
-        return StringUtils.replaceIllegalCharacters(name);
     }
 
     /**
@@ -239,13 +231,8 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
     {
         try
         {
-            // Create directory if needed
-            if(!Files.exists(mRecordingDirectory))
-            {
-                Files.createDirectories(mRecordingDirectory);
-            }
+            Files.createDirectories(mRecordingDirectory);
 
-            // Build filename: timestamp_frequency_baseband.wav
             String filename = TimeStamp.getTimeStamp("_") + "_" + mChannelFrequency + "_baseband.wav";
             Path filePath = mRecordingDirectory.resolve(filename);
 

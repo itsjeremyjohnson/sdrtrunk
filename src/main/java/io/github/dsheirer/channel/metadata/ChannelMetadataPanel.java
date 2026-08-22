@@ -408,16 +408,8 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
                     else
                     {
                         label.setText(state.getDisplayValue());
-
-                        if(mBackgroundColors.containsKey(state))
-                        {
-                            background = mBackgroundColors.get(state);
-                        }
-
-                        if(mForegroundColors.containsKey(state))
-                        {
-                            foreground = mForegroundColors.get(state);
-                        }
+                        background = mBackgroundColors.getOrDefault(state, background);
+                        foreground = mForegroundColors.getOrDefault(state, foreground);
                     }
                 }
                 else if(recording)
@@ -435,16 +427,8 @@ public class ChannelMetadataPanel extends JPanel implements ListSelectionListene
             {
                 State state = ((ChannelStateIdentifier)value).getValue();
                 label.setText(state.getDisplayValue());
-
-                if(mBackgroundColors.containsKey(state))
-                {
-                    background = mBackgroundColors.get(state);
-                }
-
-                if(mForegroundColors.containsKey(state))
-                {
-                    foreground = mForegroundColors.get(state);
-                }
+                background = mBackgroundColors.getOrDefault(state, background);
+                foreground = mForegroundColors.getOrDefault(state, foreground);
             }
             else
             {

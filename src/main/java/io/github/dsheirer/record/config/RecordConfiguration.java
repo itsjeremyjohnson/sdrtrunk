@@ -18,7 +18,6 @@
  */
 package io.github.dsheirer.record.config;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.dataformat.xml.annotation.JacksonXmlProperty;
 import io.github.dsheirer.controller.config.Configuration;
 import io.github.dsheirer.record.RecorderType;
@@ -127,14 +126,5 @@ public class RecordConfiguration extends Configuration
     public void setActivitySquelchThreshold(float threshold)
     {
         mActivitySquelchThreshold = Math.max(-100.0f, Math.min(-30.0f, threshold));
-    }
-
-    /**
-     * Indicates if activity-triggered recording has a non-default squelch threshold.
-     */
-    @JsonIgnore
-    public boolean hasCustomSquelchThreshold()
-    {
-        return mActivitySquelchThreshold != DEFAULT_ACTIVITY_SQUELCH_THRESHOLD;
     }
 }
