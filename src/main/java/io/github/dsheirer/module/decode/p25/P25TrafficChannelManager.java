@@ -180,7 +180,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
      * identifier is present and has at least one alias. A missing TO is treated
      * as unaliased so we do not allocate before the talkgroup is known.
      */
-    private boolean hasAlias(IdentifierCollection ic)
+    private boolean shouldAllocate(IdentifierCollection ic)
     {
         if(!mIgnoreUnaliasedTalkgroups || mAliasList == null)
         {
@@ -1281,7 +1281,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             //Even though we have a tracked event, the initial channel grant may have been rejected.  Check to see if there
             //is a traffic channel allocated.  If not, allocate one and update the event description.
             if(!mAllocatedTrafficChannelMap.containsKey(frequency) && !(mIgnoreDataCalls && isDataChannelGrant) &&
-                hasAlias(ic))
+                shouldAllocate(ic))
             {
                 Channel trafficChannel = mAvailablePhase1TrafficChannelQueue.poll();
 
@@ -1326,7 +1326,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             return;
         }
 
-        if(!hasAlias(ic))
+        if(!shouldAllocate(ic))
         {
             return;
         }
@@ -1343,7 +1343,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
 
         //Allocate a traffic channel for the downlink frequency if one isn't already allocated
-        if(!mAllocatedTrafficChannelMap.containsKey(frequency) && hasAlias(ic))
+        if(!mAllocatedTrafficChannelMap.containsKey(frequency))
         {
             Channel trafficChannel = mAvailablePhase1TrafficChannelQueue.poll();
 
@@ -1412,7 +1412,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             //Even though we have a tracked event, the initial channel grant may have been rejected.  Check to see if there
             //is a traffic channel allocated.  If not, allocate one and update the event description.
             if(!mAllocatedTrafficChannelMap.containsKey(frequency) && !(mIgnoreDataCalls && isDataChannelGrant) &&
-                (getCurrentControlFrequency() != frequency) && hasAlias(ic))
+                (getCurrentControlFrequency() != frequency) && shouldAllocate(ic))
             {
                 Channel trafficChannel = mAvailablePhase2TrafficChannelQueue.poll();
 
@@ -1447,7 +1447,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             return;
         }
 
-        if(!hasAlias(ic))
+        if(!shouldAllocate(ic))
         {
             return;
         }
@@ -1463,8 +1463,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         addTracker(tracker, frequency, timeslot);
 
         //Allocate a traffic channel for the downlink frequency if one isn't already allocated
-        if(!mAllocatedTrafficChannelMap.containsKey(frequency) && frequency != getCurrentControlFrequency() &&
-            hasAlias(ic))
+        if(!mAllocatedTrafficChannelMap.containsKey(frequency) && frequency != getCurrentControlFrequency())
         {
             Channel trafficChannel = mAvailablePhase2TrafficChannelQueue.poll();
 

@@ -156,7 +156,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
      * identifier is present and has at least one alias. A missing TO is treated
      * as unaliased so we do not allocate before the talkgroup is known.
      */
-    private boolean hasAlias(IdentifierCollection ic)
+    private boolean shouldAllocate(IdentifierCollection ic)
     {
         if(!mIgnoreUnaliasedTalkgroups || mAliasList == null)
         {
@@ -500,7 +500,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
                     return;
                 }
 
-                if(!hasAlias(identifierCollection))
+                if(!shouldAllocate(identifierCollection))
                 {
                     if(event.getDetails() == null)
                     {
