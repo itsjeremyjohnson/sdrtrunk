@@ -19,44 +19,48 @@
 package io.github.dsheirer.record.wave;
 
 import io.github.dsheirer.sample.complex.ComplexSamples;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
+import java.util.Deque;
 import java.util.List;
 
 /**
- * Fixed-capacity circular buffer of ComplexSamples references.
- * Used as a pre-trigger buffer for activity-triggered recording.
+ * Duration-bounded buffer of ComplexSamples references used for activity-recording
+ * pre-trigger audio. Capacity is in samples, not buffer count, so the retained
+ * window stays at the configured duration regardless of channelizer chunk size.
  */
 public class CircularSampleBuffer
 {
-    private final ComplexSamples[] mBuffer;
-    private final int mCapacity;
-    private int mHead;
-    private int mCount;
+    private final Deque<ComplexSamples> mBuffer = new ArrayDeque<>();
+    private final long mMaximumSampleCount;
+    private long mSampleCount;
 
     /**
-     * Constructs an instance with the specified capacity.
-     * @param capacity maximum number of ComplexSamples entries to hold
+     * Constructs an instance with the specified sample capacity.
+     * @param maximumSampleCount maximum number of complex samples to retain
      */
-    public CircularSampleBuffer(int capacity)
+    public CircularSampleBuffer(long maximumSampleCount)
     {
-        mCapacity = capacity;
-        mBuffer = new ComplexSamples[capacity];
-        mHead = 0;
-        mCount = 0;
+        if(maximumSampleCount <= 0)
+        {
+            throw new IllegalArgumentException("Maximum sample count must be positive");
+        }
+
+        mMaximumSampleCount = maximumSampleCount;
     }
 
     /**
-     * Adds a ComplexSamples entry to the buffer, overwriting the oldest entry if full.
-     * @param samples to add
+     * Adds samples and evicts oldest complete buffers until retained duration is
+     * within the configured bound.
      */
     public void add(ComplexSamples samples)
     {
-        mBuffer[mHead] = samples;
-        mHead = (mHead + 1) % mCapacity;
+        mBuffer.addLast(samples);
+        mSampleCount += samples.length();
 
-        if(mCount < mCapacity)
+        while(mBuffer.size() > 1 && mSampleCount > mMaximumSampleCount)
         {
-            mCount++;
+            mSampleCount -= mBuffer.removeFirst().length();
         }
     }
 
@@ -66,23 +70,8 @@ public class CircularSampleBuffer
      */
     public List<ComplexSamples> drain()
     {
-        List<ComplexSamples> result = new ArrayList<>(mCount);
-
-        if(mCount > 0)
-        {
-            int start = (mHead - mCount + mCapacity) % mCapacity;
-
-            for(int i = 0; i < mCount; i++)
-            {
-                int index = (start + i) % mCapacity;
-                result.add(mBuffer[index]);
-                mBuffer[index] = null;
-            }
-
-            mCount = 0;
-            mHead = 0;
-        }
-
+        List<ComplexSamples> result = new ArrayList<>(mBuffer);
+        clear();
         return result;
     }
 
@@ -91,28 +80,23 @@ public class CircularSampleBuffer
      */
     public void clear()
     {
-        for(int i = 0; i < mCapacity; i++)
-        {
-            mBuffer[i] = null;
-        }
-
-        mCount = 0;
-        mHead = 0;
+        mBuffer.clear();
+        mSampleCount = 0;
     }
 
     /**
-     * @return current number of entries in the buffer
+     * @return current number of buffer entries
      */
     public int size()
     {
-        return mCount;
+        return mBuffer.size();
     }
 
     /**
-     * @return maximum capacity of the buffer
+     * @return currently retained sample count
      */
-    public int capacity()
+    long getSampleCount()
     {
-        return mCapacity;
+        return mSampleCount;
     }
 }

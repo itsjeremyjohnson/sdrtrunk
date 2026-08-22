@@ -110,10 +110,8 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
      */
     private void initCircularBuffer()
     {
-        // At 25kHz with ~2048 sample buffers, 2 seconds needs ~24 entries.
-        // Use a generous estimate: sampleRate * durationSec / typical buffer size
-        int estimatedBuffers = Math.max(10, (int)(mSampleRate * PRE_BUFFER_DURATION_MS / 1000.0 / 1024.0) + 2);
-        mCircularBuffer = new CircularSampleBuffer(estimatedBuffers);
+        long maximumSamples = Math.max(1, (long)(mSampleRate * PRE_BUFFER_DURATION_MS / 1000.0));
+        mCircularBuffer = new CircularSampleBuffer(maximumSamples);
     }
 
     @Override
