@@ -173,8 +173,9 @@ public class ActivityTriggeredWaveRecorder extends Module implements IComplexSam
                 if(active)
                 {
                     startRecording();
+                    //Drain the ring (which now holds the triggering buffer) instead of
+                    //writing it a second time via writeSamples().
                     writePreTriggerBuffer();
-                    writeSamples(complexSamples);
                 }
                 break;
 

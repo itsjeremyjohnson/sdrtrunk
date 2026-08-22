@@ -136,8 +136,11 @@ public class RecorderFactory
             }
         }
 
-        // Activity-triggered baseband recording (independent of RecorderType list)
-        if(channel.getRecordConfiguration().isActivityTriggeredRecording())
+        // Activity-triggered baseband recording (independent of RecorderType list).
+        // Standard channels only — traffic channels share the parent RecordConfiguration
+        // by reference, and existing baseband recording already splits BASEBAND vs
+        // TRAFFIC_BASEBAND so a busy trunking pool does not fan out writers.
+        if(channel.isStandardChannel() && channel.getRecordConfiguration().isActivityTriggeredRecording())
         {
             long frequency = getFrequency(channel);
             float threshold = channel.getRecordConfiguration().getActivitySquelchThreshold();
