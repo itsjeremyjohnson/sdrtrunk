@@ -220,7 +220,7 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            p25TrafficChannelManager = new P25TrafficChannelManager(channel);
+            p25TrafficChannelManager = new P25TrafficChannelManager(channel, aliasList);
         }
         else if(trafficChannelManager instanceof P25TrafficChannelManager p25)
         {
@@ -228,7 +228,7 @@ public class DecoderFactory
         }
         else
         {
-            p25TrafficChannelManager = new P25TrafficChannelManager(channel);
+            p25TrafficChannelManager = new P25TrafficChannelManager(channel, aliasList);
         }
 
         //Only add traffic channel manager to the modules if this is the control channel
@@ -287,7 +287,7 @@ public class DecoderFactory
 
         if(channel.getChannelType() == ChannelType.STANDARD)
         {
-            P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel);
+            P25TrafficChannelManager primaryTCM = new P25TrafficChannelManager(channel, aliasList);
             modules.add(primaryTCM);
             modules.add(new P25P1DecoderState(channel, primaryTCM));
         }
@@ -490,7 +490,7 @@ public class DecoderFactory
         }
         else
         {
-            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel);
+            dmrTrafficChannelManager = new DMRTrafficChannelManager(channel, aliasList);
         }
 
         //Only register the traffic channel manager as a module if this is the parent control channel.
@@ -737,7 +737,10 @@ public class DecoderFactory
                     copyAM.setSquelchAutoTrack(origAM.isSquelchAutoTrack());
                     return copyAM;
                 case DMR:
-                    return new DecodeConfigDMR();
+                    DecodeConfigDMR originalDMR = (DecodeConfigDMR)config;
+                    DecodeConfigDMR copyDMR = new DecodeConfigDMR();
+                    copyDMR.setIgnoreUnaliasedTalkgroups(originalDMR.getIgnoreUnaliasedTalkgroups());
+                    return copyDMR;
                 case LTR_NET:
                     DecodeConfigLTRNet originalLTRNet = (DecodeConfigLTRNet)config;
                     DecodeConfigLTRNet copyLTRNet = new DecodeConfigLTRNet();
@@ -771,6 +774,7 @@ public class DecoderFactory
                     DecodeConfigP25Phase1 originalP25 = (DecodeConfigP25Phase1)config;
                     DecodeConfigP25Phase1 copyP25 = new DecodeConfigP25Phase1();
                     copyP25.setIgnoreDataCalls(originalP25.getIgnoreDataCalls());
+                    copyP25.setIgnoreUnaliasedTalkgroups(originalP25.getIgnoreUnaliasedTalkgroups());
                     copyP25.setModulation(originalP25.getModulation());
                     copyP25.setTrafficChannelPoolSize(originalP25.getTrafficChannelPoolSize());
                     return copyP25;
@@ -778,6 +782,7 @@ public class DecoderFactory
                     DecodeConfigP25Phase2 originalP25P2 = (DecodeConfigP25Phase2)config;
                     DecodeConfigP25Phase2 copyP25P2 = new DecodeConfigP25Phase2();
 
+                    copyP25P2.setIgnoreUnaliasedTalkgroups(originalP25P2.getIgnoreUnaliasedTalkgroups());
                     if(originalP25P2.getScrambleParameters() != null)
                     {
                         copyP25P2.setScrambleParameters(originalP25P2.getScrambleParameters().copy());

@@ -70,6 +70,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     private EventLogConfigurationEditor mEventLogConfigurationEditor;
     private RecordConfigurationEditor mRecordConfigurationEditor;
     private ToggleSwitch mIgnoreDataCallsButton;
+    private ToggleSwitch mIgnoreUnaliasedTalkgroupsButton;
     private Spinner<Integer> mTrafficChannelPoolSizeSpinner;
     private SegmentedButton mModulationSegmentedButton;
     private ToggleButton mC4FMToggleButton;
@@ -148,6 +149,14 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
             Label modulationHelpLabel = new Label("C4FM: repeaters and non-simulcast trunked systems.  LSM: simulcast trunked systems.");
             GridPane.setConstraints(modulationHelpLabel, 0, 1, 6, 1);
             gridPane.getChildren().add(modulationHelpLabel);
+
+            GridPane.setConstraints(getIgnoreUnaliasedTalkgroupsButton(), 4, 2);
+            gridPane.getChildren().add(getIgnoreUnaliasedTalkgroupsButton());
+
+            Label ignoreUnaliasedLabel = new Label("Ignore Unaliased TGs");
+            GridPane.setHalignment(ignoreUnaliasedLabel, HPos.LEFT);
+            GridPane.setConstraints(ignoreUnaliasedLabel, 5, 2);
+            gridPane.getChildren().add(ignoreUnaliasedLabel);
 
             mDecoderPane.setContent(gridPane);
         }
@@ -283,6 +292,19 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         return mIgnoreDataCallsButton;
     }
 
+    private ToggleSwitch getIgnoreUnaliasedTalkgroupsButton()
+    {
+        if(mIgnoreUnaliasedTalkgroupsButton == null)
+        {
+            mIgnoreUnaliasedTalkgroupsButton = new ToggleSwitch();
+            mIgnoreUnaliasedTalkgroupsButton.setDisable(true);
+            mIgnoreUnaliasedTalkgroupsButton.selectedProperty()
+                .addListener((observable, oldValue, newValue) -> modifiedProperty().set(true));
+        }
+
+        return mIgnoreUnaliasedTalkgroupsButton;
+    }
+
     private Spinner<Integer> getTrafficChannelPoolSizeSpinner()
     {
         if(mTrafficChannelPoolSizeSpinner == null)
@@ -325,12 +347,14 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
     protected void setDecoderConfiguration(DecodeConfiguration config)
     {
         getIgnoreDataCallsButton().setDisable(config == null);
+        getIgnoreUnaliasedTalkgroupsButton().setDisable(config == null);
         getTrafficChannelPoolSizeSpinner().setDisable(config == null);
 
         if(config instanceof DecodeConfigP25Phase1)
         {
             DecodeConfigP25Phase1 decodeConfig = (DecodeConfigP25Phase1)config;
             getIgnoreDataCallsButton().setSelected(decodeConfig.getIgnoreDataCalls());
+            getIgnoreUnaliasedTalkgroupsButton().setSelected(decodeConfig.getIgnoreUnaliasedTalkgroups());
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(decodeConfig.getTrafficChannelPoolSize());
             if(decodeConfig.getModulation() == Modulation.C4FM)
             {
@@ -346,6 +370,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         else
         {
             getIgnoreDataCallsButton().setSelected(false);
+            getIgnoreUnaliasedTalkgroupsButton().setSelected(false);
             getTrafficChannelPoolSizeSpinner().getValueFactory().setValue(0);
         }
     }
@@ -365,6 +390,7 @@ public class P25P1ConfigurationEditor extends ChannelConfigurationEditor
         }
 
         config.setIgnoreDataCalls(getIgnoreDataCallsButton().isSelected());
+        config.setIgnoreUnaliasedTalkgroups(getIgnoreUnaliasedTalkgroupsButton().isSelected());
         config.setTrafficChannelPoolSize(getTrafficChannelPoolSizeSpinner().getValue());
         config.setModulation(getC4FMToggleButton().isSelected() ? Modulation.C4FM : Modulation.CQPSK);
         getItem().setDecodeConfiguration(config);

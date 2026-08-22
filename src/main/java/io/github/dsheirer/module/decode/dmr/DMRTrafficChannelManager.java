@@ -19,6 +19,7 @@
 package io.github.dsheirer.module.decode.dmr;
 
 import com.google.common.eventbus.Subscribe;
+import io.github.dsheirer.alias.AliasList;
 import io.github.dsheirer.channel.IChannelDescriptor;
 import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.Channel.ChannelType;
@@ -91,6 +92,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     private final static Logger mLog = LoggerFactory.getLogger(DMRTrafficChannelManager.class);
     public static final String CHANNEL_START_REJECTED = " REJECTED - NO TUNER";
     public static final String DATA_CALL_IGNORED = "DATA CALL IGNORED";
+    public static final String UNALIASED_CALL_IGNORED = "UNALIASED CALL IGNORED";
     public static final String MAX_TRAFFIC_CHANNELS_EXCEEDED = "MAX TRAFFIC CHANNELS EXCEEDED";
     public static final String NO_FREQUENCY = "NO FREQUENCY - CHECK PLAYLIST CHANNEL CONFIG LSN CHANNEL MAP";
     public static final long EVENT_TIME_STALE_THRESHOLD = 5000; //5 seconds
@@ -107,6 +109,8 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     private TalkerAliasManager mTalkerAliasManager = new TalkerAliasManager();
     private Channel mParentChannel;
     private boolean mIgnoreDataCalls;
+    private boolean mIgnoreUnaliasedTalkgroups = false;
+    private AliasList mAliasList;
 
     //Used as temporary storage for message and decode event history during Cap+ REST channel rotation
     private DecodeEventHistory mTransientDecodeEventHistory;
@@ -121,11 +125,18 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
      */
     public DMRTrafficChannelManager(Channel parentChannel)
     {
-        mParentChannel = parentChannel;
+        this(parentChannel, null);
+    }
 
-        if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigDMR)
+    public DMRTrafficChannelManager(Channel parentChannel, AliasList aliasList)
+    {
+        mParentChannel = parentChannel;
+        mAliasList = aliasList;
+
+        if(parentChannel.getDecodeConfiguration() instanceof DecodeConfigDMR dmrConfig)
         {
-            mIgnoreDataCalls = ((DecodeConfigDMR)parentChannel.getDecodeConfiguration()).getIgnoreDataCalls();
+            mIgnoreDataCalls = dmrConfig.getIgnoreDataCalls();
+            mIgnoreUnaliasedTalkgroups = dmrConfig.getIgnoreUnaliasedTalkgroups();
         }
 
         createTrafficChannels();
@@ -137,6 +148,29 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     public TalkerAliasManager getTalkerAliasManager()
     {
         return mTalkerAliasManager;
+    }
+
+    /**
+     * Returns true if a traffic channel should be allocated for this grant.
+     * When ignore-unaliased is off, always true. When on, true only if the TO
+     * identifier is present and has at least one alias. A missing TO is treated
+     * as unaliased so we do not allocate before the talkgroup is known.
+     */
+    private boolean shouldAllocate(IdentifierCollection ic)
+    {
+        if(!mIgnoreUnaliasedTalkgroups || mAliasList == null)
+        {
+            return true;
+        }
+
+        Identifier to = ic.getToIdentifier();
+
+        if(to == null)
+        {
+            return false;
+        }
+
+        return !mAliasList.getAliases(to).isEmpty();
     }
 
     /**
@@ -460,6 +494,21 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
                     else if(!event.getDetails().endsWith(DATA_CALL_IGNORED))
                     {
                         event.setDetails(event.getDetails() + " - " + DATA_CALL_IGNORED);
+                    }
+
+                    broadcast(event);
+                    return;
+                }
+
+                if(!shouldAllocate(identifierCollection))
+                {
+                    if(event.getDetails() == null)
+                    {
+                        event.setDetails(UNALIASED_CALL_IGNORED);
+                    }
+                    else if(!event.getDetails().endsWith(UNALIASED_CALL_IGNORED))
+                    {
+                        event.setDetails(event.getDetails() + " - " + UNALIASED_CALL_IGNORED);
                     }
 
                     broadcast(event);
