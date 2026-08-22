@@ -38,8 +38,22 @@ public class SyncPatternMatcher
 
     public SyncPatternMatcher(boolean[] syncPattern)
     {
+        this(syncPattern, 0);
+    }
+
+    /**
+     * Constructs a pattern matcher with an explicit soft mode error threshold. The mask is derived
+     * from the pattern length so leading zero bits in the pattern are preserved.
+     *
+     * @param syncPattern to match on the bit stream
+     * @param softModeErrorThreshold maximum bit errors tolerated when matching (zero for exact match)
+     */
+    public SyncPatternMatcher(boolean[] syncPattern, int softModeErrorThreshold)
+    {
+        mSoftModeErrorThreshold = softModeErrorThreshold;
+
         //Setup a bit mask of all ones the length of the sync pattern
-        mMask = (long)((FastMath.pow(2, syncPattern.length)) - 1);
+        mMask = (syncPattern.length >= 64) ? -1L : (1L << syncPattern.length) - 1L;
 
         //Convert the sync bits into a long value for comparison
         for(int x = 0; x < syncPattern.length; x++)
@@ -120,6 +134,16 @@ public class SyncPatternMatcher
         {
             return (mBits == mSync);
         }
+    }
+
+    /**
+     * Number of bit-position mismatches between the currently-shifted-in bit stream window and the
+     * sync pattern, within the mask. Useful for diagnostics and for reporting soft-match error
+     * counts to downstream consumers.
+     */
+    public int getBitErrorCount()
+    {
+        return Long.bitCount((mBits ^ mSync) & mMask);
     }
 
     /**

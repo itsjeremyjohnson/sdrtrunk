@@ -57,12 +57,20 @@ public class MDCMessageProcessor implements Listener<CorrectedBinaryMessage>
         deinterleave(buffer, 192);
 
         /**
-         * Wrap the buffer in a message along with the designated alias list
-         * and send it on its merry way
+         * Apply convolutional FEC and CRC-16-CCITT check to block one. If the CRC passes, the
+         * message is authentic; if not, it's either a soft-sync false positive on noise or a
+         * real burst with more bit errors than the FEC can correct. In either case, downstream
+         * consumers should trust only messages where isValid() returns true.
          */
-        MDCMessage message = new MDCMessage(buffer);
+        boolean block1Valid = MDC1200FEC.correctAndValidate(buffer, 40);
 
-        mBroadcaster.receive(message);
+        //Soft-sync candidates that fail CRC are expected on noise and must not
+        //reach shared message history/loggers. MDCDecoderState already ignored
+        //them; gating here drops them for every IMessage listener.
+        if(block1Valid)
+        {
+            mBroadcaster.receive(new MDCMessage(buffer, true));
+        }
     }
 
     public void addMessageListener(Listener<IMessage> listener)
@@ -109,14 +117,15 @@ public class MDCMessageProcessor implements Listener<CorrectedBinaryMessage>
     }
 
     /**
-     * Deinterleaves a 112-bit packet, starting at the offset into the buffer
+     * Deinterleaves a 112-bit packet, starting at the offset into the buffer. Package-visible so
+     * unit tests exercise the same deinterleave used in production.
      */
-    private void deinterleave(BinaryMessage buffer, int offset)
+    static void deinterleave(BinaryMessage buffer, int offset)
     {
         if(buffer.size() < sMESSAGE_LENGTH + offset)
         {
             throw new IllegalArgumentException("MDCMessageProcessor - "
-                    + "cannot deinterleave message - message buffer too short");
+                + "cannot deinterleave message - message buffer too short");
         }
 
         BinaryMessage deinterleaved = new BinaryMessage(112);
@@ -131,25 +140,21 @@ public class MDCMessageProcessor implements Listener<CorrectedBinaryMessage>
                 {
                     deinterleaved.set(deinterleavedPointer);
                 }
-
                 deinterleavedPointer++;
             }
         }
 
-        //Overlay the deinterleaved bits back onto the source message and
-        //return it
         buffer.clear(offset, offset + sMESSAGE_LENGTH);
-
         for(int x = 0; x < sMESSAGE_LENGTH; x++)
         {
             if(deinterleaved.get(x))
             {
                 buffer.set(x + offset);
             }
-            else
-            {
-                buffer.clear(x + offset);
-            }
         }
     }
+
+    /**
+     * Deinterleaves a 112-bit packet, starting at the offset into the buffer
+     */
 }
