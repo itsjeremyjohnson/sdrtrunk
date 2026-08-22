@@ -38,8 +38,22 @@ public class SyncPatternMatcher
 
     public SyncPatternMatcher(boolean[] syncPattern)
     {
+        this(syncPattern, 0);
+    }
+
+    /**
+     * Constructs a pattern matcher with an explicit soft mode error threshold. The mask is derived
+     * from the pattern length so leading zero bits in the pattern are preserved.
+     *
+     * @param syncPattern to match on the bit stream
+     * @param softModeErrorThreshold maximum bit errors tolerated when matching (zero for exact match)
+     */
+    public SyncPatternMatcher(boolean[] syncPattern, int softModeErrorThreshold)
+    {
+        mSoftModeErrorThreshold = softModeErrorThreshold;
+
         //Setup a bit mask of all ones the length of the sync pattern
-        mMask = (long)((FastMath.pow(2, syncPattern.length)) - 1);
+        mMask = (syncPattern.length >= 64) ? -1L : (1L << syncPattern.length) - 1L;
 
         //Convert the sync bits into a long value for comparison
         for(int x = 0; x < syncPattern.length; x++)
@@ -69,22 +83,6 @@ public class SyncPatternMatcher
     {
         this(sync);
 
-        mSoftModeErrorThreshold = softModeErrorThreshold;
-    }
-
-    /**
-     * Constructs a pattern matcher with explicit pattern length. Use this for sync patterns whose
-     * MSB is zero — the single-arg long constructor derives the mask from the sync value and
-     * cannot preserve leading zero bits.
-     *
-     * @param sync pattern value, right-aligned in the long
-     * @param lengthBits number of significant bits in the sync pattern (leading zeros included)
-     * @param softModeErrorThreshold maximum bit errors tolerated in soft-match mode
-     */
-    public SyncPatternMatcher(long sync, int lengthBits, int softModeErrorThreshold)
-    {
-        mSync = sync;
-        mMask = (lengthBits >= 64) ? -1L : (1L << lengthBits) - 1L;
         mSoftModeErrorThreshold = softModeErrorThreshold;
     }
 

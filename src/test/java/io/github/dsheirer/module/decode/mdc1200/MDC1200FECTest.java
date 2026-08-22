@@ -21,6 +21,7 @@ package io.github.dsheirer.module.decode.mdc1200;
 import io.github.dsheirer.bits.CorrectedBinaryMessage;
 import org.junit.jupiter.api.Test;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
@@ -96,7 +97,6 @@ class MDC1200FECTest
         CorrectedBinaryMessage buffer = new CorrectedBinaryMessage(304);
         //Fill first 40 bits as the sync pattern (position not important for the test since
         //MDCMessageProcessor doesn't re-validate the sync — it trusts the framer).
-        int[] pad = new int[0];
         for(int bit = 0; bit < 112; bit++)
         {
             int byteIdx = bit / 8;
@@ -108,7 +108,7 @@ class MDC1200FECTest
         }
 
         //Run the same deinterleave + FEC pass the real decoder does.
-        MDCMessageProcessor.deinterleaveStatic(buffer, 40);
+        MDCMessageProcessor.deinterleave(buffer, 40);
         boolean valid = MDC1200FEC.correctAndValidate(buffer, 40);
 
         assertTrue(valid, "CRC should pass on error-free encoded frame");
@@ -148,7 +148,7 @@ class MDC1200FECTest
         //Flip a single bit in the interleaved stream (simulates a symbol error during reception).
         buffer.flip(40 + 37);
 
-        MDCMessageProcessor.deinterleaveStatic(buffer, 40);
+        MDCMessageProcessor.deinterleave(buffer, 40);
         boolean valid = MDC1200FEC.correctAndValidate(buffer, 40);
 
         assertTrue(valid, "FEC should correct a single bit error and CRC should still pass");
@@ -191,10 +191,10 @@ class MDC1200FECTest
             buffer.flip(40 + b);
         }
 
-        MDCMessageProcessor.deinterleaveStatic(buffer, 40);
+        MDCMessageProcessor.deinterleave(buffer, 40);
         boolean valid = MDC1200FEC.correctAndValidate(buffer, 40);
 
-        assertEquals(false, valid,
+        assertFalse(valid,
             "CRC should reject a frame with extensive bit errors — no phantom decode");
     }
 

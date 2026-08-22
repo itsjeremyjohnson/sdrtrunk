@@ -65,15 +65,7 @@ public class MessageFramer implements IBinarySymbolProcessor, Listener<Boolean>,
     public MessageFramer(boolean[] syncPattern, int messageLength, int softSyncBitErrorThreshold)
     {
         mSyncPattern = syncPattern;
-        long syncLong = 0L;
-        for(int i = 0; i < syncPattern.length; i++)
-        {
-            if(syncPattern[i])
-            {
-                syncLong |= 1L << (syncPattern.length - 1 - i);
-            }
-        }
-        mMatcher = new SyncPatternMatcher(syncLong, syncPattern.length, softSyncBitErrorThreshold);
+        mMatcher = new SyncPatternMatcher(syncPattern, softSyncBitErrorThreshold);
         mMatcher.setSoftMode(true);
         mMessageLength = messageLength;
     }

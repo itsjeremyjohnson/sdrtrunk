@@ -117,10 +117,10 @@ public class MDCMessageProcessor implements Listener<CorrectedBinaryMessage>
     }
 
     /**
-     * Package-visible static version of {@link #deinterleave(BinaryMessage, int)} used by unit
-     * tests to exercise the same deinterleave used in production.
+     * Deinterleaves a 112-bit packet, starting at the offset into the buffer. Package-visible so
+     * unit tests exercise the same deinterleave used in production.
      */
-    static void deinterleaveStatic(BinaryMessage buffer, int offset)
+    static void deinterleave(BinaryMessage buffer, int offset)
     {
         if(buffer.size() < sMESSAGE_LENGTH + offset)
         {
@@ -157,8 +157,4 @@ public class MDCMessageProcessor implements Listener<CorrectedBinaryMessage>
     /**
      * Deinterleaves a 112-bit packet, starting at the offset into the buffer
      */
-    private void deinterleave(BinaryMessage buffer, int offset)
-    {
-        deinterleaveStatic(buffer, offset);
-    }
 }
