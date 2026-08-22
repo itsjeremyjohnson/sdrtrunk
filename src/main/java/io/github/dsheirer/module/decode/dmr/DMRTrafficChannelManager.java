@@ -151,10 +151,10 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
     }
 
     /**
-     * Returns true if the identifier collection's TO talkgroup has at least one alias in the parent
-     * channel's alias list, or if alias-based filtering is not enabled.
-     * @param ic identifier collection to check
-     * @return true if the call should be processed, false if it should be ignored
+     * Returns true if a traffic channel should be allocated for this grant.
+     * When ignore-unaliased is off, always true. When on, true only if the TO
+     * identifier is present and has at least one alias. A missing TO is treated
+     * as unaliased so we do not allocate before the talkgroup is known.
      */
     private boolean hasAlias(IdentifierCollection ic)
     {
@@ -167,7 +167,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
 
         if(to == null)
         {
-            return true;
+            return false;
         }
 
         return !mAliasList.getAliases(to).isEmpty();
@@ -414,16 +414,7 @@ public class DMRTrafficChannelManager extends TrafficChannelManager implements I
 
             if(allocated)
             {
-                //If filtering is enabled and the talkgroup is not aliased, tear down the already-allocated channel
-                if(!hasAlias(identifierCollection))
-                {
-                    Channel trafficChannel = mAllocatedChannelFrequencyMap.get(channel.getDownlinkFrequency());
-                    if(trafficChannel != null)
-                    {
-                        broadcast(new ChannelEvent(trafficChannel, Event.REQUEST_DISABLE));
-                    }
-                }
-                //Otherwise do nothing & let the channel maintain its own event state
+                //Note: if traffic channel is allocated then do nothing & let the channel maintain its own event state
             }
             else
             {

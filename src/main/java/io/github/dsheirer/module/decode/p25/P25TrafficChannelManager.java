@@ -175,10 +175,10 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     }
 
     /**
-     * Returns true if the identifier collection's TO talkgroup has at least one alias in the parent
-     * channel's alias list, or if alias-based filtering is not enabled.
-     * @param ic identifier collection to check
-     * @return true if the call should be processed, false if it should be ignored
+     * Returns true if a traffic channel should be allocated for this grant.
+     * When ignore-unaliased is off, always true. When on, true only if the TO
+     * identifier is present and has at least one alias. A missing TO is treated
+     * as unaliased so we do not allocate before the talkgroup is known.
      */
     private boolean hasAlias(IdentifierCollection ic)
     {
@@ -191,7 +191,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
 
         if(to == null)
         {
-            return true; // No talkgroup to check — let it through
+            return false;
         }
 
         return !mAliasList.getAliases(to).isEmpty();
