@@ -1252,11 +1252,6 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
     {
         long frequency = apco25Channel.getDownlinkFrequency();
 
-        if(!hasAlias(ic))
-        {
-            return;
-        }
-
         P25TrafficChannelEventTracker tracker = getTrackerRemoveIfStale(frequency, P25P1Message.TIMESLOT_1, timestamp);
 
         if(tracker != null && tracker.isSameCallCheckingToOnly(ic, timestamp))
@@ -1285,7 +1280,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
 
             //Even though we have a tracked event, the initial channel grant may have been rejected.  Check to see if there
             //is a traffic channel allocated.  If not, allocate one and update the event description.
-            if(!mAllocatedTrafficChannelMap.containsKey(frequency) && !(mIgnoreDataCalls && isDataChannelGrant))
+            if(!mAllocatedTrafficChannelMap.containsKey(frequency) && !(mIgnoreDataCalls && isDataChannelGrant) &&
+                hasAlias(ic))
             {
                 Channel trafficChannel = mAvailablePhase1TrafficChannelQueue.poll();
 
@@ -1330,6 +1326,11 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             return;
         }
 
+        if(!hasAlias(ic))
+        {
+            return;
+        }
+
         String details = isDataChannelGrant ? "PHASE 1 DATA CHANNEL GRANT " : "PHASE 1 CHANNEL GRANT " +
                 (serviceOptions != null ? serviceOptions : "");
 
@@ -1342,7 +1343,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         addTracker(tracker, frequency, P25P1Message.TIMESLOT_1);
 
         //Allocate a traffic channel for the downlink frequency if one isn't already allocated
-        if(!mAllocatedTrafficChannelMap.containsKey(frequency))
+        if(!mAllocatedTrafficChannelMap.containsKey(frequency) && hasAlias(ic))
         {
             Channel trafficChannel = mAvailablePhase1TrafficChannelQueue.poll();
 
@@ -1384,11 +1385,6 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         long frequency = apco25Channel.getDownlinkFrequency();
         ic.setTimeslot(timeslot);
 
-        if(!hasAlias(ic))
-        {
-            return;
-        }
-
         P25TrafficChannelEventTracker tracker = getTrackerRemoveIfStale(apco25Channel, timestamp);
 
         if(tracker != null && tracker.isSameCallCheckingToOnly(ic, timestamp))
@@ -1416,7 +1412,7 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             //Even though we have a tracked event, the initial channel grant may have been rejected.  Check to see if there
             //is a traffic channel allocated.  If not, allocate one and update the event description.
             if(!mAllocatedTrafficChannelMap.containsKey(frequency) && !(mIgnoreDataCalls && isDataChannelGrant) &&
-                (getCurrentControlFrequency() != frequency))
+                (getCurrentControlFrequency() != frequency) && hasAlias(ic))
             {
                 Channel trafficChannel = mAvailablePhase2TrafficChannelQueue.poll();
 
@@ -1451,6 +1447,11 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
             return;
         }
 
+        if(!hasAlias(ic))
+        {
+            return;
+        }
+
         P25ChannelGrantEvent event = P25ChannelGrantEvent.builder(decodeEventType, timestamp, serviceOptions)
             .channelDescriptor(apco25Channel)
             .details("PHASE 2 CHANNEL GRANT " + (serviceOptions != null ? serviceOptions : ""))
@@ -1462,7 +1463,8 @@ public class P25TrafficChannelManager extends TrafficChannelManager implements I
         addTracker(tracker, frequency, timeslot);
 
         //Allocate a traffic channel for the downlink frequency if one isn't already allocated
-        if(!mAllocatedTrafficChannelMap.containsKey(frequency) && frequency != getCurrentControlFrequency())
+        if(!mAllocatedTrafficChannelMap.containsKey(frequency) && frequency != getCurrentControlFrequency() &&
+            hasAlias(ic))
         {
             Channel trafficChannel = mAvailablePhase2TrafficChannelQueue.poll();
 
