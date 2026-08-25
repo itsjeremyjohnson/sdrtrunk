@@ -48,7 +48,6 @@ import io.github.dsheirer.util.ThreadPool;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.TimeUnit;
@@ -555,8 +554,8 @@ public class TunerManager implements IDiscoveredTunerStatusListener
      * @return a configured source or null if there aren't any tuners that can provide the source.
      * @throws SourceException if there is an issue.
      */
-    public Source getSource(SourceConfiguration config, ChannelSpecification channelSpecification,
-                            String threadName) throws SourceException
+    public synchronized Source getSource(SourceConfiguration config, ChannelSpecification channelSpecification,
+                                         String threadName) throws SourceException
     {
         Source retVal = null;
 
@@ -608,63 +607,161 @@ public class TunerManager implements IDiscoveredTunerStatusListener
      *
      * Returns null if no tuner can source the channel
      */
-    public Source getSource(TunerChannel tunerChannel, ChannelSpecification channelSpecification, String preferredTuner,
-                            String threadName)
+    public synchronized Source getSource(TunerChannel tunerChannel, ChannelSpecification channelSpecification,
+                                         String preferredTuner, String threadName)
     {
-        TunerChannelSource source = null;
-
-        if(tunerChannel != null && channelSpecification != null)
+        if(tunerChannel == null || channelSpecification == null)
         {
-            DiscoveredTuner discoveredTuner;
+            return null;
+        }
 
-            if(preferredTuner != null)
+        DiscoveredTuner preferred = preferredTuner != null ? getDiscoveredTuner(preferredTuner) : null;
+        TunerChannelSource source = tryTuner(preferred, tunerChannel, channelSpecification, threadName);
+        if(source != null)
+        {
+            return source;
+        }
+
+        for(DiscoveredTuner discoveredTuner : mDiscoveredTunerModel.getAvailableTuners())
+        {
+            if(discoveredTuner != preferred)
             {
-                discoveredTuner = getDiscoveredTuner(preferredTuner);
-
-                if(discoveredTuner != null)
+                source = tryTuner(discoveredTuner, tunerChannel, channelSpecification, threadName);
+                if(source != null)
                 {
-                    try
-                    {
-                        source = discoveredTuner.getTuner().getChannelSourceManager().getSource(tunerChannel,
-                                channelSpecification, threadName);
-
-                        if(source != null)
-                        {
-                            return source;
-                        }
-                    }
-                    catch(Exception e)
-                    {
-                        //Fall through to logger below
-                    }
-                }
-
-                mLog.info("Unable to source channel [" + tunerChannel.getFrequency() + "] from preferred tuner [" +
-                        preferredTuner + "] - searching for another tuner");
-            }
-
-            Iterator<DiscoveredTuner> it = mDiscoveredTunerModel.getAvailableTuners().iterator();
-
-            while(it.hasNext() && source == null)
-            {
-                discoveredTuner = it.next();
-
-                if(discoveredTuner.hasTuner())
-                {
-                    try
-                    {
-                        source = discoveredTuner.getTuner().getChannelSourceManager().getSource(tunerChannel,
-                                channelSpecification, threadName);
-                    }
-                    catch(Exception e)
-                    {
-                        mLog.error("Error obtaining channel from tuner [" + discoveredTuner.getTuner().getPreferredName() + "]", e);
-                    }
+                    return source;
                 }
             }
         }
 
-        return source;
+        if(preferredTuner != null)
+        {
+            mLog.info("Unable to source channel [" + tunerChannel.getFrequency() + "] from preferred tuner [" +
+                preferredTuner + "] - searched all available tuners");
+        }
+        return null;
+    }
+
+    /**
+     * Obtains a tuner source while preserving the requested number of idle tuners.  Active tuners are tried first,
+     * since adding an in-band channel to one does not consume the idle reserve.  This method shares the TunerManager
+     * monitor with every ordinary allocation path so the reserve check and any idle-tuner activation are atomic.
+     */
+    public synchronized Source getSourceWithHeadroom(SourceConfiguration config,
+                                                     ChannelSpecification channelSpecification,
+                                                     String threadName, int idleTunerReserve) throws SourceException
+    {
+        if(config instanceof SourceConfigTuner sourceConfigTuner)
+        {
+            TunerChannel tunerChannel = sourceConfigTuner.getTunerChannel(channelSpecification.getBandwidth());
+            return getSourceWithIdleReserve(tunerChannel, channelSpecification, sourceConfigTuner.getPreferredTuner(),
+                threadName + " " + tunerChannel.getFrequency(), Math.max(0, idleTunerReserve));
+        }
+
+        return getSource(config, channelSpecification, threadName);
+    }
+
+    private Source getSourceWithIdleReserve(TunerChannel tunerChannel, ChannelSpecification channelSpecification,
+                                            String preferredTuner, String threadName, int idleTunerReserve)
+    {
+        if(tunerChannel == null || channelSpecification == null)
+        {
+            return null;
+        }
+
+        List<DiscoveredTuner> availableTuners = mDiscoveredTunerModel.getAvailableTuners();
+        DiscoveredTuner preferred = preferredTuner != null ? getDiscoveredTuner(preferredTuner) : null;
+
+        TunerChannelSource source = tryTuner(preferred, false, tunerChannel, channelSpecification, threadName);
+        if(source != null)
+        {
+            return source;
+        }
+
+        for(DiscoveredTuner discoveredTuner : availableTuners)
+        {
+            if(discoveredTuner != preferred)
+            {
+                source = tryTuner(discoveredTuner, false, tunerChannel, channelSpecification, threadName);
+                if(source != null)
+                {
+                    return source;
+                }
+            }
+        }
+
+        long idleTuners = availableTuners.stream().filter(TunerManager::isIdleTuner).count();
+        if(!canActivateIdleTuner(idleTuners, idleTunerReserve))
+        {
+            return null;
+        }
+
+        source = tryTuner(preferred, true, tunerChannel, channelSpecification, threadName);
+        if(source != null)
+        {
+            return source;
+        }
+
+        for(DiscoveredTuner discoveredTuner : availableTuners)
+        {
+            if(discoveredTuner != preferred)
+            {
+                source = tryTuner(discoveredTuner, true, tunerChannel, channelSpecification, threadName);
+                if(source != null)
+                {
+                    return source;
+                }
+            }
+        }
+
+        if(preferredTuner != null)
+        {
+            mLog.info("Unable to source channel [" + tunerChannel.getFrequency() + "] from preferred tuner [" +
+                preferredTuner + "] - searched all available tuners");
+        }
+
+        return null;
+    }
+
+    private TunerChannelSource tryTuner(DiscoveredTuner discoveredTuner, boolean idle,
+                                        TunerChannel tunerChannel, ChannelSpecification channelSpecification,
+                                        String threadName)
+    {
+        return discoveredTuner != null && isIdleTuner(discoveredTuner) == idle
+            ? tryTuner(discoveredTuner, tunerChannel, channelSpecification, threadName) : null;
+    }
+
+    private TunerChannelSource tryTuner(DiscoveredTuner discoveredTuner, TunerChannel tunerChannel,
+                                        ChannelSpecification channelSpecification, String threadName)
+    {
+        if(discoveredTuner == null || !discoveredTuner.hasTuner()
+            || discoveredTuner.getTuner().getChannelSourceManager() == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            return discoveredTuner.getTuner().getChannelSourceManager().getSource(tunerChannel,
+                channelSpecification, threadName);
+        }
+        catch(Exception e)
+        {
+            mLog.error("Error obtaining channel from tuner [" + discoveredTuner.getTuner().getPreferredName() + "]", e);
+            return null;
+        }
+    }
+
+    static boolean canActivateIdleTuner(long idleTunerCount, int idleTunerReserve)
+    {
+        return idleTunerCount > Math.max(0, idleTunerReserve);
+    }
+
+    static boolean isIdleTuner(DiscoveredTuner discoveredTuner)
+    {
+        return discoveredTuner != null && discoveredTuner.hasTuner()
+            && discoveredTuner.getTuner().getChannelSourceManager() != null
+            && discoveredTuner.getTuner().getChannelSourceManager().getTunerChannelCount() == 0;
     }
 
     /**

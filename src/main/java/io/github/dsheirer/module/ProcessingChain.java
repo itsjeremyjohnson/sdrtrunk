@@ -76,7 +76,6 @@ import io.github.dsheirer.source.heartbeat.IHeartbeatProvider;
 import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.Collections;
-import java.util.Iterator;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
@@ -214,27 +213,33 @@ public class ProcessingChain implements Listener<ChannelEvent>
     }
 
     /**
-     * Removes any module that is an instance of a TrafficChannelManager
+     * Removes any module that is an instance of a TrafficChannelManager through the standard module deregistration
+     * path.  Removed managers are not disposed because callers may retain or reuse them.
      */
     public void removeTrafficChannelManager()
     {
+        List<Module> trafficChannelManagers = new ArrayList<>();
+
         mModuleLock.lock();
 
         try
         {
-            Iterator<Module> it = mModules.iterator();
-
-            while(it.hasNext())
+            for(Module module : mModules)
             {
-                if(it.next() instanceof TrafficChannelManager)
+                if(module instanceof TrafficChannelManager)
                 {
-                    it.remove();
+                    trafficChannelManagers.add(module);
                 }
             }
         }
         finally
         {
             mModuleLock.unlock();
+        }
+
+        for(Module trafficChannelManager : trafficChannelManagers)
+        {
+            removeModule(trafficChannelManager);
         }
     }
 

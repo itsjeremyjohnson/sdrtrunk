@@ -34,6 +34,7 @@ import io.github.dsheirer.controller.channel.Channel;
 import io.github.dsheirer.controller.channel.ChannelAutoStartFrame;
 import io.github.dsheirer.controller.channel.ChannelException;
 import io.github.dsheirer.controller.channel.ChannelSelectionManager;
+import io.github.dsheirer.controller.channel.map.ChannelMapModel;
 import io.github.dsheirer.eventbus.MyEventBus;
 import io.github.dsheirer.gui.icon.ViewIconManagerRequest;
 import io.github.dsheirer.gui.playlist.ViewPlaylistRequest;
@@ -45,16 +46,34 @@ import io.github.dsheirer.gui.viewer.ViewRecordingViewerRequest;
 import io.github.dsheirer.icon.IconModel;
 import io.github.dsheirer.log.ApplicationLog;
 import io.github.dsheirer.map.MapService;
+import io.github.dsheirer.module.decode.DecoderType;
+import io.github.dsheirer.module.discovery.BandScanController;
+import io.github.dsheirer.module.discovery.Candidate;
+import io.github.dsheirer.module.discovery.ClassificationResult;
+import io.github.dsheirer.module.discovery.DiscoveryChannelFactory;
+import io.github.dsheirer.module.discovery.DiscoveryModel;
+import io.github.dsheirer.module.discovery.LockState;
+import io.github.dsheirer.module.discovery.ProbeChainFactory;
+import io.github.dsheirer.module.discovery.SignalClassifier;
+import io.github.dsheirer.module.discovery.SourceProvider;
+import io.github.dsheirer.module.discovery.SpectralSurvey;
+import io.github.dsheirer.module.discovery.TunerControlImpl;
 import io.github.dsheirer.module.log.EventLogManager;
 import io.github.dsheirer.monitor.DiagnosticMonitor;
 import io.github.dsheirer.monitor.ResourceMonitor;
 import io.github.dsheirer.playlist.PlaylistManager;
+import io.github.dsheirer.spectrum.ClickToTuneController;
 import io.github.dsheirer.preference.UserPreferences;
 import io.github.dsheirer.properties.SystemProperties;
 import io.github.dsheirer.record.AudioRecordingManager;
+import io.github.dsheirer.record.LiveAudioRecordingManager;
 import io.github.dsheirer.sample.Listener;
 import io.github.dsheirer.settings.SettingsManager;
+import io.github.dsheirer.source.ComplexSource;
+import io.github.dsheirer.source.SourceException;
+import io.github.dsheirer.source.config.SourceConfiguration;
 import io.github.dsheirer.source.tuner.Tuner;
+import io.github.dsheirer.source.tuner.channel.ChannelSpecification;
 import io.github.dsheirer.source.tuner.TunerEvent;
 import io.github.dsheirer.source.tuner.manager.DiscoveredTuner;
 import io.github.dsheirer.source.tuner.manager.TunerManager;
@@ -67,6 +86,9 @@ import io.github.dsheirer.util.ThreadPool;
 import io.github.dsheirer.util.TimeStamp;
 import io.github.dsheirer.vector.calibrate.CalibrationManager;
 import java.awt.AWTException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.awt.Desktop;
 import java.awt.Dimension;
 import java.awt.EventQueue;
@@ -85,7 +107,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.List;
 import java.util.Locale;
+import java.util.Objects;
 import java.util.Optional;
+import java.util.function.Consumer;
 import java.util.prefs.Preferences;
 import javafx.application.Platform;
 import javafx.embed.swing.JFXPanel;
@@ -103,6 +127,7 @@ import javax.swing.JMenu;
 import javax.swing.JMenuBar;
 import javax.swing.JMenuItem;
 import javax.swing.JOptionPane;
+import javax.swing.JPopupMenu;
 import javax.swing.JSeparator;
 import javax.swing.KeyStroke;
 import javax.swing.UIManager;
@@ -128,6 +153,7 @@ public class SDRTrunk implements Listener<TunerEvent>
     private boolean mNowPlayingDetailsVisible;
     private AudioRecordingManager mAudioRecordingManager;
     private AudioStreamingManager mAudioStreamingManager;
+    private LiveAudioRecordingManager mLiveAudioRecordingManager;
     private BroadcastStatusPanel mBroadcastStatusPanel;
     private ControllerPanel mControllerPanel;
     private DiagnosticMonitor mDiagnosticMonitor;
@@ -141,6 +167,11 @@ public class SDRTrunk implements Listener<TunerEvent>
     private LocalControlApiServer mLocalControlApiServer;
     private UserPreferences mUserPreferences = new UserPreferences();
     private TunerManager mTunerManager;
+    private ExecutorService mDiscoveryExecutor;
+    private SignalClassifier mSignalClassifier;
+    private SpectralSurvey mSpectralSurvey;
+    private DiscoveryModel mDiscoveryModel;
+    private BandScanController mBandScanController;
     private ApplicationLog mApplicationLog;
     private ResourceMonitor mResourceMonitor;
     private JFXPanel mResourceStatusPanel;
@@ -204,6 +235,45 @@ public class SDRTrunk implements Listener<TunerEvent>
         EventLogManager eventLogManager = new EventLogManager(aliasModel, mUserPreferences);
         mPlaylistManager = new PlaylistManager(mUserPreferences, mTunerManager, aliasModel, eventLogManager, mIconModel);
 
+        // --- Signal Discovery Engine (Phase 1 — no UI yet) -------------------
+        // NOTE: mDiscoveryExecutor MUST remain an unbounded/cached pool.  BandScanController
+        // submits nested classification tasks from the outer scan thread; a fixed-size pool
+        // risks deadlock when all threads are blocked waiting for classify futures that are
+        // queued behind the waiting threads.
+        mDiscoveryExecutor = Executors.newCachedThreadPool(r -> {
+            Thread t = new Thread(r, "discovery-worker");
+            t.setDaemon(true);
+            return t;
+        });
+        SourceProvider sourceProvider = new SourceProvider()
+        {
+            @Override
+            public ComplexSource acquire(SourceConfiguration config, ChannelSpecification spec,
+                                         String name) throws SourceException
+            {
+                return (ComplexSource)mTunerManager.getSource(config, spec, name);
+            }
+
+            @Override
+            public ComplexSource acquireWithHeadroom(SourceConfiguration config,
+                                                       ChannelSpecification spec,
+                                                       String name,
+                                                       int headroomChannels) throws SourceException
+            {
+                return (ComplexSource)mTunerManager.getSourceWithHeadroom(config, spec, name, headroomChannels);
+            }
+        };
+        ProbeChainFactory probeChainFactory = new ProbeChainFactory(aliasModel,
+            mPlaylistManager.getChannelMapModel(), mUserPreferences);
+        // SignalClassifier is constructed unconditionally (before the !headless gate)
+        // because ClickToTuneController and BandScanController are both constructed
+        // inside the !headless block and share this single classifier instance.
+        // SpectralSurvey, DiscoveryModel, and BandScanController are gated with !headless
+        // because they pair with the ClickToTuneController which is Swing/!headless-only.
+        mSignalClassifier = new SignalClassifier(sourceProvider, probeChainFactory,
+            mUserPreferences.getDiscoveryPreference(), mDiscoveryExecutor);
+        // --- End Signal Discovery Engine -------------------------------------
+
         boolean headless = GraphicsEnvironment.isHeadless();
 
         mDiagnosticMonitor = new DiagnosticMonitor(mUserPreferences, mPlaylistManager.getChannelProcessingManager(),
@@ -226,6 +296,9 @@ public class SDRTrunk implements Listener<TunerEvent>
         mAudioRecordingManager = new AudioRecordingManager(mUserPreferences);
         mAudioRecordingManager.start();
 
+        mLiveAudioRecordingManager = new LiveAudioRecordingManager(mUserPreferences);
+        mLiveAudioRecordingManager.start();
+
         mAudioStreamingManager = new AudioStreamingManager(mPlaylistManager.getBroadcastModel(), BroadcastFormat.MP3,
             mUserPreferences);
         mAudioStreamingManager.start();
@@ -234,6 +307,7 @@ public class SDRTrunk implements Listener<TunerEvent>
 
         mPlaylistManager.getChannelProcessingManager().addAudioSegmentListener(duplicateCallDetector);
         mPlaylistManager.getChannelProcessingManager().addAudioSegmentListener(audioPlaybackManager);
+        mPlaylistManager.getChannelProcessingManager().addAudioSegmentListener(mLiveAudioRecordingManager);
         mPlaylistManager.getChannelProcessingManager().addAudioSegmentListener(mAudioRecordingManager);
         mPlaylistManager.getChannelProcessingManager().addAudioSegmentListener(mAudioStreamingManager);
 
@@ -244,11 +318,169 @@ public class SDRTrunk implements Listener<TunerEvent>
 
         if(!GraphicsEnvironment.isHeadless())
         {
-            mControllerPanel = new ControllerPanel(mPlaylistManager, audioPlaybackManager, mIconModel, mapService,
-                    mSettingsManager, mTunerManager, mUserPreferences, mNowPlayingDetailsVisible);
+            mControllerPanel = new ControllerPanel(mPlaylistManager, audioPlaybackManager, mLiveAudioRecordingManager,
+                    mIconModel, mapService, mSettingsManager, mTunerManager, mUserPreferences, mNowPlayingDetailsVisible);
         }
 
         mSpectralPanel = new SpectralDisplayPanel(mPlaylistManager, mSettingsManager, mTunerManager.getDiscoveredTunerModel());
+
+        // --- Click-to-tune controller (Phase 2) --------------------------------
+        if(!headless)
+        {
+            DiscoveryChannelFactory channelFactory = new DiscoveryChannelFactory();
+            ClickToTuneController clickToTuneController = new ClickToTuneController(
+                mSignalClassifier,
+                mPlaylistManager.getChannelModel(),
+                mPlaylistManager.getChannelProcessingManager(),
+                channelFactory,
+                mUserPreferences,
+                new ClickToTuneController.UICallbacks()
+                {
+                    @Override
+                    public void showPending(long centerFreqHz, int widthHz)
+                    {
+                        mSpectralPanel.showPendingOverlay(centerFreqHz, widthHz);
+                    }
+
+                    @Override
+                    public void clearPending()
+                    {
+                        mSpectralPanel.clearPendingOverlay();
+                    }
+
+                    @Override
+                    public void showMissPopup(
+                        ClassificationResult result,
+                        Runnable redetect,
+                        Consumer<DecoderType> tuneAs)
+                    {
+                        String outcome = result.outcome().name().replace('_', ' ').toLowerCase();
+                        String freq = String.format(Locale.ROOT, "%.4f MHz",
+                            result.centerFrequencyHz() / 1e6);
+
+                        // Collect candidates that reached a PARTIAL lock — we offer them as
+                        // "start it anyway as X?" shortcuts in the miss popup.
+                        List<Candidate> partials = result.candidates().stream()
+                            .filter(c -> c.lockState() == LockState.PARTIAL)
+                            .toList();
+
+                        // Build the message body; if there are partial candidates, name them.
+                        StringBuilder message = new StringBuilder();
+                        message.append("No confirmed lock at ").append(freq)
+                               .append(" (").append(outcome).append(").");
+                        if(!partials.isEmpty())
+                        {
+                            message.append("\nPartial sync detected: ");
+                            for(int i = 0; i < partials.size(); i++)
+                            {
+                                if(i > 0) message.append(", ");
+                                message.append(partials.get(i).decoderType().getDisplayString());
+                            }
+                            message.append(".");
+                        }
+                        message.append("\nChoose an action:");
+
+                        // Fixed options + one "Start as <partial>" entry per partial candidate
+                        java.util.List<String> optionList = new java.util.ArrayList<>();
+                        optionList.add("Keep listening");
+                        for(Candidate partial : partials)
+                        {
+                            optionList.add("Start as " + partial.decoderType().getDisplayString());
+                        }
+                        optionList.add("Pick decoder...");
+                        optionList.add("Cancel");
+
+                        Object[] options = optionList.toArray();
+                        int choice = JOptionPane.showOptionDialog(
+                            mSpectralPanel,
+                            message.toString(),
+                            "Click-to-tune: no match",
+                            JOptionPane.DEFAULT_OPTION,
+                            JOptionPane.INFORMATION_MESSAGE,
+                            null,
+                            options,
+                            options[options.length - 1]
+                        );
+
+                        if(choice == 0)
+                        {
+                            // Keep listening — re-run the classifier with a longer deadline
+                            redetect.run();
+                        }
+                        else if(choice > 0 && choice <= partials.size())
+                        {
+                            // "Start as <partial>" — tune directly with that decoder
+                            tuneAs.accept(partials.get(choice - 1).decoderType());
+                        }
+                        else if(choice == partials.size() + 1)
+                        {
+                            // "Pick decoder..." — show the full decoder picker
+                            JPopupMenu picker = new JPopupMenu("Decode as...");
+
+                            for(DecoderType type : DecoderType.PRIMARY_DECODERS)
+                            {
+                                JMenuItem item = new JMenuItem(type.getDisplayString());
+                                item.addActionListener(e -> tuneAs.accept(type));
+                                picker.add(item);
+                            }
+
+                            picker.show(mSpectralPanel, mSpectralPanel.getWidth() / 2,
+                                mSpectralPanel.getHeight() / 2);
+                        }
+                        // else: "Cancel" or dialog closed — no action
+                    }
+
+                    @Override
+                    public void reportStartFailure(Channel channel, String reason)
+                    {
+                        mLog.warn("Click-to-tune channel '{}' failed to start: {}",
+                            channel.getName(), reason);
+                        JOptionPane.showMessageDialog(
+                            mSpectralPanel,
+                            "Could not start channel '" + channel.getName() + "':\n" +
+                                Objects.requireNonNullElse(reason, "unknown error"),
+                            "Click-to-tune: start failed",
+                            JOptionPane.WARNING_MESSAGE
+                        );
+                    }
+                }
+            );
+
+            mSpectralPanel.setClickToTuneController(clickToTuneController);
+
+            // --- Band-scan controller (Phase 3 — no UI yet) -------------------
+            // SpectralSurvey taps the tuner's full-rate wideband I/Q buffer directly
+            // (same stream as the live spectrum display) rather than going through the
+            // polyphase channelizer.  No source provider is needed.
+            mSpectralSurvey = new SpectralSurvey(mDiscoveryExecutor);
+            mDiscoveryModel = new DiscoveryModel();
+            // Wire a TunerControlImpl that always resolves to whichever tuner the spectral
+            // display is currently showing — so the stepped sweep follows tuner switches.
+            TunerControlImpl tunerControl = new TunerControlImpl(mSpectralPanel::getTunerController);
+
+            mBandScanController = new BandScanController(
+                mSignalClassifier,
+                mSpectralSurvey,
+                mDiscoveryModel,
+                mPlaylistManager.getChannelModel(),
+                mPlaylistManager.getChannelProcessingManager(),
+                channelFactory,
+                mUserPreferences,
+                mDiscoveryExecutor,
+                tunerControl);
+            mLog.debug("Band-scan controller created (Phase 5 — stepped sweep wired)");
+
+            // --- Phase 4: wire discovery model into spectral display and playlist editor ---
+            mSpectralPanel.setDiscoveryModel(mDiscoveryModel, mUserPreferences.getDiscoveryPreference());
+            if(mJavaFxWindowManager != null)
+            {
+                mJavaFxWindowManager.setBandScanController(mBandScanController);
+            }
+            // --- End Phase 4 wiring ---------------------------------------------
+
+            // --- End band-scan controller -------------------------------------
+        }
+        // --- End click-to-tune controller --------------------------------------
 
         TunerSpectralDisplayManager tunerSpectralDisplayManager = new TunerSpectralDisplayManager(mSpectralPanel,
             mPlaylistManager, mSettingsManager, mTunerManager.getDiscoveredTunerModel());
@@ -717,13 +949,40 @@ public class SDRTrunk implements Listener<TunerEvent>
         mJavaFxWindowManager.shutdown();
         mLog.info("Stopping channels ...");
         mPlaylistManager.getChannelProcessingManager().shutdown();
+        mLiveAudioRecordingManager.stop();
         mAudioRecordingManager.stop();
         mResourceMonitor.stop();
+
+        // Shut down the band-scan controller first so it stops any running scan and
+        // releases its scheduler, then shut down the executor it uses.
+        if(mBandScanController != null)
+        {
+            mLog.info("Stopping band-scan controller ...");
+            mBandScanController.shutdown();
+        }
+
+        // Shut down discovery executor BEFORE stopping the tuner manager so that any
+        // in-flight probes release their TunerChannelSources before the channelizers tear down.
+        if(mDiscoveryExecutor != null)
+        {
+            mLog.info("Stopping discovery executor ...");
+            mDiscoveryExecutor.shutdownNow();
+
+            try
+            {
+                mDiscoveryExecutor.awaitTermination(3, TimeUnit.SECONDS);
+            }
+            catch(InterruptedException e)
+            {
+                Thread.currentThread().interrupt();
+            }
+        }
 
         mLog.info("Stopping spectral display ...");
         mSpectralPanel.clearTuner();
         mLog.info("Stopping tuners ...");
         mTunerManager.stop();
+
         mLog.info("Shutdown complete.");
         mApplicationLog.stop();
     }
